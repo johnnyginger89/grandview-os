@@ -19,7 +19,9 @@ export async function POST(req: Request) {
   const lead = payloadToLead(payload);
   const event = (pick(payload, "event", "action", "type") ?? "booked").toLowerCase();
   const ref = lead.bookingRef ? String(lead.bookingRef) : null;
-  const inbound = await recordInbound("youcanbookme", ref ? `${ref}:${event}` : null, payload);
+  // A booking can be rescheduled many times; include the new time so each change is processed once.
+  const dedupeKey = ref ? [ref, event, event.includes("resched") ? (lead.visitAt ?? "") : ""].join(":") : null;
+  const inbound = await recordInbound("youcanbookme", dedupeKey, payload);
   if (inbound.duplicate) return NextResponse.json({ ok: true, duplicate: true, opportunityId: inbound.opportunityId });
 
   try {
