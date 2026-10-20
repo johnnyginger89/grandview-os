@@ -65,3 +65,29 @@ export function payloadToLead(p: Payload): LeadInput {
     bookingManageUrl: pick(p, "manageUrl", "manageBookingUrl", "bookingManageUrl", "cancelUrl", "rescheduleUrl"),
   };
 }
+
+/**
+ * Parse a webhook body that should be a flat JSON object of strings. Booking
+ * tools paste customer text into the template unescaped, so a quote or line
+ * break in a message can make it invalid JSON. Fall back to splitting on the
+ * known `"key": "` boundaries so the lead is still captured.
+ */
+export function parseLenientJsonObject(text: string): Record<string, string> | null {
+  try {
+    const v = JSON.parse(text);
+    return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, string>) : null;
+  } catch {
+    // fall through
+  }
+  const body = text.trim().replace(/^\{/, "").replace(/\}$/, "");
+  const keyRe = /(?:^|,)\s*"([A-Za-z_][A-Za-z0-9_]*)"\s*:\s*"/g;
+  const marks: { key: string; start: number; end: number }[] = [];
+  for (let m; (m = keyRe.exec(body)); ) marks.push({ key: m[1], start: m.index, end: keyRe.lastIndex });
+  if (!marks.length) return null;
+  const out: Record<string, string> = {};
+  marks.forEach((mk, i) => {
+    const raw = body.slice(mk.end, i + 1 < marks.length ? marks[i + 1].start : body.length);
+    out[mk.key] = raw.replace(/"\s*$/, "").replace(/\\"/g, '"').replace(/\\n/g, "\n").trim();
+  });
+  return out;
+}

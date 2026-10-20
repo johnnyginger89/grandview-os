@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { finishInbound, ingestLead, moveStage, recordInbound, stageByKey } from "@/server/leads";
-import { payloadToLead, pick, verifyWebhookSecret } from "@/server/inbound";
+import { parseLenientJsonObject, payloadToLead, pick, verifyWebhookSecret } from "@/server/inbound";
 import { db } from "@/db";
 
 /**
@@ -10,12 +10,13 @@ import { db } from "@/db";
  */
 export async function POST(req: Request) {
   if (!verifyWebhookSecret(req, "youcanbookme")) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  let payload: Record<string, unknown>;
-  try {
-    payload = await req.json();
-  } catch {
+  const text = await req.text();
+  const parsed = parseLenientJsonObject(text);
+  if (!parsed) {
+    await recordInbound("youcanbookme", null, { unparseable: text.slice(0, 20_000) });
     return NextResponse.json({ error: "invalid JSON" }, { status: 400 });
   }
+  const payload: Record<string, unknown> = parsed;
   const lead = payloadToLead(payload);
   const event = (pick(payload, "event", "action", "type") ?? "booked").toLowerCase();
   const ref = lead.bookingRef ? String(lead.bookingRef) : null;
