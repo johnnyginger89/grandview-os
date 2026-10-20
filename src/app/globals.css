@@ -1,0 +1,89 @@
+@import "tailwindcss";
+
+/*
+ * Grandview OS design tokens. Restrained neutrals with a single deep-green
+ * brand accent. Colours are referenced through these tokens only.
+ */
+:root {
+  --bg: #f6f7f5;
+  --surface: #ffffff;
+  --surface-2: #f1f3f0;
+  --border: #e2e5e0;
+  --border-strong: #cdd2ca;
+  --text: #1b201c;
+  --text-muted: #5d665f;
+  --text-subtle: #8a928b;
+  --brand: #1f5c45;
+  --brand-hover: #184a37;
+  --brand-soft: #e5f0ea;
+  --brand-contrast: #ffffff;
+  --danger: #b4232c;
+  --danger-soft: #fbe9ea;
+  --warning: #9a5b00;
+  --warning-soft: #fdf1dc;
+  --success: #1e7a46;
+  --success-soft: #e3f4ea;
+  --info: #1f5f9e;
+  --info-soft: #e5eef8;
+  --sidebar: #142019;
+  --sidebar-text: #c9d3cc;
+  --sidebar-active: #22372b;
+  --ring: #2f7d5f;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-text: var(--text);
+  --color-muted: var(--text-muted);
+  --color-subtle: var(--text-subtle);
+  --color-brand: var(--brand);
+  --color-brand-hover: var(--brand-hover);
+  --color-brand-soft: var(--brand-soft);
+  --color-brand-contrast: var(--brand-contrast);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-text: var(--sidebar-text);
+  --color-sidebar-active: var(--sidebar-active);
+  --color-ring: var(--ring);
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}
