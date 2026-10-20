@@ -20,7 +20,7 @@ export default function LoginPage() {
     });
     if (error) {
       setPending(false);
-      setError(error.status === 429 ? "Too many attempts. Wait a minute and try again." : "Email or password is incorrect.");
+      setError(error.status === 429 ? "Too many attempts. Wait a minute and try again." : error.status && error.status >= 500 ? "Sign-in is temporarily unavailable. Please try again shortly." : "Email or password is incorrect.");
       return;
     }
     if (data && "twoFactorRedirect" in data && data.twoFactorRedirect) return; // client plugin redirects

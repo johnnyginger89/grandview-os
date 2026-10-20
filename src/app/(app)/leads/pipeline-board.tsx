@@ -81,7 +81,23 @@ export function PipelineBoard({ stages, cards, lostReasons, canEdit }: { stages:
           <Button variant="ghost" onClick={() => setPendingLost(null)}>Cancel</Button>
         </div>
       )}
-      <div className="-mx-4 overflow-x-auto px-4 pb-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+      {/* Phones: stacked list. Stage changes happen on the lead page. */}
+      <div className="space-y-3 md:hidden">
+        {stages.map((stage) => {
+          const list = optimistic.filter((c) => c.stageId === stage.id);
+          return (
+            <section key={stage.id} aria-label={stage.name}>
+              <header className="mb-1.5 flex items-center gap-2 px-1">
+                <span className={cn("size-2 rounded-full", DOT[stage.color] ?? "bg-slate-400")} />
+                <h2 className="flex-1 text-xs font-semibold uppercase tracking-wide text-muted">{stage.name}</h2>
+                <span className="text-xs text-subtle tabular">{list.length}</span>
+              </header>
+              {list.length > 0 && <div className="flex flex-col gap-2">{list.map((c) => <Card key={c.id} card={c} stage={stage} draggable={false} />)}</div>}
+            </section>
+          );
+        })}
+      </div>
+      <div className="-mx-4 hidden overflow-x-auto px-4 pb-4 sm:-mx-6 sm:px-6 md:block lg:-mx-8 lg:px-8">
         <div className="flex gap-3" style={{ minWidth: stages.length * 260 }}>
           {stages.map((stage) => {
             const list = optimistic.filter((c) => c.stageId === stage.id);

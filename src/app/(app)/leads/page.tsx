@@ -10,9 +10,11 @@ import { PipelineBoard, type BoardCard } from "./pipeline-board";
 
 export const metadata = { title: "Leads & Pipeline" };
 
+const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000);
+
 export default async function LeadsPage() {
   const user = await requirePermission("pipeline.read");
-  const since = new Date(Date.now() - 30 * 86_400_000);
+  const since = daysAgo(30);
   const [stages, rows, lostReasons] = await Promise.all([
     db.select().from(pipelineStages).orderBy(asc(pipelineStages.position)),
     db
@@ -53,7 +55,7 @@ export default async function LeadsPage() {
     <>
       <PageHeader
         title="Leads & Pipeline"
-        description="Drag cards between stages. Won and lost show the last 30 days."
+        description="Drag cards between stages, or change the stage on the lead. Won and lost show the last 30 days."
         actions={can(user.role, "pipeline.write") && (
           <LinkButton href="/leads/new"><Plus className="size-4" /> New lead</LinkButton>
         )}

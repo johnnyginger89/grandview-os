@@ -1,4 +1,4 @@
-import { boolean, index, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { bigint, boolean, index, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 
 // Tables used by Better Auth. Column names follow its expected field names.
 
@@ -90,5 +90,5 @@ export const rateLimit = pgTable("rate_limit", {
   id: text("id").primaryKey(),
   key: text("key").notNull().unique(),
   count: integer("count").notNull(),
-  lastRequest: integer("last_request").notNull(),
+  lastRequest: bigint("last_request", { mode: "number" }).notNull(),
 });

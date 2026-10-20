@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { ComponentProps, ReactNode } from "react";
+import { Children, cloneElement, isValidElement, useId, type ComponentProps, type ReactElement, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
@@ -59,11 +59,24 @@ export function Label({ className, ...props }: ComponentProps<"label">) {
   return <label className={cn("block text-sm font-medium text-text mb-1", className)} {...props} />;
 }
 
+/** Associates the label with its control via a generated id (cloned onto a single child element). */
 export function Field({ label, hint, children, className }: { label: string; hint?: string; children: ReactNode; className?: string }) {
+  const generated = useId();
+  const single = Children.count(children) === 1 && isValidElement<{ id?: string }>(children) && typeof children.type !== "symbol";
+  const id = single ? ((children as ReactElement<{ id?: string }>).props.id ?? generated) : undefined;
   return (
     <div className={className}>
-      <Label>{label}</Label>
-      {children}
+      {single ? (
+        <>
+          <label htmlFor={id} className="mb-1 block text-sm font-medium text-text">{label}</label>
+          {cloneElement(children as ReactElement<{ id?: string }>, { id })}
+        </>
+      ) : (
+        <label className="block">
+          <span className="mb-1 block text-sm font-medium text-text">{label}</span>
+          {children}
+        </label>
+      )}
       {hint && <p className="mt-1 text-xs text-subtle">{hint}</p>}
     </div>
   );

@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import QRCode from "qrcode";
 import { useState } from "react";
 import { Badge, Button, Field, FormError, Input } from "@/components/ui";
@@ -40,7 +41,7 @@ export function TwoFactorSetup({ enabled }: { enabled: boolean }) {
     return (
       <div className="space-y-3 text-sm">
         <p className="flex items-center gap-2"><Badge tone="success">On</Badge> Two-factor authentication is set up.</p>
-        <a href="/" className="text-brand hover:underline">Continue to Grandview OS</a>
+        <Link href="/" className="text-brand hover:underline">Continue to Grandview OS</Link>
       </div>
     );
   }
