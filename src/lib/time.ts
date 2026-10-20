@@ -34,10 +34,52 @@ export function parseBusinessDateTime(value: string | Date | null | undefined, t
   const s = value.trim();
   const m = WALL_CLOCK.exec(s);
   if (!m) {
+    const written = parseWrittenDateTime(s);
+    if (written) return fromWallClock(written, timeZone);
+    if (!HAS_ZONE.test(s)) return null; // never let the server's UTC clock guess a zone
     const d = new Date(s);
     return Number.isNaN(d.getTime()) ? null : d;
   }
   const [, y, mo, da, h = "0", mi = "0", se = "0"] = m;
+  return fromWallClock({ y: +y, mo: +mo, d: +da, h: +h, mi: +mi, s: +se }, timeZone);
+}
+
+const HAS_ZONE = /(Z|[+-]\d{2}:?\d{2}|\bGMT\b|\bUTC\b)/i;
+const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+
+interface WallClock { y: number; mo: number; d: number; h: number; mi: number; s: number }
+
+/**
+ * Written dates as booking tools print them, e.g. "Thursday, October 23, 2026 10:00 AM",
+ * "23 October 2026 at 14:30", "Oct 23 2026 2:30pm". Read as business-zone wall clock.
+ */
+function parseWrittenDateTime(input: string): WallClock | null {
+  if (HAS_ZONE.test(input)) return null;
+  const s = input.toLowerCase().replace(/,/g, " ").replace(/\bat\b/g, " ").replace(/\s+/g, " ").trim();
+  const monthIdx = MONTHS.findIndex((m) => new RegExp(`\\b${m}[a-z]*\\.?\\b`).test(s));
+  if (monthIdx < 0) return null;
+  const year = /\b(20\d{2})\b/.exec(s);
+  if (!year) return null;
+  const rest = s.replace(year[0], " ");
+  const day = /\b([0-3]?\d)(?:st|nd|rd|th)?\b(?!\s*:)/.exec(rest.replace(/\d{1,2}:\d{2}/g, " "));
+  if (!day) return null;
+  const time = /\b(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?(?=\s|$)/.exec(rest.replace(day[0], " ").replace(/\b[a-z]+day\b/g, " "));
+  let h = 0;
+  let mi = 0;
+  if (time && (time[2] || time[3])) {
+    h = Number(time[1]);
+    mi = Number(time[2] ?? 0);
+    const ap = time[3]?.replace(/\./g, "");
+    if (ap === "pm" && h < 12) h += 12;
+    if (ap === "am" && h === 12) h = 0;
+  }
+  const d = Number(day[1]);
+  if (d < 1 || d > 31 || h > 23 || mi > 59) return null;
+  return { y: Number(year[1]), mo: monthIdx + 1, d, h, mi, s: 0 };
+}
+
+function fromWallClock(w: WallClock, timeZone: string): Date {
+  const { y, mo, d: da, h, mi, s: se } = w;
   const guess = Date.UTC(+y, +mo - 1, +da, +h, +mi, +se);
   // Two passes handle instants near a DST change.
   let utc = guess - zoneOffsetMinutes(new Date(guess), timeZone) * 60_000;
