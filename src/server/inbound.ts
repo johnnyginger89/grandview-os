@@ -2,10 +2,16 @@ import "server-only";
 import { timingSafeEqual } from "node:crypto";
 import type { LeadInput } from "./leads";
 
-/** Constant-time check of the shared webhook secret (header or ?key=). */
-export function verifyWebhookSecret(req: Request): boolean {
-  const expected = process.env.INBOUND_WEBHOOK_SECRET;
-  if (!expected) return false;
+export type WebhookSource = "youcanbookme" | "form";
+const SECRET_VAR: Record<WebhookSource, string> = { youcanbookme: "YCBM_WEBHOOK_SECRET", form: "FORM_WEBHOOK_SECRET" };
+
+/**
+ * Constant-time check of the per-source webhook secret. The x-webhook-secret
+ * header is preferred; ?key= is accepted for senders that can't set headers.
+ */
+export function verifyWebhookSecret(req: Request, source: WebhookSource): boolean {
+  const expected = process.env[SECRET_VAR[source]];
+  if (!expected || expected.length < 16) return false;
   const provided = req.headers.get("x-webhook-secret") ?? new URL(req.url).searchParams.get("key") ?? "";
   const a = Buffer.from(provided);
   const b = Buffer.from(expected);
@@ -54,7 +60,7 @@ export function payloadToLead(p: Payload): LeadInput {
     description: pick(p, "description", "message", "projectDescription", "comments", "details", "tellUsAboutYourProject"),
     timeline: pick(p, "timeline", "timeframe", "when"),
     leadSource: pick(p, "leadSource", "source", "howDidYouHear", "howDidYouHearAboutUs", "referral"),
-    visitAt: pick(p, "visitAt", "startTime", "start", "appointment", "bookingStart", "datetime") as unknown as Date | null,
+    visitAt: pick(p, "visitAt", "startTime", "start", "appointment", "bookingStart", "datetime") as string | null,
     bookingRef: pick(p, "bookingRef", "bookingId", "reference", "ref", "id"),
     bookingManageUrl: pick(p, "manageUrl", "manageBookingUrl", "bookingManageUrl", "cancelUrl", "rescheduleUrl"),
   };

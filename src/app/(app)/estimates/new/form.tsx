@@ -1,4 +1,5 @@
 "use client";
+import { submitWith } from "@/components/submit";
 import { useActionState } from "react";
 import { Button, Card, Field, FormError, Input, Select } from "@/components/ui";
 import { createEstimateAction } from "../actions";
@@ -6,7 +7,7 @@ import { createEstimateAction } from "../actions";
 export function NewEstimateForm({ customers, defaultCustomer, opportunityId, defaultTitle }: { customers: { id: string; name: string }[]; defaultCustomer: string; opportunityId: string; defaultTitle: string }) {
   const [state, action, pending] = useActionState(createEstimateAction, null);
   return (
-    <form action={action} className="max-w-xl">
+    <form onSubmit={submitWith(action)} className="max-w-xl">
       <Card className="space-y-4 p-4">
         <input type="hidden" name="opportunityId" value={opportunityId} />
         <Field label="Customer">

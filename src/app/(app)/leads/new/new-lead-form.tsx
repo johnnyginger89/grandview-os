@@ -1,4 +1,5 @@
 "use client";
+import { submitWith } from "@/components/submit";
 import { useActionState, useState } from "react";
 import { Button, Card, Field, FormError, Input, Select, Textarea } from "@/components/ui";
 import { createLeadAction } from "../actions";
@@ -9,7 +10,7 @@ export function NewLeadForm({ sources, projectTypes }: { sources: string[]; proj
   const [stage, setStage] = useState("new_lead");
 
   return (
-    <form action={action} className="max-w-3xl space-y-4">
+    <form onSubmit={submitWith(action)} className="max-w-3xl space-y-4">
       <Card className="space-y-4 p-4">
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="First name"><Input name="firstName" autoFocus /></Field>

@@ -7,7 +7,7 @@ import { payloadToLead, verifyWebhookSecret } from "@/server/inbound";
  * New submissions land in "New Lead – To Contact".
  */
 export async function POST(req: Request) {
-  if (!verifyWebhookSecret(req)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!verifyWebhookSecret(req, "form")) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   let payload: Record<string, unknown>;
   const type = req.headers.get("content-type") ?? "";
   try {

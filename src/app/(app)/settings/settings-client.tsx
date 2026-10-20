@@ -1,4 +1,5 @@
 "use client";
+import { submitWith } from "@/components/submit";
 import { useActionState, useState, useTransition } from "react";
 import { Badge, Button, Card, CardHeader, Field, FormError, Input, Select, Table, Textarea, td, th } from "@/components/ui";
 import { ROLES } from "@/db/schema/auth";
@@ -13,7 +14,7 @@ function Saved({ state }: { state: { ok: boolean; error?: string } | null }) {
 export function CompanyForm({ company }: { company: Record<string, string> }) {
   const [state, action, pending] = useActionState(saveCompanyAction, null);
   return (
-    <form action={action} className="max-w-2xl">
+    <form onSubmit={submitWith(action)} className="max-w-2xl">
       <Card className="grid gap-4 p-4 sm:grid-cols-2">
         <Field label="Company name" className="sm:col-span-2"><Input name="name" defaultValue={company.name} required /></Field>
         <Field label="Email"><Input name="email" type="email" defaultValue={company.email} /></Field>
@@ -33,7 +34,7 @@ export function PricingForm({ pricing }: { pricing: Record<string, string | numb
   const [state, action, pending] = useActionState(savePricingAction, null);
   const pct = (k: string) => String(Number(pricing[k]) * 100);
   return (
-    <form action={action} className="max-w-2xl">
+    <form onSubmit={submitWith(action)} className="max-w-2xl">
       <Card className="grid gap-4 p-4 sm:grid-cols-2">
         <p className="rounded-md bg-warning-soft px-3 py-2 text-sm text-warning sm:col-span-2">The starting values here are placeholders. Set your real burdened labour cost and billing rate before sending estimates.</p>
         <Field label="Default pricing method" className="sm:col-span-2">
@@ -170,16 +171,16 @@ export function IntegrationsInfo({ appUrl }: { appUrl: string }) {
         <CardHeader title="YouCanBook.me → Estimate Booked" />
         <div className="space-y-2 p-4 text-muted">
           <p>In YouCanBook.me, add a webhook notification for new bookings and cancellations that posts JSON to:</p>
-          <code className="block break-all rounded bg-surface-2 p-2 font-mono text-xs text-text">{appUrl || "https://your-domain"}/api/inbound/youcanbookme?key=YOUR_WEBHOOK_SECRET</code>
-          <p>The secret is the <code>INBOUND_WEBHOOK_SECRET</code> server setting. See <code>docs/integrations/youcanbookme.md</code> for the JSON template.</p>
+          <code className="block break-all rounded bg-surface-2 p-2 font-mono text-xs text-text">{appUrl || "https://your-domain"}/api/inbound/youcanbookme?key=YOUR_YCBM_WEBHOOK_SECRET</code>
+          <p>The secret is the <code>YCBM_WEBHOOK_SECRET</code> server setting. See <code>docs/integrations/youcanbookme.md</code> for the JSON template.</p>
         </div>
       </Card>
       <Card>
         <CardHeader title="Website form → New Lead" />
         <div className="space-y-2 p-4 text-muted">
           <p>Point your website form (or a Zapier step) at:</p>
-          <code className="block break-all rounded bg-surface-2 p-2 font-mono text-xs text-text">{appUrl || "https://your-domain"}/api/inbound/form?key=YOUR_WEBHOOK_SECRET</code>
-          <p>Accepts JSON or regular form posts with fields like name, email, phone, address, city, service, message.</p>
+          <code className="block break-all rounded bg-surface-2 p-2 font-mono text-xs text-text">{appUrl || "https://your-domain"}/api/inbound/form?key=YOUR_FORM_WEBHOOK_SECRET</code>
+          <p>Use the <code>FORM_WEBHOOK_SECRET</code> server setting. Send it from the website server (for example the Gravity Forms Webhooks add-on), never from browser code. Accepts JSON or regular form posts with fields like name, email, phone, address, city, service, message.</p>
         </div>
       </Card>
       <Card>

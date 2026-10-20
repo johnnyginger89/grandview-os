@@ -1,11 +1,12 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { safeErrorMessage } from "@/lib/action-error";
 import { assertPermission } from "@/lib/authz/guard";
 import { createRate, deleteFactor, rateHistory, saveFactor, saveMaterial, saveRateVersion, setRateActive, updateRateIdentity } from "@/server/rates";
 
 export type Result = { ok: true } | { ok: false; error: string };
-const err = (e: unknown): Result => ({ ok: false, error: e instanceof z.ZodError ? `${e.issues[0]?.path.join(".")}: ${e.issues[0]?.message}` : e instanceof Error ? e.message : "Something went wrong" });
+const err = (e: unknown): Result => ({ ok: false, error: safeErrorMessage(e) });
 
 export interface RateFormInput {
   id: string | null;

@@ -7,6 +7,7 @@ import { customers, estimates, opportunities, pipelineStages, properties } from 
 import { requireUser } from "@/lib/authz/guard";
 import { can } from "@/lib/authz/permissions";
 import { formatCAD } from "@/lib/money";
+import { businessHour, startOfBusinessMonth } from "@/lib/time";
 import { formatDateTime } from "@/lib/utils";
 
 export const metadata = { title: "Dashboard" };
@@ -17,7 +18,8 @@ export default async function Dashboard() {
 
   const now = new Date();
   const week = new Date(now.getTime() + 7 * 86_400_000);
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const monthStart = startOfBusinessMonth(now);
+  const hour = businessHour(now);
 
   const [[toContact], [followUps], visits, [proposals], [wonMonth], [created30], [won30]] = await Promise.all([
     db.select({ n: count() }).from(opportunities).innerJoin(pipelineStages, eq(pipelineStages.id, opportunities.stageId)).where(eq(pipelineStages.key, "new_lead")),
@@ -49,7 +51,7 @@ export default async function Dashboard() {
 
   return (
     <>
-      <PageHeader title={`Good ${now.getHours() < 12 ? "morning" : now.getHours() < 18 ? "afternoon" : "evening"}, ${user.name.split(" ")[0]}`} description="What needs attention today." />
+      <PageHeader title={`Good ${hour < 12 ? "morning" : hour < 18 ? "afternoon" : "evening"}, ${user.name.split(" ")[0]}`} description="What needs attention today." />
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Leads to contact" value={toContact.n} tone={toContact.n > 0 ? "danger" : undefined} hint={<Link href="/leads" className="text-brand hover:underline">Open pipeline</Link>} />
         <Stat label="Follow-ups due" value={followUps.n} />

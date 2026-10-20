@@ -15,6 +15,13 @@
       "when": 1792519657053,
       "tag": "0001_rate_limit_bigint",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792526752883,
+      "tag": "0002_lock_down_public_schema",
+      "breakpoints": true
     }
   ]
 }

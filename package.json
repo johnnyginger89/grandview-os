@@ -14,7 +14,9 @@
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "tsx src/db/seed.ts",
     "db:seed:dev": "tsx src/db/seed.ts --dev-users",
-    "create-owner": "tsx scripts/create-owner.ts"
+    "create-owner": "tsx scripts/create-owner.ts",
+    "build:vercel": "tsx scripts/deploy-db.ts && next build",
+    "db:deploy": "tsx scripts/deploy-db.ts"
   },
   "dependencies": {
     "better-auth": "1.7.12",
@@ -48,5 +50,8 @@
     "typescript": "^5",
     "vitest": "5.0.5"
   },
-  "packageManager": "pnpm@10.28.0"
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": "22.x"
+  }
 }

@@ -2,6 +2,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import { safeErrorMessage } from "@/lib/action-error";
 import { assertPermission } from "@/lib/authz/guard";
 import { addContact, addProperty, createCustomer, updateCustomer } from "@/server/customers";
 
@@ -9,10 +10,7 @@ export type FormState = { ok: boolean; error?: string } | null;
 
 const str = (f: FormData, k: string) => String(f.get(k) ?? "");
 
-function message(e: unknown) {
-  if (e instanceof z.ZodError) return e.issues[0]?.message ?? "Please check the form";
-  return e instanceof Error ? e.message : "Something went wrong";
-}
+const message = safeErrorMessage;
 
 export async function createCustomerAction(_: FormState, f: FormData): Promise<FormState> {
   let id: string;

@@ -22,7 +22,9 @@ pnpm test                # unit tests (estimating engine etc.)
 pnpm test:e2e            # Playwright, needs a running server on :3000 and dev seed
 pnpm db:generate         # create a migration after editing src/db/schema
 pnpm db:migrate          # apply migrations
-pnpm db:seed:dev         # baseline config + one dev login per role (password in src/db/seed.ts)
+pnpm db:seed:dev         # baseline config + one dev login per role (local DB only)
+pnpm db:deploy           # migrations + baseline seed (what the Vercel build runs)
+pnpm create-owner        # CLI first owner (alternative to /setup)
 ```
 Local Postgres: `DATABASE_URL=postgres://postgres@localhost:5432/grandview_dev`. Copy `.env.example` to `.env`.
 
@@ -48,6 +50,10 @@ Local Postgres: `DATABASE_URL=postgres://postgres@localhost:5432/grandview_dev`.
 9. Domain logic lives in `src/server/*` (server-only). Route files and server actions stay thin:
    validate with zod, check permission, call the service, revalidate.
 10. Times are stored UTC (`timestamptz`) and displayed in America/Vancouver (`src/lib/utils.ts`).
+    Servers run in UTC: parse wall-clock input with `parseBusinessDateTime` (`src/lib/time.ts`), never `new Date(str)`.
+11. Server actions turn errors into user messages with `safeErrorMessage` (`src/lib/action-error.ts`);
+    errors meant for users are plain `Error`s or set `expose = true`.
+12. Deployment: see `docs/DEPLOYMENT.md`. Migrations must be additive (they run before the new code is live).
 
 ## Conventions
 - Server actions return `{ ok: true, ... } | { ok: false, error }` and never throw to the client.

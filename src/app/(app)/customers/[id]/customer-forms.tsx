@@ -1,4 +1,5 @@
 "use client";
+import { submitWith } from "@/components/submit";
 import { useActionState, useState } from "react";
 import { Button, Field, FormError, Input, Select, Textarea } from "@/components/ui";
 import { addContactAction, addPropertyAction, updateCustomerAction, type FormState } from "../actions";
@@ -17,7 +18,7 @@ export function AddContactForm({ customerId }: { customerId: string }) {
   const f = useClosingForm(addContactAction.bind(null, customerId));
   if (!f.open) return <Button size="sm" variant="ghost" onClick={() => f.setOpen(true)}>+ Add contact</Button>;
   return (
-    <form action={f.formAction} className="space-y-2">
+    <form onSubmit={submitWith(f.formAction)} className="space-y-2">
       <div className="grid grid-cols-2 gap-2">
         <Input name="firstName" placeholder="First name" aria-label="First name" />
         <Input name="lastName" placeholder="Last name" aria-label="Last name" />
@@ -36,7 +37,7 @@ export function AddPropertyForm({ customerId }: { customerId: string }) {
   const f = useClosingForm(addPropertyAction.bind(null, customerId));
   if (!f.open) return <Button size="sm" variant="ghost" onClick={() => f.setOpen(true)}>+ Add property</Button>;
   return (
-    <form action={f.formAction} className="space-y-2">
+    <form onSubmit={submitWith(f.formAction)} className="space-y-2">
       <Input name="label" placeholder="Label (optional), e.g. Rental, Building A" aria-label="Label" />
       <Input name="street" placeholder="Street address" aria-label="Street" required />
       <div className="grid grid-cols-2 gap-2">
@@ -61,7 +62,7 @@ export function EditCustomer({ customer }: { customer: { id: string; type: strin
   if (!f.open) return <Button variant="secondary" onClick={() => f.setOpen(true)}>Edit</Button>;
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 pt-16">
-      <form action={f.formAction} className="w-full max-w-lg space-y-3 rounded-lg bg-surface p-5 shadow-lg">
+      <form onSubmit={submitWith(f.formAction)} className="w-full max-w-lg space-y-3 rounded-lg bg-surface p-5 shadow-lg">
         <h2 className="font-semibold">Edit customer</h2>
         <Field label="Name"><Input name="displayName" defaultValue={customer.displayName} required /></Field>
         <Field label="Type"><Select name="type" defaultValue={customer.type}><option value="residential">Residential</option><option value="commercial">Commercial</option><option value="strata">Strata</option></Select></Field>

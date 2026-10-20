@@ -28,8 +28,9 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   };
 });
 
+/** Two-factor is always mandatory on the live site; MFA_ENFORCED=false only works locally. */
 export function mfaEnforced(): boolean {
-  return process.env.MFA_ENFORCED !== "false";
+  return process.env.VERCEL_ENV === "production" || process.env.MFA_ENFORCED !== "false";
 }
 
 export function needsMfaEnrollment(user: CurrentUser): boolean {
@@ -51,6 +52,7 @@ export async function requirePermission(permission: Permission): Promise<Current
 }
 
 export class AuthorizationError extends Error {
+  readonly expose = true;
   constructor(message = "You don't have permission to do that.") {
     super(message);
     this.name = "AuthorizationError";

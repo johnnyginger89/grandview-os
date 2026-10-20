@@ -29,11 +29,12 @@ export const auth = betterAuth({
     maxPasswordLength: 128,
     revokeSessionsOnPasswordReset: true,
     sendResetPassword: async ({ user, url }) => {
-      await sendEmail({
+      const r = await sendEmail({
         to: user.email,
         subject: "Reset your Grandview OS password",
         text: `A password reset was requested for your Grandview OS account.\n\nReset it here (link expires in 1 hour):\n${url}\n\nIf you didn't request this, you can ignore this email.`,
       });
+      if (r.status === "failed") console.error(`[auth] password reset email to user ${user.id} failed: ${r.error}`);
     },
   },
   user: {
@@ -66,10 +67,16 @@ export const auth = betterAuth({
         before: async (session) => {
           const u = await db.query.user.findFirst({ where: (t, { eq }) => eq(t.id, session.userId) });
           if (!u || !u.active) return false;
+          // Development logins (known password) can never sign in to the live site.
+          if (process.env.VERCEL_ENV === "production" && u.email.endsWith("@dev.grandview.local")) return false;
           return { data: session };
         },
       },
     },
+  },
+  advanced: {
+    // Vercel sets these to the real client IP, so per-IP sign-in limits work.
+    ipAddress: { ipAddressHeaders: ["x-vercel-forwarded-for", "x-forwarded-for"] },
   },
   plugins: [twoFactor({ issuer: "Grandview OS" }), nextCookies()],
 });

@@ -1,4 +1,5 @@
 "use client";
+import { submitWith } from "@/components/submit";
 import { useActionState } from "react";
 import { Button, Card, CardHeader, Field, FormError, Input, Select, Textarea } from "@/components/ui";
 import { createCustomerAction } from "../actions";
@@ -6,7 +7,7 @@ import { createCustomerAction } from "../actions";
 export function NewCustomerForm({ sources }: { sources: string[] }) {
   const [state, action, pending] = useActionState(createCustomerAction, null);
   return (
-    <form action={action} className="max-w-3xl space-y-4">
+    <form onSubmit={submitWith(action)} className="max-w-3xl space-y-4">
       <Card>
         <CardHeader title="Customer" />
         <div className="grid gap-4 p-4 sm:grid-cols-2">

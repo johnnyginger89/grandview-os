@@ -2,6 +2,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import { safeErrorMessage } from "@/lib/action-error";
 import { ESTIMATE_STATUSES } from "@/db/schema";
 import { assertPermission } from "@/lib/authz/guard";
 import {
@@ -19,11 +20,7 @@ type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string };
 const uuid = z.string().uuid();
 
 function err(e: unknown): { ok: false; error: string } {
-  if (e instanceof z.ZodError) {
-    const i = e.issues[0];
-    return { ok: false, error: `${i?.path.join(".") || "Input"}: ${i?.message}` };
-  }
-  return { ok: false, error: e instanceof Error ? e.message : "Something went wrong" };
+  return { ok: false, error: safeErrorMessage(e) };
 }
 
 export async function createEstimateAction(_: unknown, f: FormData): Promise<Result> {

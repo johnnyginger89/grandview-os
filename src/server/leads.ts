@@ -15,7 +15,8 @@ import {
   type LEAD_CHANNELS,
 } from "@/db/schema";
 import { sendEmail } from "@/lib/email";
-import { fullName, renderTemplate } from "@/lib/utils";
+import { parseBusinessDateTime } from "@/lib/time";
+import { formatDateTime, fullName, renderTemplate } from "@/lib/utils";
 import { audit } from "./audit";
 import { getCompany } from "./settings";
 
@@ -53,7 +54,11 @@ export const leadInputSchema = z.object({
   timeline: optStr,
   leadSource: optStr,
   channel: z.string().optional().nullable(),
-  visitAt: z.coerce.date().optional().nullable(),
+  visitAt: z
+    .union([z.string(), z.date()])
+    .optional()
+    .nullable()
+    .transform((v) => parseBusinessDateTime(v ?? null)),
   bookingRef: optStr,
   bookingManageUrl: optStr,
   estimatorId: optStr,
@@ -142,7 +147,7 @@ export async function ingestLead(
           customerId: existing.customerId,
           opportunityId: existing.id,
           type: "booking",
-          body: input.visitAt ? `Booking updated – visit ${input.visitAt.toISOString()}` : "Booking updated",
+          body: input.visitAt ? `Booking updated – visit ${formatDateTime(input.visitAt)}` : "Booking updated",
           meta: { source: opts.externalSource },
         });
         return { opportunityId: existing.id, customerId: existing.customerId, created: false, matchedExistingCustomer: true };

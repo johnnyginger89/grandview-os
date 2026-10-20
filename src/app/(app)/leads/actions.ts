@@ -2,13 +2,15 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import { safeErrorMessage } from "@/lib/action-error";
 import { assertPermission } from "@/lib/authz/guard";
+import { parseBusinessDateTime } from "@/lib/time";
 import { addNote, composeBookingEmail, ingestLead, moveStage, sendBookingLink } from "@/server/leads";
 
 export type ActionResult = { ok: true; message?: string } | { ok: false; error: string };
 
 function fail(e: unknown): ActionResult {
-  return { ok: false, error: e instanceof Error ? e.message : "Something went wrong" };
+  return { ok: false, error: safeErrorMessage(e) };
 }
 
 export async function createLeadAction(_prev: ActionResult | null, form: FormData): Promise<ActionResult> {
@@ -34,7 +36,7 @@ export async function createLeadAction(_prev: ActionResult | null, form: FormDat
         description: String(form.get("description") ?? ""),
         timeline: String(form.get("timeline") ?? ""),
         leadSource: String(form.get("leadSource") ?? ""),
-        visitAt: visit ? new Date(visit) : null,
+        visitAt: parseBusinessDateTime(visit),
         notes: String(form.get("notes") ?? ""),
       },
       { stageKey, channel: (String(form.get("channel") || "phone") as "phone"), actorId: user.id },

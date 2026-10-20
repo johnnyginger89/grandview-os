@@ -4,10 +4,11 @@
  *   pnpm db:seed              baseline config (stages, factors, rates, materials, templates)
  *   pnpm db:seed --dev-users  also creates one development login per role
  *
- * Never run --dev-users against production.
+ * --dev-users is refused unless DATABASE_URL points at localhost.
  */
 import "dotenv/config";
 import { eq } from "drizzle-orm";
+import { isLocalDatabase } from "./connection";
 import { db } from "./index";
 import * as s from "./schema";
 import {
@@ -127,21 +128,33 @@ async function seedDevUsers() {
   console.log(`  dev password: ${DEV_PASSWORD}`);
 }
 
-async function main() {
-  if (process.argv.includes("--dev-users") && process.env.NODE_ENV === "production") {
-    throw new Error("Refusing to create dev users in production");
-  }
+/** Baseline configuration only (no users). Used by `pnpm db:seed` and every production deploy. */
+export async function seedBaseline() {
   await seedSettings();
   await seedStages();
   await seedFactors();
   await seedMaterialsAndRates();
   await seedTemplates();
+}
+
+export function assertDevUsersAllowed(env: NodeJS.ProcessEnv = process.env) {
+  const url = env.DATABASE_URL ?? "";
+  if (env.NODE_ENV === "production" || env.VERCEL || !isLocalDatabase(url)) {
+    throw new Error("Refusing to create dev users: they are only allowed on a local database (localhost).");
+  }
+}
+
+async function main() {
+  if (process.argv.includes("--dev-users")) assertDevUsersAllowed();
+  await seedBaseline();
   if (process.argv.includes("--dev-users")) await seedDevUsers();
   console.log("Seed complete");
   process.exit(0);
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+if (process.argv[1]?.replace(/\\/g, "/").endsWith("src/db/seed.ts")) {
+  main().catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
+}

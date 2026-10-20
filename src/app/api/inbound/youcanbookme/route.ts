@@ -5,11 +5,11 @@ import { db } from "@/db";
 
 /**
  * YouCanBook.me webhook. Configure a webhook notification in YouCanBook.me
- * pointing at /api/inbound/youcanbookme?key=<INBOUND_WEBHOOK_SECRET> with a
+ * pointing at /api/inbound/youcanbookme?key=<YCBM_WEBHOOK_SECRET> with a
  * JSON body (see docs/integrations/youcanbookme.md for the template).
  */
 export async function POST(req: Request) {
-  if (!verifyWebhookSecret(req)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!verifyWebhookSecret(req, "youcanbookme")) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   let payload: Record<string, unknown>;
   try {
     payload = await req.json();

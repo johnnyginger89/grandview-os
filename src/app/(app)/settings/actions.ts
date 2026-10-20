@@ -2,6 +2,7 @@
 import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
+import { safeErrorMessage } from "@/lib/action-error";
 import { db } from "@/db";
 import { messageTemplates } from "@/db/schema";
 import { assertPermission } from "@/lib/authz/guard";
@@ -10,7 +11,7 @@ import { getCompany, getPricing, setSetting } from "@/server/settings";
 import { createUserAccount, updateUserAccess } from "@/server/users";
 
 type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string };
-const err = (e: unknown) => ({ ok: false as const, error: e instanceof z.ZodError ? `${e.issues[0]?.path.join(".")}: ${e.issues[0]?.message}` : e instanceof Error ? e.message : "Something went wrong" });
+const err = (e: unknown) => ({ ok: false as const, error: safeErrorMessage(e) });
 const dec = z.string().trim().regex(/^\d+(\.\d+)?$/, "Enter a number");
 
 export async function saveCompanyAction(_: unknown, f: FormData): Promise<Result> {

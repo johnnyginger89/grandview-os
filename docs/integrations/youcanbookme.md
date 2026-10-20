@@ -8,11 +8,11 @@ a duplicate. Customers are matched by email, then phone.
 ## Endpoint
 
 ```
-POST https://<your-domain>/api/inbound/youcanbookme?key=<INBOUND_WEBHOOK_SECRET>
+POST https://<your-domain>/api/inbound/youcanbookme?key=<YCBM_WEBHOOK_SECRET>
 Content-Type: application/json
 ```
 
-`INBOUND_WEBHOOK_SECRET` is a server environment variable. Treat the full URL like a password.
+`YCBM_WEBHOOK_SECRET` is a server environment variable. Treat the full URL like a password. If your webhook tool can send headers, send the secret as an `x-webhook-secret` header instead of `?key=`, so it never appears in request logs.
 
 ## Setting it up in YouCanBook.me
 
@@ -59,7 +59,7 @@ Multiple project types can be comma-separated.
 ## Testing
 
 ```
-curl -X POST "http://localhost:3000/api/inbound/youcanbookme?key=$INBOUND_WEBHOOK_SECRET" \
+curl -X POST "http://localhost:3000/api/inbound/youcanbookme" -H "x-webhook-secret: $YCBM_WEBHOOK_SECRET" \
   -H 'content-type: application/json' \
   -d '{"bookingId":"TEST-1","firstName":"Test","email":"test@example.com","startTime":"2026-11-01T17:00:00Z"}'
 ```
@@ -67,10 +67,11 @@ curl -X POST "http://localhost:3000/api/inbound/youcanbookme?key=$INBOUND_WEBHOO
 # Website form → New Lead
 
 ```
-POST https://<your-domain>/api/inbound/form?key=<INBOUND_WEBHOOK_SECRET>
+POST https://<your-domain>/api/inbound/form
+x-webhook-secret: <FORM_WEBHOOK_SECRET>
 ```
 
-Accepts JSON or a normal HTML form post. Recognized fields: `name` (or `firstName`/`lastName`),
+The website form uses Gravity Forms, so post from the website **server** with the Gravity Forms Webhooks add-on, adding the secret as a request header. Never put the secret in browser-side code. Accepts JSON or a normal form post. Recognized fields: `name` (or `firstName`/`lastName`),
 `email`, `phone`, `address`, `city`, `postalCode`, `service`/`projectType`, `message`, `source`.
 An email or a phone number is required. Add a hidden empty field named `website_url` as a spam
 honeypot: submissions that fill it in are silently dropped.

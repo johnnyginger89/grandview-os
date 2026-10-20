@@ -61,9 +61,20 @@ Status key: ✅ done and tested · 🟡 partly done · ⬜ not started
 - ⬜ Automations (follow-up reminders, tasks) · ⬜ purchasing · ⬜ project messaging and photos
 - ⬜ Imports: monday.com Deals/Contacts, PaintScout rates and customers (API or CSV), QBO customers – with preview, dedupe and rollback
 
-### Phase 7–9 – hardening, deployment, documentation
-- ⬜ Postgres row-level security as a second layer · ⬜ backup and restore drill · ⬜ monitoring (Sentry)
-- ⬜ Production deployment (needs owner approval and accounts) · ⬜ user guides
+### Deployment readiness (owner approved Vercel Pro + Supabase, Oct 2026)
+- ✅ vercel.json: Montréal region (yul1), only `main` deploys, build runs migrations + baseline seed (production builds only)
+- ✅ Supabase session-pooler connection with SSL, small serverless pool
+- ✅ Data API lock-down migration (RLS on every table, anon/authenticated revoked)
+- ✅ First-run owner setup at /setup (setup token, race-safe, audited) + `pnpm create-owner` CLI
+- ✅ Production config check at startup; MFA cannot be disabled on the live site; dev logins blocked and refused on non-local databases
+- ✅ Health check `/api/health`; safe error messages (no database errors shown to users)
+- ✅ Vancouver time-zone handling for visit times on UTC servers
+- ✅ Per-source webhook secrets (YouCanBook.me, website form), header or ?key=
+- ✅ Owner guide: docs/DEPLOYMENT.md
+- ⬜ Owner creates accounts and first deploy · ⬜ Resend email domain · ⬜ Supabase Pro before real data
+
+### Phase 7–9 – hardening, documentation
+- ⬜ Backup and restore drill · ⬜ monitoring (Sentry) · ⬜ force password change for temporary passwords · ⬜ user guides
 
 ## Known gaps and technical debt
 - The production rates and material prices that have been seeded are starter values. They need to be replaced with Grandview's real numbers.

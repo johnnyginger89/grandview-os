@@ -20,6 +20,7 @@ import { getRateSnapshot } from "./rates";
 import { getPricing } from "./settings";
 
 export class EstimateLockedError extends Error {
+  readonly expose = true;
   constructor() {
     super("This estimate has been accepted and is locked. Create a change order or a new revision instead.");
   }

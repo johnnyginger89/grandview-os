@@ -20,6 +20,10 @@ export interface EmailResult {
 
 export async function sendEmail(msg: EmailMessage): Promise<EmailResult> {
   const key = process.env.RESEND_API_KEY;
+  if (!key && process.env.VERCEL_ENV === "production") {
+    // Never write message bodies (which can contain reset links) to production logs.
+    return { status: "failed", provider: "none", error: "Email delivery is not configured (RESEND_API_KEY missing)" };
+  }
   if (!key) {
     console.info(`[email:dev] to=${msg.to} subject=${JSON.stringify(msg.subject)}\n${msg.text}`);
     return { status: "logged", provider: "dev-log" };
