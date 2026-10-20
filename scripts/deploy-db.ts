@@ -4,10 +4,10 @@
  * the production database.
  */
 import "dotenv/config";
-import { drizzle } from "drizzle-orm/postgres-js";
-import { migrate } from "drizzle-orm/postgres-js/migrator";
-import postgres from "postgres";
-import { connectionOptions } from "../src/db/connection";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { migrate } from "drizzle-orm/node-postgres/migrator";
+import { Pool } from "pg";
+import { databaseUrl, poolConfig } from "../src/db/connection";
 
 async function main() {
   const onVercel = !!process.env.VERCEL;
@@ -15,16 +15,16 @@ async function main() {
     console.log(`[deploy-db] ${process.env.VERCEL_ENV} build: skipping migrations.`);
     return;
   }
-  const url = process.env.DATABASE_URL;
-  if (!url) throw new Error("[deploy-db] DATABASE_URL is not set for this build.");
+  if (!process.env.DATABASE_URL) throw new Error("[deploy-db] DATABASE_URL is not set for this build.");
+  const url = databaseUrl();
   const host = new URL(url).hostname;
   console.log(`[deploy-db] migrating database on ${host}`);
-  const client = postgres(url, { ...connectionOptions(url, { max: 1 }), onnotice: () => {} });
+  const pool = new Pool(poolConfig(url, { max: 1 }));
   try {
-    await migrate(drizzle(client), { migrationsFolder: "drizzle" });
+    await migrate(drizzle(pool), { migrationsFolder: "drizzle" });
     console.log("[deploy-db] migrations applied");
   } finally {
-    await client.end({ timeout: 5 });
+    await pool.end();
   }
   const { seedBaseline } = await import("../src/db/seed");
   await seedBaseline();

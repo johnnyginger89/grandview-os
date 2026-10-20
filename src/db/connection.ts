@@ -8,26 +8,37 @@ export function isLocalDatabase(url: string): boolean {
   }
 }
 
-export function databaseUrl(): string {
+/**
+ * The database URL to use. Supabase pooler URLs are moved to transaction mode
+ * (port 6543): serverless instances are frozen without closing sockets, and in
+ * session mode (5432) each frozen socket keeps a pooler slot until the small
+ * free-tier pool is exhausted. Transaction mode only holds a slot per query.
+ * sslmode is stripped because SSL is configured explicitly below.
+ */
+export function databaseUrl(raw = process.env.DATABASE_URL): string {
   // A placeholder keeps `next build` working without credentials; the
   // instrumentation hook refuses to start production without a real URL.
-  return process.env.DATABASE_URL ?? "postgres://unset@localhost:5432/unset";
+  if (!raw) return "postgres://unset@localhost:5432/unset";
+  try {
+    const u = new URL(raw);
+    if (u.hostname.endsWith(".pooler.supabase.com") && u.port === "5432") u.port = "6543";
+    u.searchParams.delete("sslmode");
+    return u.toString();
+  } catch {
+    return raw;
+  }
 }
 
-/**
- * postgres.js options for Supabase's Supavisor session pooler (port 5432),
- * which Vercel can reach over IPv4. Session mode supports prepared statements
- * and pipelining safely; prepare stays off so switching to the transaction
- * pooler later is still safe.
- */
-export function connectionOptions(url: string, overrides: { max?: number } = {}) {
+/** node-postgres pool options. */
+export function poolConfig(url: string, overrides: { max?: number } = {}) {
   const local = isLocalDatabase(url);
   return {
-    max: overrides.max ?? Number(process.env.DB_POOL_MAX ?? (local ? 10 : 3)),
-    prepare: false,
-    ssl: local ? (false as const) : ("require" as const),
-    idle_timeout: local ? undefined : 5,
-    connect_timeout: 10,
-    max_lifetime: 60 * 30,
+    connectionString: url,
+    max: overrides.max ?? Number(process.env.DB_POOL_MAX ?? (local ? 10 : 5)),
+    // Encrypted; Supabase's certificate is signed by its own CA, so it isn't verified here.
+    ssl: local ? false : { rejectUnauthorized: false },
+    idleTimeoutMillis: local ? 30_000 : 5_000,
+    connectionTimeoutMillis: 10_000,
+    maxLifetimeSeconds: 60 * 30,
   };
 }
