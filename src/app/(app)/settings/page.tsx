@@ -5,15 +5,16 @@ import { db } from "@/db";
 import { messageTemplates } from "@/db/schema";
 import { requirePermission } from "@/lib/authz/guard";
 import { can } from "@/lib/authz/permissions";
-import { getCompany, getList, getPricing } from "@/server/settings";
+import { getCompany, getList, getPricing, getProposalSettings } from "@/server/settings";
 import { listUsers } from "@/server/users";
-import { CompanyForm, IntegrationsInfo, ListsForm, PricingForm, TemplatesForm, UsersPanel } from "./settings-client";
+import { CompanyForm, IntegrationsInfo, ListsForm, PricingForm, ProposalSettingsForm, TemplatesForm, UsersPanel } from "./settings-client";
 
 export const metadata = { title: "Settings" };
 
 const TABS = [
   { key: "company", label: "Company" },
   { key: "pricing", label: "Pricing defaults" },
+  { key: "proposals", label: "Proposals" },
   { key: "lists", label: "Pick lists" },
   { key: "templates", label: "Email templates" },
   { key: "users", label: "Users" },
@@ -34,6 +35,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       </nav>
       {tab === "company" && <CompanyForm company={await getCompany()} />}
       {tab === "pricing" && <PricingForm pricing={await getPricing()} />}
+      {tab === "proposals" && <ProposalSettingsForm settings={await getProposalSettings()} />}
       {tab === "lists" && <ListsForm lists={{ lead_sources: await getList("lead_sources"), lost_reasons: await getList("lost_reasons"), project_types: await getList("project_types") }} />}
       {tab === "templates" && <TemplatesForm templates={(await db.query.messageTemplates.findMany({ orderBy: asc(messageTemplates.name) })).map((t) => ({ id: t.id, name: t.name, subject: t.subject ?? "", body: t.body }))} />}
       {tab === "users" && can(me.role, "users.manage") && (

@@ -208,3 +208,24 @@ Thanks,
 Grandview Painting Ltd.`,
   },
 ];
+
+/**
+ * Proposal wording. STARTING TEXT ONLY: written as a reasonable default for a
+ * BC painting contractor; the owner should review it in Settings → Proposals.
+ */
+export const DEFAULT_PROPOSAL = {
+  intro:
+    "Thank you for the opportunity to quote your project. This proposal outlines the work we'll do, the products we'll use and the investment. Please review it, choose any optional upgrades, and sign below to book your project.",
+  preparation:
+    "All areas will be protected with drop sheets and masking. Surfaces will be cleaned and prepared as described for each area: filling minor holes and cracks, sanding, spot priming and caulking where needed. Furniture moving is limited to items that can be safely moved by two people.",
+  inclusions: "All labour, paint and sundries for the areas listed\nDaily clean-up and final clean-up\nFinal walk-through with you before we finish",
+  exclusions:
+    "Repairs beyond normal preparation unless listed (e.g. wood rot, major drywall damage)\nMoving or disposing of heavy furniture, appliances or contents\nLead or asbestos testing and abatement\nPermits, unless listed\nAny work not described in this proposal",
+  warranty:
+    "Grandview Painting warrants its workmanship against peeling, blistering and flaking for 2 years from completion. The warranty excludes damage, normal wear, moisture or structural issues, and surfaces we did not prepare.",
+  paymentTerms:
+    "A deposit is due to book your start date. The balance is due on completion. We accept e-transfer, cheque and credit card. GST is shown separately.",
+  terms:
+    "This proposal is valid until the date shown. Colours and sheens are confirmed with you before work begins. Changes to the scope after acceptance are handled by written change order. Start dates depend on weather for exterior work.",
+  showAreaPrices: false,
+};

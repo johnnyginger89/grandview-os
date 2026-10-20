@@ -7,7 +7,7 @@ import { db } from "@/db";
 import { messageTemplates } from "@/db/schema";
 import { assertPermission } from "@/lib/authz/guard";
 import { audit } from "@/server/audit";
-import { getCompany, getPricing, setSetting } from "@/server/settings";
+import { getCompany, getPricing, getProposalSettings, setSetting } from "@/server/settings";
 import { createUserAccount, updateUserAccess } from "@/server/users";
 
 type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string };
@@ -102,6 +102,30 @@ export async function updateUserAction(userId: string, patch: { role?: string; a
   try {
     const me = await assertPermission("users.manage");
     await updateUserAccess(userId, patch, me.id, me.role);
+    revalidatePath("/settings");
+    return { ok: true };
+  } catch (e) {
+    return err(e);
+  }
+}
+
+export async function saveProposalSettingsAction(_: unknown, f: FormData): Promise<Result> {
+  try {
+    const user = await assertPermission("settings.manage");
+    const text = (k: string, max = 5000) => z.string().trim().max(max).parse(String(f.get(k) ?? ""));
+    const v = {
+      intro: text("intro"),
+      preparation: text("preparation"),
+      inclusions: text("inclusions"),
+      exclusions: text("exclusions"),
+      warranty: text("warranty"),
+      paymentTerms: text("paymentTerms"),
+      terms: text("terms", 10000),
+      showAreaPrices: f.get("showAreaPrices") === "on",
+    };
+    const before = await getProposalSettings();
+    await setSetting("proposal", v, user.id);
+    await audit({ actorId: user.id, action: "settings.proposal", entityType: "settings", entityId: "proposal", before, after: v });
     revalidatePath("/settings");
     return { ok: true };
   } catch (e) {

@@ -48,8 +48,9 @@ Status key: ✅ done and tested · 🟡 partly done · ⬜ not started
 - ✅ Settings: company, booking link, pricing defaults, pick lists, email templates, user management
 
 ### Phase 5 – core operations (next)
-- ⬜ Customer proposal: branded web page and PDF, scope, exclusions, warranty, terms, optional upgrades, e-signature with audit trail, expiry
-- ⬜ Acceptance → project automatically (inherits scope, hours, materials, budget)
+- ✅ Customer proposal: branded web page (print/save as PDF), scope by area, products & colours, optional upgrades with live totals, preparation/included/excluded/warranty/payment/terms (editable in Settings → Proposals), drawn + typed e-signature with IP, timestamp and document fingerprint, decline, expiry, withdraw, view tracking
+- ✅ Acceptance → estimate locked to exactly what was signed, project created automatically, lead moved to Won
+- 🟡 Projects: list and detail pages (contract, deposit, signed copy); scheduling, work orders and invoicing next
 - ⬜ Projects: phases, tasks/checklists, buildings/units for strata, readiness checks (paint ordered, colour consult, deposit, pressure washing)
 - ⬜ Scheduling board: crews and subs on a timeline, drag-and-drop, capacity-based duration, conflicts
 - ⬜ Work orders: generated from project, secure expiring share links, PDF, versioning, no pricing
@@ -85,6 +86,7 @@ Status key: ✅ done and tested · 🟡 partly done · ⬜ not started
 - The `organizations` table exists, but there's no screen for strata management companies yet.
 
 ## Open questions for the owner
+0. Email and texting via Bird (account exists): approve domain setup and a 604 number (US$0.95/month, billed yearly), or use the existing business number?
 1. What are your burdened labour cost per hour, your billing rate, and your target margin?
 2. How do you set subcontractor pay for a job? Is it estimated hours × an agreed rate, or a negotiated price?
 3. Do you approve hosting at roughly US$50–125/month, and which domain should it use?

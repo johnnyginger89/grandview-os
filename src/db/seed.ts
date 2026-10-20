@@ -14,6 +14,7 @@ import * as s from "./schema";
 import {
   DEFAULT_COMPANY,
   DEFAULT_PRICING,
+  DEFAULT_PROPOSAL,
   FACTORS,
   LEAD_SOURCES,
   LOST_REASONS,
@@ -29,6 +30,7 @@ async function seedSettings() {
   const entries: [string, unknown][] = [
     ["pricing", DEFAULT_PRICING],
     ["company", DEFAULT_COMPANY],
+    ["proposal", DEFAULT_PROPOSAL],
     ["lead_sources", LEAD_SOURCES],
     ["lost_reasons", LOST_REASONS],
     ["project_types", PROJECT_TYPES],

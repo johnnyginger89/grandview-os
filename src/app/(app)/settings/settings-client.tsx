@@ -4,7 +4,7 @@ import { useActionState, useState, useTransition } from "react";
 import { Badge, Button, Card, CardHeader, Field, FormError, Input, Select, Table, Textarea, td, th } from "@/components/ui";
 import { ROLES } from "@/db/schema/auth";
 import { ROLE_LABELS } from "@/lib/authz/permissions";
-import { createUserAction, saveCompanyAction, saveListAction, savePricingAction, saveTemplateAction, updateUserAction } from "./actions";
+import { createUserAction, saveCompanyAction, saveListAction, savePricingAction, saveProposalSettingsAction, saveTemplateAction, updateUserAction } from "./actions";
 
 function Saved({ state }: { state: { ok: boolean; error?: string } | null }) {
   if (!state) return null;
@@ -188,5 +188,30 @@ export function IntegrationsInfo({ appUrl }: { appUrl: string }) {
         <p className="p-4 text-muted">Outgoing email is sent through Resend from your domain once <code>RESEND_API_KEY</code> is configured. Until then, messages are logged on the lead timeline but not delivered.</p>
       </Card>
     </div>
+  );
+}
+
+export function ProposalSettingsForm({ settings }: { settings: Record<string, string | boolean> }) {
+  const [state, action, pending] = useActionState(saveProposalSettingsAction, null);
+  const fields: [string, string, string, number][] = [
+    ["intro", "Introduction", "Shown at the top of every proposal.", 3],
+    ["preparation", "Preparation", "How you protect and prepare surfaces.", 4],
+    ["inclusions", "Included", "One item per line.", 4],
+    ["exclusions", "Not included", "One item per line.", 5],
+    ["warranty", "Warranty", "", 3],
+    ["paymentTerms", "Payment terms", "The deposit percentage comes from Pricing defaults.", 3],
+    ["terms", "Terms & conditions", "", 5],
+  ];
+  return (
+    <form onSubmit={submitWith(action)} className="max-w-3xl">
+      <Card className="space-y-4 p-4">
+        <p className="rounded-md bg-warning-soft px-3 py-2 text-sm text-warning">This is starting text. Review the warranty, payment terms and conditions before sending proposals to customers.</p>
+        {fields.map(([k, label, hint, rows]) => (
+          <Field key={k} label={label} hint={hint || undefined}><Textarea name={k} rows={rows} defaultValue={String(settings[k] ?? "")} /></Field>
+        ))}
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="showAreaPrices" defaultChecked={!!settings.showAreaPrices} /> Show a price for each room/area (otherwise only the total)</label>
+        <div className="flex items-center gap-3"><Button type="submit" disabled={pending}>Save</Button><Saved state={state} /></div>
+      </Card>
+    </form>
   );
 }

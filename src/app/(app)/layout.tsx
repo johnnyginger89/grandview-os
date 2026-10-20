@@ -8,6 +8,7 @@ const NAV: (NavItem & { permission: Permission })[] = [
   { href: "/leads", label: "Leads & Pipeline", icon: "Workflow", permission: "pipeline.read" },
   { href: "/customers", label: "Customers", icon: "Users", permission: "customers.read" },
   { href: "/estimates", label: "Estimates", icon: "Calculator", permission: "estimates.read" },
+  { href: "/projects", label: "Projects", icon: "FolderKanban", permission: "projects.read_all" },
   { href: "/rates", label: "Rate Library", icon: "BookOpen", permission: "rates.read" },
   { href: "/settings", label: "Settings", icon: "Settings", permission: "settings.manage" },
 ];

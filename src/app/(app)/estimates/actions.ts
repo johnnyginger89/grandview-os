@@ -15,6 +15,7 @@ import {
   setEstimateStatus,
   templateToDocParts,
 } from "@/server/estimates";
+import { sendProposal, withdrawProposal } from "@/server/proposals";
 
 type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string };
 const uuid = z.string().uuid();
@@ -113,4 +114,26 @@ export async function saveTemplateAction(id: string, name: string): Promise<Resu
 export async function templatePartsAction(templateId: string) {
   await assertPermission("estimates.write");
   return templateToDocParts(uuid.parse(templateId));
+}
+
+export async function sendProposalAction(id: string, input: { to: string; message: string; email: boolean }): Promise<Result<{ link: string; emailStatus: string; emailError?: string }>> {
+  try {
+    const user = await assertPermission("estimates.write");
+    const r = await sendProposal(uuid.parse(id), input, user);
+    revalidatePath(`/estimates/${id}`);
+    return { ok: true, link: r.link, emailStatus: r.emailStatus, emailError: r.emailError };
+  } catch (e) {
+    return err(e);
+  }
+}
+
+export async function withdrawProposalAction(estimateId: string, proposalId: string): Promise<Result> {
+  try {
+    const user = await assertPermission("estimates.write");
+    await withdrawProposal(uuid.parse(proposalId), user.id);
+    revalidatePath(`/estimates/${estimateId}`);
+    return { ok: true };
+  } catch (e) {
+    return err(e);
+  }
 }

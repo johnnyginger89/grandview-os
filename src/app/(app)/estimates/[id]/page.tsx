@@ -1,12 +1,14 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/db";
-import { customers, properties } from "@/db/schema";
+import { contacts, customers, projects, properties } from "@/db/schema";
 import { requirePermission } from "@/lib/authz/guard";
 import { can } from "@/lib/authz/permissions";
 import { formatAddress } from "@/lib/utils";
 import { listRevisions, listTemplates, loadEstimate } from "@/server/estimates";
+import { listProposals, proposalUrl } from "@/server/proposals";
+import { ProposalsPanel } from "./proposals-panel";
 import { listFactors, listRates, toSnapshot } from "@/server/rates";
 import { getPricing } from "@/server/settings";
 import { EstimateEditor } from "./editor";
@@ -23,7 +25,7 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
   if (!loaded) notFound();
   const { estimate, doc } = loaded;
 
-  const [customer, property, rates, factors, templates, revisions, pricing] = await Promise.all([
+  const [customer, property, rates, factors, templates, revisions, pricing, proposalRows, contact, project] = await Promise.all([
     db.query.customers.findFirst({ where: eq(customers.id, estimate.customerId) }),
     estimate.propertyId ? db.query.properties.findFirst({ where: eq(properties.id, estimate.propertyId) }) : null,
     listRates(),
@@ -31,6 +33,9 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
     listTemplates(),
     listRevisions(id),
     getPricing(),
+    listProposals(id),
+    db.query.contacts.findFirst({ where: and(eq(contacts.customerId, estimate.customerId), eq(contacts.isPrimary, true)) }),
+    db.query.projects.findFirst({ where: eq(projects.estimateId, id), columns: { id: true, number: true } }),
   ]);
 
   return (
@@ -60,6 +65,23 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
         canEdit={can(user.role, "estimates.write") && estimate.status !== "accepted"}
         showCosting={can(user.role, "estimates.costing")}
       />
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <ProposalsPanel
+          estimateId={id}
+          canSend={can(user.role, "estimates.write") && estimate.status !== "accepted"}
+          defaultEmail={contact?.email ?? customer?.email ?? ""}
+          rows={proposalRows.map((p) => ({
+            id: p.id, revision: p.revision, status: p.status, link: proposalUrl(p.token), sentTo: p.sentTo, sentAt: p.sentAt.toISOString(),
+            firstViewedAt: p.firstViewedAt?.toISOString() ?? null, viewCount: p.viewCount, acceptedAt: p.acceptedAt?.toISOString() ?? null,
+            acceptedName: p.acceptedName, declineReason: p.declineReason,
+          }))}
+        />
+        {project && (
+          <Link href={`/projects/${project.id}`} className="self-start rounded-lg border border-success/30 bg-success-soft p-4 text-sm text-success hover:underline">
+            Accepted – project #{project.number} was created automatically. Open project →
+          </Link>
+        )}
+      </div>
     </>
   );
 }
