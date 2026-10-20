@@ -1,4 +1,5 @@
 "use client";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
@@ -38,7 +39,7 @@ export function Sidebar({ items, userName, roleLabel }: { items: NavItem[]; user
             aria-current={active ? "page" : undefined}
             className={cn(
               "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-              active ? "bg-sidebar-active text-white" : "text-sidebar-text hover:bg-sidebar-active/60 hover:text-white",
+              active ? "bg-sidebar-active text-white shadow-[inset_3px_0_0_var(--accent)]" : "text-sidebar-text hover:bg-sidebar-active/60 hover:text-white",
             )}
           >
             <Icon className="size-4 shrink-0" aria-hidden />
@@ -69,9 +70,9 @@ export function Sidebar({ items, userName, roleLabel }: { items: NavItem[]; user
   );
 
   const brand = (
-    <div className="flex h-14 items-center gap-2 px-5">
-      <span className="grid size-7 place-items-center rounded-md bg-brand text-xs font-bold text-white">G</span>
-      <span className="text-sm font-semibold tracking-tight text-white">Grandview OS</span>
+    <div className="flex h-14 items-center gap-2.5 px-4">
+      <Image src="/brand/symbol-white.png" alt="Grandview Painting" width={32} height={32} priority />
+      <span className="font-[family-name:var(--font-display)] text-base font-bold uppercase tracking-wide text-white">Grandview <span className="text-accent">OS</span></span>
     </div>
   );
 
@@ -87,7 +88,10 @@ export function Sidebar({ items, userName, roleLabel }: { items: NavItem[]; user
         <button type="button" onClick={() => setOpen(true)} className="-ml-2 rounded-md p-2 text-muted" aria-label="Open menu">
           <Menu className="size-5" />
         </button>
-        <span className="text-sm font-semibold">Grandview OS</span>
+        <span className="flex items-center gap-2">
+          <Image src="/brand/symbol-blue.png" alt="Grandview Painting" width={26} height={26} priority />
+          <span className="font-[family-name:var(--font-display)] text-base font-bold uppercase tracking-wide text-brand">Grandview OS</span>
+        </span>
         <span className="w-9" />
       </header>
 

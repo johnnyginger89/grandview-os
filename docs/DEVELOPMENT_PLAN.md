@@ -15,6 +15,7 @@ Status key: ✅ done and tested · 🟡 partly done · ⬜ not started
 | Markate | Replace | Its scheduling, invoicing and field functions move into Grandview OS |
 | monday.com | Replace for CRM and job scheduling | Current boards analysed (see below) and their workflows mapped into the pipeline and project stages |
 | Default pricing | Billing-rate × hours + marked-up materials (PaintScout style), with true costs tracked separately | Matches how rates are built today, while still showing real margin |
+| Branding | Website palette (logo blue #100599, navy #103362, teal #009ABB), official logo, Roboto/Roboto Condensed (same as the website) | Not a rebrand: the app should look like Grandview's website. Source: Elementor global colours on grandviewpainting.ca |
 | Customer messages | Human-initiated only (button + preview) | Brief requires human approval for customer communication |
 
 ## What we learned from the current setup (Oct 2026)

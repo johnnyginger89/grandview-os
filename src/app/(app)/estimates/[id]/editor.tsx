@@ -644,7 +644,7 @@ export function EstimateEditor({
       {toast && (
         <div className="fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-lg bg-sidebar px-4 py-2.5 text-sm text-white shadow-lg" role="status">
           {toast}
-          {undoStack.length > 0 && <button type="button" className="font-semibold text-emerald-300 hover:underline" onClick={undo}>Undo</button>}
+          {undoStack.length > 0 && <button type="button" className="font-semibold text-accent hover:underline" onClick={undo}>Undo</button>}
         </div>
       )}
     </div>
