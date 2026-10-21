@@ -17,6 +17,7 @@ Status key: ✅ done and tested · 🟡 partly done · ⬜ not started
 | Default pricing | Billing-rate × hours + marked-up materials (PaintScout style), with true costs tracked separately | Matches how rates are built today, while still showing real margin |
 | Branding | Website palette (logo blue #100599, navy #103362, teal #009ABB), official logo, Roboto/Roboto Condensed (same as the website) | Not a rebrand: the app should look like Grandview's website. Source: Elementor global colours on grandviewpainting.ca |
 | Customer messages | Human-initiated only (button + preview) | Brief requires human approval for customer communication |
+| File storage (proposal pictures, insurance documents) | Postgres `media` table (`bytea`), served from our own origin (`/api/media/<id>`, `/share/p/<token>/documents/<purpose>`) | Small, owner-managed files; no extra vendor, CSP stays `img-src 'self'`. Uploads go in 3 MiB chunks through server actions because Vercel caps a request body at 4.5 MB (documents may be 10 MB). Images are re-encoded with sharp (metadata stripped); SVG is never accepted |
 
 ## What we learned from the current setup (Oct 2026)
 
@@ -50,6 +51,9 @@ Status key: ✅ done and tested · 🟡 partly done · ⬜ not started
 ### Phase 5 – core operations (next)
 - ✅ Customer proposal: branded web page (print/save as PDF), scope by area, products & colours, optional upgrades with live totals, preparation/included/excluded/warranty/payment/terms (editable in Settings → Proposals), drawn + typed e-signature with IP, timestamp and document fingerprint, decline, expiry, withdraw, view tracking
 - ✅ Acceptance → estimate locked to exactly what was signed, project created automatically, lead moved to Won
+- ✅ Proposal presentation matching the owner's Markate proposal: cover per job type, About, Why us, Reviews, Portfolio (lightbox), Insurance & FAQ, the estimate document (FROM/TO, numbered service lines, upgrades, totals), full terms and warranty, Next step with signing; sticky section menu, phone layout with a sticky "Review & sign" bar, print/PDF of estimate + terms
+- ✅ Settings → Proposals editor: every picture and all wording editable without code, per-job-type covers/photos/warranty with inheritance, picture uploads and library, insurance documents with expiry (dashboard reminder 30 days ahead, hidden from customers once expired, proposals already sent always link the newest), sample preview per job type
+- ✅ Estimate editor: job type, PO number, custom preparation and exclusions per job, customer descriptions for areas, lines and cost items, "Preview proposal" (draft, not sent)
 - 🟡 Projects: list and detail pages (contract, deposit, signed copy); scheduling, work orders and invoicing next
 - ⬜ Projects: phases, tasks/checklists, buildings/units for strata, readiness checks (paint ordered, colour consult, deposit, pressure washing)
 - ⬜ Scheduling board: crews and subs on a timeline, drag-and-drop, capacity-based duration, conflicts
@@ -82,10 +86,11 @@ Status key: ✅ done and tested · 🟡 partly done · ⬜ not started
 - Email delivery is only logged until `RESEND_API_KEY` and the domain's DNS (SPF/DKIM) are set up.
 - Choosing a customer when starting a new estimate uses a plain dropdown; it should become a search box once there are thousands of customers.
 - PaintScout stores a separate rate for each number of coats. Our model is a first-coat rate plus an extra-coat factor, so the import step will need to convert between them.
-- There's no file upload or photo storage yet (needs an object store; Phase 5).
+- File storage exists for proposal pictures and insurance documents (Postgres `media`). Per-estimate site photos still need their own storage (planned; an object store if volume grows).
 - The `organizations` table exists, but there's no screen for strata management companies yet.
 
 ## Open questions for the owner
+0a. Proposal wording: the "3 Year Warranty" tile vs the 24-month interior / 36-month exterior warranty clause, and whether some portfolio photos and the six icons are yours to use (see public/proposal/README.md).
 0. Email and texting via Bird (account exists): approve domain setup and a 604 number (US$0.95/month, billed yearly), or use the existing business number?
 1. What are your burdened labour cost per hour, your billing rate, and your target margin?
 2. How do you set subcontractor pay for a job? Is it estimated hours × an agreed rate, or a negotiated price?

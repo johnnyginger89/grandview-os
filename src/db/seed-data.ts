@@ -109,32 +109,34 @@ export interface SeedRate {
   defaultCoats: number;
   material?: MaterialKey;
   otherCostPerUnit?: string;
+  /** How the proposal groups this rate ("Paint Walls", "Paint Exterior Trim"). None = not a paint line. */
+  proposalGroup?: string;
 }
 
 export const RATES: SeedRate[] = [
   // Interior
-  { code: "INT-WALL", name: "Walls – roll & cut", category: "Interior", unit: "sqft", dimensionSource: "walls", productionRate: "175", additionalCoatFactor: "0.85", defaultCoats: 2, material: "sw-duration-int", otherCostPerUnit: "0.03" },
-  { code: "INT-CEIL", name: "Ceilings – roll & cut", category: "Interior", unit: "sqft", dimensionSource: "ceiling", productionRate: "140", additionalCoatFactor: "0.85", defaultCoats: 2, material: "bm-ceiling", otherCostPerUnit: "0.03" },
-  { code: "INT-BASE", name: "Baseboards", category: "Interior", unit: "lnft", dimensionSource: "perimeter", productionRate: "50", additionalCoatFactor: "0.85", defaultCoats: 2, material: "sw-emerald-urethane" },
-  { code: "INT-CROWN", name: "Crown moulding", category: "Interior", unit: "lnft", productionRate: "30", additionalCoatFactor: "0.85", defaultCoats: 2, material: "sw-emerald-urethane" },
-  { code: "INT-DCAS", name: "Door casing (per side)", category: "Interior", unit: "each", basis: "hours_per_unit", productionRate: "0.35", additionalCoatFactor: "0.8", defaultCoats: 2, material: "sw-emerald-urethane" },
-  { code: "INT-DOOR", name: "Door slab (per side)", category: "Interior", unit: "each", basis: "hours_per_unit", productionRate: "0.5", additionalCoatFactor: "0.8", defaultCoats: 2, material: "sw-emerald-urethane" },
-  { code: "INT-JAMB", name: "Door frame / jamb", category: "Interior", unit: "each", basis: "hours_per_unit", productionRate: "0.35", additionalCoatFactor: "0.8", defaultCoats: 2, material: "sw-emerald-urethane" },
-  { code: "INT-WCAS", name: "Window casing & sill", category: "Interior", unit: "each", basis: "hours_per_unit", productionRate: "0.5", additionalCoatFactor: "0.8", defaultCoats: 2, material: "sw-emerald-urethane" },
-  { code: "INT-RAIL", name: "Handrail / spindles", category: "Interior", unit: "lnft", productionRate: "8", additionalCoatFactor: "0.85", defaultCoats: 2, material: "sw-emerald-urethane" },
+  { code: "INT-WALL", name: "Walls – roll & cut", category: "Interior", unit: "sqft", dimensionSource: "walls", productionRate: "175", additionalCoatFactor: "0.85", defaultCoats: 2, material: "sw-duration-int", otherCostPerUnit: "0.03", proposalGroup: "Walls" },
+  { code: "INT-CEIL", name: "Ceilings – roll & cut", category: "Interior", unit: "sqft", dimensionSource: "ceiling", productionRate: "140", additionalCoatFactor: "0.85", defaultCoats: 2, material: "bm-ceiling", otherCostPerUnit: "0.03", proposalGroup: "Ceilings" },
+  { code: "INT-BASE", name: "Baseboards", category: "Interior", unit: "lnft", dimensionSource: "perimeter", productionRate: "50", additionalCoatFactor: "0.85", defaultCoats: 2, material: "sw-emerald-urethane", proposalGroup: "Trim" },
+  { code: "INT-CROWN", name: "Crown moulding", category: "Interior", unit: "lnft", productionRate: "30", additionalCoatFactor: "0.85", defaultCoats: 2, material: "sw-emerald-urethane", proposalGroup: "Trim" },
+  { code: "INT-DCAS", name: "Door casing (per side)", category: "Interior", unit: "each", basis: "hours_per_unit", productionRate: "0.35", additionalCoatFactor: "0.8", defaultCoats: 2, material: "sw-emerald-urethane", proposalGroup: "Trim" },
+  { code: "INT-DOOR", name: "Door slab (per side)", category: "Interior", unit: "each", basis: "hours_per_unit", productionRate: "0.5", additionalCoatFactor: "0.8", defaultCoats: 2, material: "sw-emerald-urethane", proposalGroup: "Doors" },
+  { code: "INT-JAMB", name: "Door frame / jamb", category: "Interior", unit: "each", basis: "hours_per_unit", productionRate: "0.35", additionalCoatFactor: "0.8", defaultCoats: 2, material: "sw-emerald-urethane", proposalGroup: "Trim" },
+  { code: "INT-WCAS", name: "Window casing & sill", category: "Interior", unit: "each", basis: "hours_per_unit", productionRate: "0.5", additionalCoatFactor: "0.8", defaultCoats: 2, material: "sw-emerald-urethane", proposalGroup: "Trim" },
+  { code: "INT-RAIL", name: "Handrail / spindles", category: "Interior", unit: "lnft", productionRate: "8", additionalCoatFactor: "0.85", defaultCoats: 2, material: "sw-emerald-urethane", proposalGroup: "Trim" },
   // Exterior
-  { code: "EXT-SIDING", name: "Siding – brush & roll", category: "Exterior", unit: "sqft", productionRate: "120", additionalCoatFactor: "0.85", defaultCoats: 2, material: "sw-superpaint-ext", otherCostPerUnit: "0.04" },
-  { code: "EXT-SIDING-SPRAY", name: "Siding – spray & back-roll", category: "Exterior", unit: "sqft", productionRate: "220", additionalCoatFactor: "0.85", defaultCoats: 2, material: "sw-superpaint-ext", otherCostPerUnit: "0.06" },
-  { code: "EXT-FASCIA", name: "Fascia", category: "Exterior", unit: "lnft", productionRate: "40", additionalCoatFactor: "0.85", defaultCoats: 2, material: "sw-superpaint-ext" },
-  { code: "EXT-SOFFIT", name: "Soffits", category: "Exterior", unit: "sqft", productionRate: "80", additionalCoatFactor: "0.85", defaultCoats: 2, material: "sw-superpaint-ext" },
-  { code: "EXT-TRIM", name: "Exterior trim", category: "Exterior", unit: "lnft", productionRate: "35", additionalCoatFactor: "0.85", defaultCoats: 2, material: "sw-superpaint-ext" },
-  { code: "EXT-DOOR", name: "Exterior door (per side)", category: "Exterior", unit: "each", basis: "hours_per_unit", productionRate: "0.75", additionalCoatFactor: "0.8", defaultCoats: 2, material: "bm-aura-ext" },
-  { code: "EXT-GARAGE", name: "Garage door", category: "Exterior", unit: "each", basis: "hours_per_unit", productionRate: "1.5", additionalCoatFactor: "0.8", defaultCoats: 2, material: "sw-superpaint-ext" },
+  { code: "EXT-SIDING", name: "Siding – brush & roll", category: "Exterior", unit: "sqft", productionRate: "120", additionalCoatFactor: "0.85", defaultCoats: 2, material: "sw-superpaint-ext", otherCostPerUnit: "0.04", proposalGroup: "Siding" },
+  { code: "EXT-SIDING-SPRAY", name: "Siding – spray & back-roll", category: "Exterior", unit: "sqft", productionRate: "220", additionalCoatFactor: "0.85", defaultCoats: 2, material: "sw-superpaint-ext", otherCostPerUnit: "0.06", proposalGroup: "Siding" },
+  { code: "EXT-FASCIA", name: "Fascia", category: "Exterior", unit: "lnft", productionRate: "40", additionalCoatFactor: "0.85", defaultCoats: 2, material: "sw-superpaint-ext", proposalGroup: "Exterior Trim" },
+  { code: "EXT-SOFFIT", name: "Soffits", category: "Exterior", unit: "sqft", productionRate: "80", additionalCoatFactor: "0.85", defaultCoats: 2, material: "sw-superpaint-ext", proposalGroup: "Exterior Trim" },
+  { code: "EXT-TRIM", name: "Exterior trim", category: "Exterior", unit: "lnft", productionRate: "35", additionalCoatFactor: "0.85", defaultCoats: 2, material: "sw-superpaint-ext", proposalGroup: "Exterior Trim" },
+  { code: "EXT-DOOR", name: "Exterior door (per side)", category: "Exterior", unit: "each", basis: "hours_per_unit", productionRate: "0.75", additionalCoatFactor: "0.8", defaultCoats: 2, material: "bm-aura-ext", proposalGroup: "Exterior Doors" },
+  { code: "EXT-GARAGE", name: "Garage door", category: "Exterior", unit: "each", basis: "hours_per_unit", productionRate: "1.5", additionalCoatFactor: "0.8", defaultCoats: 2, material: "sw-superpaint-ext", proposalGroup: "Exterior Doors" },
   // Stain & specialty
-  { code: "STN-FENCE", name: "Fence staining", category: "Staining", unit: "sqft", productionRate: "110", additionalCoatFactor: "0.85", defaultCoats: 1, material: "bm-arborcoat" },
-  { code: "STN-DECK", name: "Deck floor staining", category: "Staining", unit: "sqft", productionRate: "130", additionalCoatFactor: "0.85", defaultCoats: 2, material: "bm-arborcoat" },
-  { code: "CAB-DOOR", name: "Cabinet door / drawer front (both sides)", category: "Cabinets", unit: "each", basis: "hours_per_unit", productionRate: "1.0", additionalCoatFactor: "0.7", defaultCoats: 2, material: "sw-cabinet", otherCostPerUnit: "1.50" },
-  { code: "CAB-BOX", name: "Cabinet boxes / face frames", category: "Cabinets", unit: "lnft", productionRate: "4", additionalCoatFactor: "0.7", defaultCoats: 2, material: "sw-cabinet" },
+  { code: "STN-FENCE", name: "Fence staining", category: "Staining", unit: "sqft", productionRate: "110", additionalCoatFactor: "0.85", defaultCoats: 1, material: "bm-arborcoat", proposalGroup: "Fence" },
+  { code: "STN-DECK", name: "Deck floor staining", category: "Staining", unit: "sqft", productionRate: "130", additionalCoatFactor: "0.85", defaultCoats: 2, material: "bm-arborcoat", proposalGroup: "Deck" },
+  { code: "CAB-DOOR", name: "Cabinet door / drawer front (both sides)", category: "Cabinets", unit: "each", basis: "hours_per_unit", productionRate: "1.0", additionalCoatFactor: "0.7", defaultCoats: 2, material: "sw-cabinet", otherCostPerUnit: "1.50", proposalGroup: "Cabinets" },
+  { code: "CAB-BOX", name: "Cabinet boxes / face frames", category: "Cabinets", unit: "lnft", productionRate: "4", additionalCoatFactor: "0.7", defaultCoats: 2, material: "sw-cabinet", proposalGroup: "Cabinets" },
   // Prep
   { code: "PREP-PW", name: "Pressure washing", category: "Prep", unit: "sqft", productionRate: "450", defaultCoats: 1, otherCostPerUnit: "0.01" },
   { code: "PREP-SCRAPE", name: "Scraping", category: "Prep", unit: "sqft", productionRate: "150", defaultCoats: 1 },
@@ -166,13 +168,36 @@ export const DEFAULT_PRICING = {
 };
 
 export const DEFAULT_COMPANY = {
+  /** Legal name (contract, emails). */
   name: "Grandview Painting Ltd.",
+  /** Shown on the proposal cover and FROM block. */
+  displayName: "Grandview Painting",
+  tagline: "Quality focused. Integrity driven.",
   email: "info@grandviewpainting.ca",
   phone: "",
+  phone2: "",
+  phone2Label: "",
+  /** May contain a line break ("street\ncity, province postal code"). */
   address: "",
   gstNumber: "",
+  licenceLabel: "License",
+  licenceNumber: "181767",
+  website: "https://www.grandviewpainting.ca/",
   bookingUrl: "",
 };
+
+/**
+ * Company details as printed on the owner's Markate proposal. Only used by the
+ * "Fill from your Markate proposal" button; saved when the owner presses Save.
+ */
+export const COMPANY_PREFILL = {
+  phone: "(604) 970-4554",
+  phone2: "(604) 560-8896",
+  address: "3211 152 Street - Bldg 3211 C, Suite 402\nSurrey, BC V3S 3M1",
+  gstNumber: "779722206",
+};
+
+export { DEFAULT_PROPOSAL_TEMPLATE, SUGGESTED_NOTES } from "./seed-proposal-template";
 
 export const MESSAGE_TEMPLATES = [
   {

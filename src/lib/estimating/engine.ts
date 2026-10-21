@@ -60,6 +60,10 @@ export interface RateSnapshot {
   material?: MaterialSnapshot | null;
   materialWastePct: string;
   otherCostPerUnit: string;
+  /** Display-only fields for the proposal. Ignored by the engine. */
+  category?: string | null;
+  customerLabel?: string | null;
+  proposalGroup?: string | null;
 }
 
 export interface LineMultipliers {

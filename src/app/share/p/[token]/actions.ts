@@ -8,7 +8,7 @@ export async function previewTotalsAction(token: string, selectedIds: string[]) 
   return previewTotals(token, Array.isArray(selectedIds) ? selectedIds.slice(0, 200).map(String) : []);
 }
 
-export async function acceptAction(token: string, input: { name: string; email: string; signature: string; agree: boolean; selectedOptionIds: string[] }) {
+export async function acceptAction(token: string, input: { name: string; email: string; signature: string; agree: boolean; message?: string; selectedOptionIds: string[] }) {
   try {
     const h = await headers();
     const ip = h.get("x-vercel-forwarded-for") ?? h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;

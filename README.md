@@ -34,6 +34,15 @@ pnpm test        # unit tests: estimating engine, margin/markup, minimums, GST, 
 pnpm test:e2e    # browser tests against a running server (permissions, lead → estimate flow)
 ```
 
+## Editing your proposal
+
+Everything customers see around the estimate is in **Settings → Proposals**: the cover per job type, pictures,
+reviews, insurance documents, the contract and the signing step. Use **Overview → Preview** to see a sample
+proposal before customers do. Changes to pictures, marketing text and insurance documents also show on
+proposals you've already sent; the estimate and contract a customer signs never change after sending.
+Per-job details (PO number, preparation, exclusions, customer descriptions) are in the estimate's
+**Proposal details** card.
+
 ## Security notes
 
 - No public sign-up. The owner/admin creates accounts in Settings → Users.

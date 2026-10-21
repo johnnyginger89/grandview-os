@@ -22,8 +22,23 @@ const securityHeaders = [
   },
 ];
 
+// Uploaded media and insurance documents set their own strict CSP; the app-wide one must not stack on top.
+const mediaHeaders = securityHeaders.filter((h) => h.key !== "Content-Security-Policy" && h.key !== "Permissions-Policy");
+
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  images: {
+    localPatterns: [
+      { pathname: "/proposal/**", search: "" },
+      { pathname: "/brand/**", search: "" },
+      { pathname: "/api/media/**", search: "" },
+    ],
+    minimumCacheTTL: 2678400,
+  },
+  experimental: {
+    // Uploads arrive in 3 MiB chunks (Vercel caps request bodies at 4.5 MB).
+    serverActions: { bodySizeLimit: "4mb" },
+  },
   turbopack: {
     rules: {
       "*.css": {
@@ -33,7 +48,12 @@ const nextConfig: NextConfig = {
     },
   },
   async headers() {
-    return [{ source: "/:path*", headers: securityHeaders }];
+    return [
+      { source: "/:path((?!api/media/|share/p/[^/]+/documents/).*)", headers: securityHeaders },
+      { source: "/api/media/:path*", headers: mediaHeaders },
+      // The document route sets Referrer-Policy: no-referrer itself.
+      { source: "/share/p/:token/documents/:path*", headers: mediaHeaders.filter((h) => h.key !== "Referrer-Policy") },
+    ];
   },
 };
 

@@ -1,8 +1,18 @@
 import "server-only";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { appSettings } from "@/db/schema";
-import { DEFAULT_COMPANY, DEFAULT_PRICING, DEFAULT_PROPOSAL } from "@/db/seed-data";
+import { appSettings, media } from "@/db/schema";
+import { DEFAULT_COMPANY, DEFAULT_PRICING, DEFAULT_PROPOSAL, DEFAULT_PROPOSAL_TEMPLATE } from "@/db/seed-data";
+import { markRemovedOverrides, mergeWithDefaults } from "@/lib/proposal-template/merge";
+import {
+  mediaRefs,
+  PROPOSAL_TEMPLATE_KEY,
+  sectionSchemas,
+  tokenProblems,
+  type ProposalTemplate,
+  type SectionKey,
+} from "@/lib/proposal-template/schema";
+import { audit } from "./audit";
 
 export type PricingSettings = typeof DEFAULT_PRICING;
 export type CompanySettings = typeof DEFAULT_COMPANY;
@@ -27,4 +37,80 @@ export async function setSetting(key: string, value: unknown, userId: string) {
 export const getPricing = () => getSetting<PricingSettings>("pricing", DEFAULT_PRICING);
 export const getCompany = () => getSetting<CompanySettings>("company", DEFAULT_COMPANY);
 export const getList = (key: "lead_sources" | "lost_reasons" | "project_types") => getSetting<string[]>(key, []);
+/** Legacy proposal wording (before the presentation template). Kept read-only for the "earlier wording" panel. */
 export const getProposalSettings = () => getSetting<ProposalSettings>("proposal", DEFAULT_PROPOSAL);
+
+export class SettingsError extends Error {
+  readonly expose = true;
+}
+
+/** The proposal template merged over the defaults, plus the row version for optimistic saves. */
+export async function getProposalTemplateState(): Promise<{ template: ProposalTemplate; updatedAt: string | null; invalidSections: SectionKey[] }> {
+  const row = await db.query.appSettings.findFirst({ where: eq(appSettings.key, PROPOSAL_TEMPLATE_KEY) });
+  const { template, invalidSections } = mergeWithDefaults(row?.value ?? DEFAULT_PROPOSAL_TEMPLATE, DEFAULT_PROPOSAL_TEMPLATE);
+  for (const k of invalidSections) console.error(`[proposal_template] section ${k} invalid, using defaults`);
+  return { template, updatedAt: row?.updatedAt.toISOString() ?? null, invalidSections };
+}
+
+export async function getProposalTemplate(): Promise<ProposalTemplate> {
+  return (await getProposalTemplateState()).template;
+}
+
+/**
+ * Validate and save one section of the proposal template. `expectedUpdatedAt` is the
+ * version the editor loaded; a different stored version means someone else saved first.
+ */
+export async function saveProposalTemplateSection(section: SectionKey, value: unknown, userId: string, expectedUpdatedAt: string | null) {
+  const schema = sectionSchemas[section];
+  if (!schema) throw new SettingsError("Unknown proposal settings section.");
+  const row = await db.query.appSettings.findFirst({ where: eq(appSettings.key, PROPOSAL_TEMPLATE_KEY) });
+  const currentVersion = row?.updatedAt.toISOString() ?? null;
+  if (currentVersion !== expectedUpdatedAt) throw new SettingsError("Someone else saved proposal settings. Reload to see their changes.");
+
+  const parsed = schema.parse(value);
+  const problems = tokenProblems(parsed, section);
+  if (problems.length) throw new SettingsError(problems[0]);
+
+  const ids = mediaRefs(parsed);
+  if (ids.length) {
+    const found = await db
+      .select({ id: media.id })
+      .from(media)
+      .where(and(inArray(media.id, ids), eq(media.status, "ready"), eq(media.kind, "image")));
+    if (found.length !== ids.length) throw new SettingsError("One of the pictures is no longer available. Please choose it again.");
+  }
+
+  const { template: current } = mergeWithDefaults(row?.value ?? DEFAULT_PROPOSAL_TEMPLATE, DEFAULT_PROPOSAL_TEMPLATE);
+  const defaultJobTypes = DEFAULT_PROPOSAL_TEMPLATE.jobTypes as Record<string, unknown>;
+  // Job types are always written with explicit nulls for removed overrides (see markRemovedOverrides).
+  const next = {
+    ...current,
+    version: 1,
+    jobTypes: markRemovedOverrides(current.jobTypes as Record<string, unknown>, defaultJobTypes),
+    [section]: section === "jobTypes" ? markRemovedOverrides(parsed as Record<string, unknown>, defaultJobTypes) : parsed,
+  };
+  const now = new Date();
+
+  await db.transaction(async (tx) => {
+    if (row) {
+      const updated = await tx
+        .update(appSettings)
+        .set({ value: next, updatedBy: userId, updatedAt: now })
+        .where(and(eq(appSettings.key, PROPOSAL_TEMPLATE_KEY), sql`date_trunc('milliseconds', ${appSettings.updatedAt}) = ${currentVersion}::timestamptz`))
+        .returning({ key: appSettings.key });
+      if (!updated.length) throw new SettingsError("Someone else saved proposal settings. Reload to see their changes.");
+    } else {
+      const inserted = await tx
+        .insert(appSettings)
+        .values({ key: PROPOSAL_TEMPLATE_KEY, value: next, updatedBy: userId, updatedAt: now })
+        .onConflictDoNothing()
+        .returning({ key: appSettings.key });
+      if (!inserted.length) throw new SettingsError("Someone else saved proposal settings. Reload to see their changes.");
+    }
+    await audit(
+      { actorId: userId, action: `settings.proposal_template.${section}`, entityType: "settings", entityId: PROPOSAL_TEMPLATE_KEY, before: current[section], after: parsed },
+      tx,
+    );
+  });
+  return { updatedAt: now.toISOString() };
+}

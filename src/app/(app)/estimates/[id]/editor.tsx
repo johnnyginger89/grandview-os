@@ -1,7 +1,8 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { ChevronDown, ChevronRight, Copy, History, Plus, Trash2, Undo2 } from "lucide-react";
-import { Badge, Button, Card, CardHeader, Field, FormError, Input, Select, Textarea } from "@/components/ui";
+import Link from "next/link";
+import { ChevronDown, ChevronRight, Copy, Eye, History, Plus, Trash2, Undo2 } from "lucide-react";
+import { Badge, Button, buttonClass, Card, CardHeader, Field, FormError, Input, Select, Textarea } from "@/components/ui";
 import { calculateDoc, resolvedQuantity, type DocArea, type DocCostItem, type DocLine, type EstimateDoc } from "@/lib/estimating/document";
 import { areaQuantities, crewDurationDays, UNIT_LABELS, type EstimateResult, type RateSnapshot } from "@/lib/estimating/engine";
 import { d, formatCAD, formatNum, formatPct, marginToMarkup, priceForMargin } from "@/lib/money";
@@ -45,6 +46,17 @@ const AREA_PRESETS: Record<string, string[]> = {
 };
 
 const uid = () => crypto.randomUUID();
+
+const JOB_TYPES = [
+  ["interior", "Interior"],
+  ["exterior", "Exterior"],
+  ["interior_exterior", "Interior & exterior"],
+  ["cabinets", "Cabinets"],
+  ["staining", "Deck / fence staining"],
+  ["commercial", "Commercial"],
+  ["strata", "Strata"],
+  ["repairs", "Repairs"],
+] as const;
 
 /** Text input that only commits valid numbers, so half-typed values never break the maths. */
 function NumInput({ value, onCommit, disabled, className, placeholder, ariaLabel }: { value: string | null | undefined; onCommit: (v: string) => void; disabled?: boolean; className?: string; placeholder?: string; ariaLabel: string }) {
@@ -98,6 +110,8 @@ export function EstimateEditor({
   hoursPerDay,
   canEdit,
   showCosting,
+  proposalText,
+  canEditWording,
 }: {
   estimate: { id: string; number: number; status: string; revision: number; customerName: string; address: string | null; opportunityId: string | null; validUntil: string | null; updatedAt: string };
   initialDoc: EstimateDoc;
@@ -108,6 +122,9 @@ export function EstimateEditor({
   hoursPerDay: string;
   canEdit: boolean;
   showCosting: boolean;
+  /** Standard proposal wording per job type, shown as the starting point for per-job edits. */
+  proposalText: Record<string, { preparation: string; areasExcluded: string }>;
+  canEditWording: boolean;
 }) {
   const [doc, setDocState] = useState<EstimateDoc>(initialDoc);
   const [undoStack, setUndoStack] = useState<{ doc: EstimateDoc; label: string }[]>([]);
@@ -301,6 +318,7 @@ export function EstimateEditor({
 
   // ---- rendering -------------------------------------------------------
   const ro = !canEdit;
+  const standard = proposalText[doc.jobType] ?? proposalText.default ?? { preparation: "", areasExcluded: "" };
   const t = result?.totals;
   const staleRates = doc.lines.filter((l) => {
     const r = rates.find((x) => x.id === l.rateSnapshot.rateId);
@@ -354,6 +372,9 @@ export function EstimateEditor({
             <Field label="Colour"><Input disabled={ro} value={line.colour ?? ""} onChange={(e) => setLine(line.id, { colour: e.target.value || null })} placeholder="e.g. SW 7008 Alabaster" /></Field>
             <Field label="Sheen"><Input disabled={ro} value={line.sheen ?? ""} onChange={(e) => setLine(line.id, { sheen: e.target.value || null })} placeholder="e.g. Eggshell" /></Field>
             <Field label="Customer description" className="sm:col-span-2 lg:col-span-4"><Input disabled={ro} value={line.customerDescription ?? ""} onChange={(e) => setLine(line.id, { customerDescription: e.target.value || null })} placeholder="Shown on the proposal instead of the item name" /></Field>
+            <Field label="Details for the customer" hint="For optional upgrades: what's included. Start lines with “- ” for bullets." className="sm:col-span-2 lg:col-span-4">
+              <Textarea disabled={ro} rows={2} value={line.customerDetail ?? ""} onChange={(e) => setLine(line.id, { customerDetail: e.target.value || null })} />
+            </Field>
             {area && line.rateSnapshot.unit !== "each" && line.rateSnapshot.unit !== "hour" && (
               <Field label="Quantity from room">
                 <Select disabled={ro} value={line.quantitySource} onChange={(e) => setLine(line.id, { quantitySource: e.target.value as DocLine["quantitySource"] })}>
@@ -475,6 +496,16 @@ export function EstimateEditor({
                 </div>
                 {!isCollapsed && (
                   <>
+                    <div className="border-t border-border px-3 py-1.5">
+                      <input
+                        aria-label={`Description for the customer: ${area.name}`}
+                        disabled={ro}
+                        value={area.customerDescription ?? ""}
+                        onChange={(e) => setArea(area.id, { customerDescription: e.target.value || null })}
+                        placeholder="Description for the customer (optional), e.g. Walls, ceiling and trim"
+                        className="w-full rounded border border-transparent bg-transparent px-1 py-1 text-sm text-muted placeholder:text-subtle hover:border-border focus:border-ring focus:outline-none disabled:hover:border-transparent"
+                      />
+                    </div>
                     {lines.map((l) => renderLine(l, area))}
                     {lines.length === 0 && <p className="border-t border-border px-3 py-2 text-sm text-subtle">No items yet.</p>}
                     {addLineSelect(area.id)}
@@ -510,6 +541,14 @@ export function EstimateEditor({
                   <div className="col-span-2 flex justify-end gap-1 md:col-span-1">
                     {!ro && <button type="button" onClick={() => update((dd) => ({ ...dd, costItems: dd.costItems.filter((x) => x.id !== c.id) }), "Cost item removed")} className="rounded p-1 text-subtle hover:bg-danger-soft hover:text-danger" aria-label="Remove cost item"><Trash2 className="size-3.5" /></button>}
                   </div>
+                  <Input
+                    disabled={ro}
+                    value={c.customerDescription ?? ""}
+                    onChange={(e) => setCost(c.id, { customerDescription: e.target.value || null })}
+                    className="col-span-12 h-8 text-xs"
+                    aria-label="Customer description"
+                    placeholder="Customer description – leave empty to keep this cost off the proposal (it's still in the price)"
+                  />
                 </div>
               );
             })}
@@ -523,10 +562,55 @@ export function EstimateEditor({
             <p className="border-t border-border px-3 py-2 text-xs text-subtle">Leave markup blank to price these the same way as the rest of the estimate.</p>
           </Card>
 
-          <div className="grid gap-3 md:grid-cols-2">
-            <Field label="Notes for the customer"><Textarea disabled={ro} rows={4} value={doc.customerNotes ?? ""} onChange={(e) => setDocState((p) => ({ ...p, customerNotes: e.target.value }))} /></Field>
-            <Field label="Internal notes (never shown to customer)"><Textarea disabled={ro} rows={4} value={doc.internalNotes ?? ""} onChange={(e) => setDocState((p) => ({ ...p, internalNotes: e.target.value }))} /></Field>
-          </div>
+          <Card>
+            <CardHeader
+              title="Proposal details"
+              description="What the customer sees besides the items above."
+              action={<a href={`/estimates/${estimate.id}/proposal-preview`} target="_blank" rel="noopener" className={buttonClass("secondary", "sm")}><Eye className="size-4" /> Preview proposal</a>}
+            />
+            <div className="grid gap-4 p-4 md:grid-cols-2">
+              <Field label="Job type" hint="Picks the cover photo, wording and warranty">
+                <Select disabled={ro} value={doc.jobType} onChange={(e) => update((p) => ({ ...p, jobType: e.target.value }))}>
+                  {JOB_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                </Select>
+              </Field>
+              <Field label="PO number" hint="Shown on the proposal only when filled"><Input disabled={ro} value={doc.poNumber ?? ""} onChange={(e) => setDocState((p) => ({ ...p, poNumber: e.target.value || null }))} /></Field>
+              <div className="md:col-span-2">
+                <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-sm font-medium">Preparation</span>
+                  {!ro && (doc.preparationOverride == null ? (
+                    <button type="button" className="text-sm text-brand hover:underline" onClick={() => update((p) => ({ ...p, preparationOverride: standard.preparation }))}>Write custom preparation for this job</button>
+                  ) : (
+                    <button type="button" className="text-sm text-brand hover:underline" onClick={() => update((p) => ({ ...p, preparationOverride: null }), "Preparation reset")}>Use standard text</button>
+                  ))}
+                </div>
+                {doc.preparationOverride == null ? (
+                  <p className="whitespace-pre-line rounded-md bg-surface-2 px-3 py-2 text-sm text-muted">{standard.preparation || "No standard preparation text for this job type."}</p>
+                ) : (
+                  <Textarea aria-label="Preparation" disabled={ro} rows={5} value={doc.preparationOverride} onChange={(e) => setDocState((p) => ({ ...p, preparationOverride: e.target.value }))} />
+                )}
+              </div>
+              <div className="md:col-span-2">
+                <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-sm font-medium">Areas to be excluded</span>
+                  {!ro && (doc.areasExcluded == null ? (
+                    <button type="button" className="text-sm text-brand hover:underline" onClick={() => update((p) => ({ ...p, areasExcluded: standard.areasExcluded }))}>Edit for this job</button>
+                  ) : (
+                    <button type="button" className="text-sm text-brand hover:underline" onClick={() => update((p) => ({ ...p, areasExcluded: null }), "Exclusions reset")}>Reset to standard</button>
+                  ))}
+                </div>
+                {doc.areasExcluded == null ? (
+                  <p className="whitespace-pre-line rounded-md bg-surface-2 px-3 py-2 text-sm text-muted">{standard.areasExcluded || "None"}</p>
+                ) : (
+                  <Textarea aria-label="Areas to be excluded" disabled={ro} rows={4} value={doc.areasExcluded} onChange={(e) => setDocState((p) => ({ ...p, areasExcluded: e.target.value }))} />
+                )}
+                <p className="mt-1 text-xs text-subtle">One per line. The proposal adds “Any other area not listed in line # N” automatically.</p>
+              </div>
+              <Field label="Notes for the customer"><Textarea disabled={ro} rows={4} value={doc.customerNotes ?? ""} onChange={(e) => setDocState((p) => ({ ...p, customerNotes: e.target.value }))} /></Field>
+              <Field label="Internal notes (never shown to customer)"><Textarea disabled={ro} rows={4} value={doc.internalNotes ?? ""} onChange={(e) => setDocState((p) => ({ ...p, internalNotes: e.target.value }))} /></Field>
+              {canEditWording && <Link href="/settings/proposals" className="text-sm text-brand hover:underline md:col-span-2">Edit the standard wording and pictures in Settings → Proposals</Link>}
+            </div>
+          </Card>
         </div>
 
         {/* Side panel */}

@@ -1,26 +1,53 @@
 "use client";
 import { submitWith } from "@/components/submit";
-import { useActionState, useState, useTransition } from "react";
+import { useActionState, useRef, useState, useTransition } from "react";
 import { Badge, Button, Card, CardHeader, Field, FormError, Input, Select, Table, Textarea, td, th } from "@/components/ui";
 import { ROLES } from "@/db/schema/auth";
 import { ROLE_LABELS } from "@/lib/authz/permissions";
-import { createUserAction, saveCompanyAction, saveListAction, savePricingAction, saveProposalSettingsAction, saveTemplateAction, updateUserAction } from "./actions";
+import { createUserAction, saveCompanyAction, saveListAction, savePricingAction, saveTemplateAction, updateUserAction } from "./actions";
 
 function Saved({ state }: { state: { ok: boolean; error?: string } | null }) {
   if (!state) return null;
   return state.ok ? <span className="text-sm text-success">Saved</span> : <FormError message={state.error} />;
 }
 
-export function CompanyForm({ company }: { company: Record<string, string> }) {
+export function CompanyForm({ company, prefill }: { company: Record<string, string>; prefill: Record<string, string> }) {
   const [state, action, pending] = useActionState(saveCompanyAction, null);
+  const form = useRef<HTMLFormElement>(null);
+  const [filled, setFilled] = useState(false);
+  function fillFromMarkate() {
+    const f = form.current;
+    if (!f) return;
+    for (const [k, v] of Object.entries(prefill)) {
+      const el = f.elements.namedItem(k);
+      if ((el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) && !el.value.trim()) el.value = v;
+    }
+    setFilled(true);
+  }
   return (
-    <form onSubmit={submitWith(action)} className="max-w-2xl">
+    <form ref={form} onSubmit={submitWith(action)} className="max-w-2xl">
       <Card className="grid gap-4 p-4 sm:grid-cols-2">
-        <Field label="Company name" className="sm:col-span-2"><Input name="name" defaultValue={company.name} required /></Field>
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-info-soft px-3 py-2 text-sm text-info sm:col-span-2">
+          <span>These details print on every proposal (the FROM block) and in emails.</span>
+          <Button size="sm" variant="secondary" onClick={fillFromMarkate}>Fill from your Markate proposal</Button>
+        </div>
+        {filled && <p className="text-sm text-muted sm:col-span-2">Empty fields were filled from your Markate proposal. Check them, then press Save.</p>}
+        <Field label="Legal company name" hint="Used in the contract and emails"><Input name="name" defaultValue={company.name} required /></Field>
+        <Field label="Name on proposals"><Input name="displayName" defaultValue={company.displayName} placeholder="Grandview Painting" /></Field>
+        <Field label="Tagline" className="sm:col-span-2"><Input name="tagline" defaultValue={company.tagline} placeholder="Quality focused. Integrity driven." /></Field>
         <Field label="Email"><Input name="email" type="email" defaultValue={company.email} /></Field>
-        <Field label="Phone"><Input name="phone" defaultValue={company.phone} /></Field>
-        <Field label="Address" className="sm:col-span-2"><Input name="address" defaultValue={company.address} /></Field>
+        <Field label="Website"><Input name="website" type="url" defaultValue={company.website} placeholder="https://www.grandviewpainting.ca/" /></Field>
+        <Field label="Main phone"><Input name="phone" defaultValue={company.phone} /></Field>
+        <div className="grid grid-cols-[1fr_8rem] gap-2">
+          <Field label="Second phone"><Input name="phone2" defaultValue={company.phone2} /></Field>
+          <Field label="Label"><Input name="phone2Label" defaultValue={company.phone2Label} placeholder="Cell" /></Field>
+        </div>
+        <Field label="Address" hint="Street on the first line, city and postal code on the second" className="sm:col-span-2"><Textarea name="address" rows={2} defaultValue={company.address} /></Field>
         <Field label="GST number"><Input name="gstNumber" defaultValue={company.gstNumber} placeholder="123456789 RT0001" /></Field>
+        <div className="grid grid-cols-[8rem_1fr] gap-2">
+          <Field label="Licence label"><Input name="licenceLabel" defaultValue={company.licenceLabel} placeholder="License" /></Field>
+          <Field label="Licence number"><Input name="licenceNumber" defaultValue={company.licenceNumber} /></Field>
+        </div>
         <Field label="YouCanBook.me booking link" hint="Sent to new leads with the one-click booking email." className="sm:col-span-2">
           <Input name="bookingUrl" type="url" defaultValue={company.bookingUrl} placeholder="https://grandviewpainting.youcanbook.me" />
         </Field>
@@ -188,30 +215,5 @@ export function IntegrationsInfo({ appUrl }: { appUrl: string }) {
         <p className="p-4 text-muted">Outgoing email is sent through Resend from your domain once <code>RESEND_API_KEY</code> is configured. Until then, messages are logged on the lead timeline but not delivered.</p>
       </Card>
     </div>
-  );
-}
-
-export function ProposalSettingsForm({ settings }: { settings: Record<string, string | boolean> }) {
-  const [state, action, pending] = useActionState(saveProposalSettingsAction, null);
-  const fields: [string, string, string, number][] = [
-    ["intro", "Introduction", "Shown at the top of every proposal.", 3],
-    ["preparation", "Preparation", "How you protect and prepare surfaces.", 4],
-    ["inclusions", "Included", "One item per line.", 4],
-    ["exclusions", "Not included", "One item per line.", 5],
-    ["warranty", "Warranty", "", 3],
-    ["paymentTerms", "Payment terms", "The deposit percentage comes from Pricing defaults.", 3],
-    ["terms", "Terms & conditions", "", 5],
-  ];
-  return (
-    <form onSubmit={submitWith(action)} className="max-w-3xl">
-      <Card className="space-y-4 p-4">
-        <p className="rounded-md bg-warning-soft px-3 py-2 text-sm text-warning">This is starting text. Review the warranty, payment terms and conditions before sending proposals to customers.</p>
-        {fields.map(([k, label, hint, rows]) => (
-          <Field key={k} label={label} hint={hint || undefined}><Textarea name={k} rows={rows} defaultValue={String(settings[k] ?? "")} /></Field>
-        ))}
-        <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="showAreaPrices" defaultChecked={!!settings.showAreaPrices} /> Show a price for each room/area (otherwise only the total)</label>
-        <div className="flex items-center gap-3"><Button type="submit" disabled={pending}>Save</Button><Saved state={state} /></div>
-      </Card>
-    </form>
   );
 }

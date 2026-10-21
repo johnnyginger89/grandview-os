@@ -86,6 +86,9 @@ export async function loadEstimate(id: string) {
     contractType: est.contractType,
     internalNotes: est.internalNotes,
     customerNotes: est.customerNotes,
+    poNumber: est.poNumber,
+    areasExcluded: est.areasExcluded,
+    preparationOverride: est.preparationOverride,
     settings: {
       pricingMethod: est.pricingMethod,
       laborCostPerHour: est.laborCostPerHour,
@@ -98,12 +101,13 @@ export async function loadEstimate(id: string) {
       discount: est.discount,
       priceOverride: est.priceOverride,
     },
-    areas: areas.map((a) => ({ id: a.id, parentId: a.parentId, name: a.name, kind: a.kind, length: a.length, width: a.width, height: a.height, notes: a.notes })),
+    areas: areas.map((a) => ({ id: a.id, parentId: a.parentId, name: a.name, kind: a.kind, length: a.length, width: a.width, height: a.height, notes: a.notes, customerDescription: a.customerDescription })),
     lines: lines.map((l) => ({
       id: l.id,
       areaId: l.areaId,
       description: l.description,
       customerDescription: l.customerDescription,
+      customerDetail: l.customerDetail,
       rateSnapshot: l.rateSnapshot,
       quantity: l.quantity,
       quantitySource: l.quantitySource,
@@ -123,6 +127,7 @@ export async function loadEstimate(id: string) {
       id: c.id,
       kind: c.kind,
       description: c.description,
+      customerDescription: c.customerDescription,
       cost: c.cost,
       markupPct: c.markupPct,
       overridePrice: c.overridePrice,
@@ -154,7 +159,7 @@ export async function saveEstimateDoc(id: string, raw: unknown) {
     const ordered = [...doc.areas].sort((a, b) => Number(!!a.parentId) - Number(!!b.parentId));
     if (ordered.length) {
       await tx.insert(estimateAreas).values(
-        ordered.map((a) => ({ ...a, estimateId: id, position: doc.areas.indexOf(a), notes: a.notes ?? null })),
+        ordered.map((a) => ({ ...a, estimateId: id, position: doc.areas.indexOf(a), notes: a.notes ?? null, customerDescription: a.customerDescription ?? null })),
       );
     }
     const areas = new Map(doc.areas.map((a) => [a.id, a]));
@@ -166,13 +171,14 @@ export async function saveEstimateDoc(id: string, raw: unknown) {
           position: i,
           quantity: resolvedQuantity(l, l.areaId ? areas.get(l.areaId) : undefined),
           customerDescription: l.customerDescription ?? null,
+          customerDetail: l.customerDetail ?? null,
           colour: l.colour ?? null,
           sheen: l.sheen ?? null,
         })),
       );
     }
     if (doc.costItems.length) {
-      await tx.insert(estimateCostItems).values(doc.costItems.map((c, i) => ({ ...c, estimateId: id, position: i })));
+      await tx.insert(estimateCostItems).values(doc.costItems.map((c, i) => ({ ...c, estimateId: id, position: i, customerDescription: c.customerDescription ?? null })));
     }
     const t = result.totals;
     await tx
@@ -183,6 +189,9 @@ export async function saveEstimateDoc(id: string, raw: unknown) {
         contractType: doc.contractType,
         internalNotes: doc.internalNotes ?? null,
         customerNotes: doc.customerNotes ?? null,
+        poNumber: doc.poNumber ?? null,
+        areasExcluded: doc.areasExcluded ?? null,
+        preparationOverride: doc.preparationOverride ?? null,
         ...doc.settings,
         discount: doc.settings.discount ?? null,
         priceOverride: doc.settings.priceOverride ?? null,

@@ -9,7 +9,7 @@ test("owner: set booking link, create lead, send booking link, build estimate", 
   // Company settings: booking link
   await page.goto("/settings?tab=company");
   await page.getByLabel("YouCanBook.me booking link").fill("https://grandviewpainting.youcanbook.me");
-  await page.getByLabel("Phone").fill("604-555-0199");
+  await page.getByLabel("Main phone").fill("604-555-0199");
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByText("Saved")).toBeVisible();
 

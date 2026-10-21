@@ -7,7 +7,7 @@
  * --dev-users is refused unless DATABASE_URL points at localhost.
  */
 import "dotenv/config";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { isLocalDatabase } from "./connection";
 import { db } from "./index";
 import * as s from "./schema";
@@ -15,6 +15,7 @@ import {
   DEFAULT_COMPANY,
   DEFAULT_PRICING,
   DEFAULT_PROPOSAL,
+  DEFAULT_PROPOSAL_TEMPLATE,
   FACTORS,
   LEAD_SOURCES,
   LOST_REASONS,
@@ -38,6 +39,20 @@ async function seedSettings() {
   for (const [key, value] of entries) {
     await db.insert(s.appSettings).values({ key, value }).onConflictDoNothing();
   }
+  await seedProposalTemplate();
+}
+
+/**
+ * Inserted once; an owner's edits are never overwritten. On that first insert the
+ * old `proposal` setting's "show area prices" choice is carried over.
+ */
+async function seedProposalTemplate() {
+  const existing = await db.query.appSettings.findFirst({ where: eq(s.appSettings.key, "proposal_template"), columns: { key: true } });
+  if (existing) return;
+  const legacy = await db.query.appSettings.findFirst({ where: eq(s.appSettings.key, "proposal") });
+  const showAreaPrices = (legacy?.value as { showAreaPrices?: unknown } | undefined)?.showAreaPrices === true;
+  const value = { ...DEFAULT_PROPOSAL_TEMPLATE, estimateDocument: { ...DEFAULT_PROPOSAL_TEMPLATE.estimateDocument, showAreaPrices } };
+  await db.insert(s.appSettings).values({ key: "proposal_template", value }).onConflictDoNothing();
 }
 
 async function seedStages() {
@@ -71,7 +86,16 @@ async function seedMaterialsAndRates() {
 
   for (const [i, r] of RATES.entries()) {
     const found = await db.query.productionRates.findFirst({ where: (t, { eq }) => eq(t.code, r.code) });
-    if (found) continue;
+    if (found) {
+      // Fill proposal groups added after the rate was seeded; never overwrite the owner's.
+      if (r.proposalGroup && !found.proposalGroup) {
+        await db
+          .update(s.productionRates)
+          .set({ proposalGroup: r.proposalGroup })
+          .where(and(eq(s.productionRates.code, r.code), isNull(s.productionRates.proposalGroup)));
+      }
+      continue;
+    }
     const [rate] = await db
       .insert(s.productionRates)
       .values({
@@ -81,6 +105,7 @@ async function seedMaterialsAndRates() {
         unit: r.unit,
         basis: r.basis ?? "units_per_hour",
         dimensionSource: r.dimensionSource ?? "manual",
+        proposalGroup: r.proposalGroup ?? null,
         position: i,
       })
       .returning();

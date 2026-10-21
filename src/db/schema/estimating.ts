@@ -72,6 +72,8 @@ export const productionRates = pgTable(
     basis: text("basis").$type<RateSnapshot["basis"]>().notNull().default("units_per_hour"),
     /** Default quantity source when added to a room with dimensions. */
     dimensionSource: text("dimension_source").$type<"manual" | "walls" | "ceiling" | "floor" | "perimeter">().notNull().default("manual"),
+    /** Proposal grouping, e.g. "Walls", "Trim", "Exterior Doors". Null = not listed as a paint line. */
+    proposalGroup: text("proposal_group"),
     currentVersionId: uuid("current_version_id").references((): AnyPgColumn => productionRateVersions.id),
     active: boolean("active").notNull().default(true),
     position: integer("position").notNull().default(0),
@@ -138,6 +140,11 @@ export const estimates = pgTable(
     totalWithTax: money("total_with_tax").notNull().default("0"),
     internalNotes: text("internal_notes"),
     customerNotes: text("customer_notes"),
+    poNumber: text("po_number"),
+    /** One exclusion per line. NULL = job-type default; '' = none. */
+    areasExcluded: text("areas_excluded"),
+    /** NULL = job-type preparation text. */
+    preparationOverride: text("preparation_override"),
     validUntil: ts("valid_until"),
     estimatorId: text("estimator_id").references(() => user.id),
     sentAt: ts("sent_at"),
@@ -164,6 +171,7 @@ export const estimateAreas = pgTable(
     height: qty("height"),
     position: integer("position").notNull().default(0),
     notes: text("notes"),
+    customerDescription: text("customer_description"),
   },
   (t) => [index("areas_estimate_idx").on(t.estimateId)],
 );
@@ -177,6 +185,7 @@ export const estimateLines = pgTable(
     position: integer("position").notNull().default(0),
     description: text("description").notNull(),
     customerDescription: text("customer_description"),
+    customerDetail: text("customer_detail"),
     rateSnapshot: jsonb("rate_snapshot").$type<RateSnapshot>().notNull(),
     quantity: qty("quantity").notNull().default("0"),
     quantitySource: text("quantity_source").$type<"manual" | "walls" | "ceiling" | "floor" | "perimeter">().notNull().default("manual"),
@@ -200,6 +209,8 @@ export const estimateCostItems = pgTable("estimate_cost_items", {
   estimateId: uuid("estimate_id").notNull().references(() => estimates.id, { onDelete: "cascade" }),
   kind: text("kind").$type<"subcontractor" | "equipment" | "material" | "other">().notNull(),
   description: text("description").notNull(),
+  /** Shown on the proposal; empty keeps the item off the proposal (its price still counts). */
+  customerDescription: text("customer_description"),
   cost: money("cost").notNull().default("0"),
   markupPct: numeric("markup_pct", { precision: 6, scale: 4 }),
   overridePrice: money("override_price"),

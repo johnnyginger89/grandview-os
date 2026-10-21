@@ -36,6 +36,8 @@ export const rateIdentitySchema = z.object({
   name: z.string().trim().min(1).max(200),
   customerLabel: z.string().trim().max(200).optional().nullable(),
   category: z.string().trim().min(1).max(60),
+  /** Omitted = leave unchanged (older editor forms don't send it); "" clears it. */
+  proposalGroup: z.string().trim().max(60).nullable().optional(),
   unit: z.enum(["sqft", "lnft", "each", "hour"]),
   basis: z.enum(["units_per_hour", "hours_per_unit"]),
   dimensionSource: z.enum(["manual", "walls", "ceiling", "floor", "perimeter"]).default("manual"),
@@ -79,6 +81,9 @@ export function toSnapshot(r: RateRow): RateSnapshot {
       : null,
     materialWastePct: v.materialWastePct,
     otherCostPerUnit: v.otherCostPerUnit,
+    category: r.rate.category,
+    customerLabel: r.rate.customerLabel,
+    proposalGroup: r.rate.proposalGroup,
   };
 }
 
@@ -108,14 +113,15 @@ export async function saveRateVersion(rateId: string, values: z.input<typeof rat
 }
 
 export async function updateRateIdentity(rateId: string, values: z.input<typeof rateIdentitySchema>, userId: string) {
-  const v = rateIdentitySchema.parse(values);
-  await db.update(productionRates).set(v).where(eq(productionRates.id, rateId));
-  await audit({ actorId: userId, action: "rate.update", entityType: "production_rate", entityId: rateId, after: v });
+  const { proposalGroup, ...v } = rateIdentitySchema.parse(values);
+  const patch = proposalGroup === undefined ? v : { ...v, proposalGroup: proposalGroup || null };
+  await db.update(productionRates).set(patch).where(eq(productionRates.id, rateId));
+  await audit({ actorId: userId, action: "rate.update", entityType: "production_rate", entityId: rateId, after: patch });
 }
 
 export async function createRate(identity: z.input<typeof rateIdentitySchema>, values: z.input<typeof rateValuesSchema>, userId: string) {
-  const id = rateIdentitySchema.parse(identity);
-  const [rate] = await db.insert(productionRates).values(id).returning();
+  const { proposalGroup, ...id } = rateIdentitySchema.parse(identity);
+  const [rate] = await db.insert(productionRates).values({ ...id, proposalGroup: proposalGroup || null }).returning();
   await saveRateVersion(rate.id, values, userId);
   return rate;
 }

@@ -98,3 +98,33 @@ input[type="number"] {
     font-family: var(--font-display);
   }
 }
+
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html:has(#cover) {
+    scroll-behavior: smooth;
+  }
+}
+
+/* Customer proposal: print the estimate, contract and acceptance only. */
+@media print {
+  @page {
+    size: letter;
+    margin: 14mm;
+  }
+  body {
+    background: #fff;
+  }
+  details > summary {
+    pointer-events: none;
+  }
+  details:not([open]) > :not(summary) {
+    display: block;
+  }
+}

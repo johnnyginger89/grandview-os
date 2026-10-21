@@ -7,7 +7,7 @@ import { db } from "@/db";
 import { messageTemplates } from "@/db/schema";
 import { assertPermission } from "@/lib/authz/guard";
 import { audit } from "@/server/audit";
-import { getCompany, getPricing, getProposalSettings, setSetting } from "@/server/settings";
+import { getCompany, getPricing, setSetting } from "@/server/settings";
 import { createUserAccount, updateUserAccess } from "@/server/users";
 
 type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string };
@@ -17,17 +17,27 @@ const dec = z.string().trim().regex(/^\d+(\.\d+)?$/, "Enter a number");
 export async function saveCompanyAction(_: unknown, f: FormData): Promise<Result> {
   try {
     const user = await assertPermission("settings.manage");
+    const https = (msg: string) => z.string().trim().max(300).refine((u) => u === "" || /^https:\/\/[^\s]+$/i.test(u), msg);
+    const keys = ["name", "displayName", "tagline", "email", "phone", "phone2", "phone2Label", "address", "gstNumber", "licenceLabel", "licenceNumber", "website", "bookingUrl"];
     const v = z.object({
-      name: z.string().trim().min(1).max(200),
+      name: z.string().trim().min(1, "Company name is required").max(200),
+      displayName: z.string().trim().max(80),
+      tagline: z.string().trim().max(120),
       email: z.string().trim().email().or(z.literal("")),
       phone: z.string().trim().max(40),
-      address: z.string().trim().max(300),
+      phone2: z.string().trim().max(40),
+      phone2Label: z.string().trim().max(30),
+      address: z.string().trim().max(300).transform((a) => a.replace(/\r\n?/g, "\n")),
       gstNumber: z.string().trim().max(40),
-      bookingUrl: z.string().trim().url("Booking link must be a full URL starting with https://").or(z.literal("")),
-    }).parse(Object.fromEntries(["name", "email", "phone", "address", "gstNumber", "bookingUrl"].map((k) => [k, String(f.get(k) ?? "")])));
+      licenceLabel: z.string().trim().max(30),
+      licenceNumber: z.string().trim().max(40),
+      website: https("Website must be a full address starting with https://"),
+      bookingUrl: https("Booking link must be a full URL starting with https://"),
+    }).parse(Object.fromEntries(keys.map((k) => [k, String(f.get(k) ?? "")])));
     const before = await getCompany();
-    await setSetting("company", v, user.id);
-    await audit({ actorId: user.id, action: "settings.company", entityType: "settings", entityId: "company", before, after: v });
+    const after = { ...before, ...v };
+    await setSetting("company", after, user.id);
+    await audit({ actorId: user.id, action: "settings.company", entityType: "settings", entityId: "company", before, after });
     revalidatePath("/settings");
     return { ok: true };
   } catch (e) {
@@ -102,30 +112,6 @@ export async function updateUserAction(userId: string, patch: { role?: string; a
   try {
     const me = await assertPermission("users.manage");
     await updateUserAccess(userId, patch, me.id, me.role);
-    revalidatePath("/settings");
-    return { ok: true };
-  } catch (e) {
-    return err(e);
-  }
-}
-
-export async function saveProposalSettingsAction(_: unknown, f: FormData): Promise<Result> {
-  try {
-    const user = await assertPermission("settings.manage");
-    const text = (k: string, max = 5000) => z.string().trim().max(max).parse(String(f.get(k) ?? ""));
-    const v = {
-      intro: text("intro"),
-      preparation: text("preparation"),
-      inclusions: text("inclusions"),
-      exclusions: text("exclusions"),
-      warranty: text("warranty"),
-      paymentTerms: text("paymentTerms"),
-      terms: text("terms", 10000),
-      showAreaPrices: f.get("showAreaPrices") === "on",
-    };
-    const before = await getProposalSettings();
-    await setSetting("proposal", v, user.id);
-    await audit({ actorId: user.id, action: "settings.proposal", entityType: "settings", entityId: "proposal", before, after: v });
     revalidatePath("/settings");
     return { ok: true };
   } catch (e) {

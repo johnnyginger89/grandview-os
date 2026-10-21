@@ -33,7 +33,7 @@ export default async function RatesPage({ searchParams }: { searchParams: Promis
       {tab === "rates" && (
         <RatesTable
           rows={(await listRates(archived === "1")).map((r) => ({
-            id: r.rate.id, code: r.rate.code, name: r.rate.name, customerLabel: r.rate.customerLabel ?? "", category: r.rate.category,
+            id: r.rate.id, code: r.rate.code, name: r.rate.name, customerLabel: r.rate.customerLabel ?? "", proposalGroup: r.rate.proposalGroup ?? "", category: r.rate.category,
             unit: r.rate.unit, basis: r.rate.basis, dimensionSource: r.rate.dimensionSource, active: r.rate.active,
             version: r.version?.version ?? 0, productionRate: r.version?.productionRate ?? "0", additionalCoatFactor: r.version?.additionalCoatFactor ?? "1",
             defaultCoats: r.version?.defaultCoats ?? 1, laborCostPerHour: r.version?.laborCostPerHour ?? "", billingRatePerHour: r.version?.billingRatePerHour ?? "",

@@ -41,6 +41,10 @@ export const rateSnapshotSchema = z.object({
     .optional(),
   materialWastePct: num,
   otherCostPerUnit: num,
+  // Display-only (proposal wording); the engine ignores them.
+  category: z.string().max(60).nullable().optional(),
+  customerLabel: z.string().max(200).nullable().optional(),
+  proposalGroup: z.string().max(60).nullable().optional(),
 });
 
 export const docSettingsSchema = z.object({
@@ -65,6 +69,7 @@ export const docAreaSchema = z.object({
   width: optNum,
   height: optNum,
   notes: z.string().max(5000).nullable().optional(),
+  customerDescription: z.string().max(1000).nullable().optional(),
 });
 
 export const docLineSchema = z.object({
@@ -72,6 +77,7 @@ export const docLineSchema = z.object({
   areaId: z.string().uuid().nullable(),
   description: z.string().max(500),
   customerDescription: z.string().max(2000).nullable().optional(),
+  customerDetail: z.string().max(3000).nullable().optional(),
   rateSnapshot: rateSnapshotSchema,
   quantity: num,
   quantitySource: z.enum(["manual", "walls", "ceiling", "floor", "perimeter"]),
@@ -92,6 +98,7 @@ export const docCostItemSchema = z.object({
   id: z.string().uuid(),
   kind: z.enum(["subcontractor", "equipment", "material", "other"]),
   description: z.string().max(500),
+  customerDescription: z.string().max(500).nullable().optional(),
   cost: num,
   markupPct: optNum,
   overridePrice: optNum,
@@ -105,6 +112,9 @@ export const estimateDocSchema = z.object({
   contractType: z.enum(["fixed_price", "time_and_materials"]),
   internalNotes: z.string().max(10000).nullable().optional(),
   customerNotes: z.string().max(10000).nullable().optional(),
+  poNumber: z.string().trim().max(60).nullable().optional(),
+  areasExcluded: z.string().max(3000).nullable().optional(),
+  preparationOverride: z.string().max(4000).nullable().optional(),
   settings: docSettingsSchema,
   areas: z.array(docAreaSchema).max(500),
   lines: z.array(docLineSchema).max(3000),

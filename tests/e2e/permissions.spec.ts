@@ -22,7 +22,7 @@ test.describe("painter", () => {
     await page.goto("/");
     await expect(page).toHaveURL(/my-jobs/);
     await expect(page.getByRole("link", { name: "Estimates" })).toHaveCount(0);
-    for (const p of ["/customers", "/estimates", "/rates", "/settings", "/leads", "/leads/new", "/estimates/new"]) await expectNoAccess(page, p);
+    for (const p of ["/customers", "/estimates", "/rates", "/settings", "/settings/proposals", "/settings/proposals/preview", "/estimates/00000000-0000-4000-8000-000000000000/proposal-preview", "/leads", "/leads/new", "/estimates/new"]) await expectNoAccess(page, p);
   });
 });
 
@@ -38,6 +38,8 @@ test.describe("estimator", () => {
   test.use({ storageState: statePath("estimator") });
   test("cannot manage settings or edit rates", async ({ page }) => {
     await expectNoAccess(page, "/settings");
+    await expectNoAccess(page, "/settings/proposals");
+    await expectNoAccess(page, "/settings/proposals/preview?jobType=interior");
     await page.goto("/rates");
     await expect(page.getByRole("heading", { name: "Rate Library" })).toBeVisible();
     await expect(page.getByRole("button", { name: "New rate" })).toHaveCount(0);

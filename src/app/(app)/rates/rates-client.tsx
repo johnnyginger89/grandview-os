@@ -13,6 +13,7 @@ export interface RateRowView {
   code: string;
   name: string;
   customerLabel: string;
+  proposalGroup: string;
   category: string;
   unit: string;
   basis: string;
@@ -43,7 +44,7 @@ export function rateLabel(r: { productionRate: string; unit: string; basis: stri
 }
 
 const BLANK: RateRowView = {
-  id: "", code: "", name: "", customerLabel: "", category: "Interior", unit: "sqft", basis: "units_per_hour", dimensionSource: "manual", active: true,
+  id: "", code: "", name: "", customerLabel: "", proposalGroup: "", category: "Interior", unit: "sqft", basis: "units_per_hour", dimensionSource: "manual", active: true,
   version: 0, productionRate: "", additionalCoatFactor: "1", defaultCoats: 2, laborCostPerHour: "", billingRatePerHour: "", materialId: "", materialName: "",
   coverageOverride: "", materialWastePct: "0.10", otherCostPerUnit: "0", prepNotes: "", crewNotes: "", changeNote: "",
 };
@@ -58,6 +59,7 @@ export function RatesTable({ rows, materials, canEdit, showArchived }: { rows: R
     return [...m.entries()];
   }, [filtered]);
   const categories = [...new Set(rows.map((r) => r.category))];
+  const proposalGroups = [...new Set(rows.map((r) => r.proposalGroup).filter(Boolean))];
 
   return (
     <>
@@ -92,12 +94,12 @@ export function RatesTable({ rows, materials, canEdit, showArchived }: { rows: R
           </Card>
         ))}
       </div>
-      {editing && <RateEditor rate={editing} materials={materials} categories={categories} onClose={() => setEditing(null)} />}
+      {editing && <RateEditor rate={editing} materials={materials} categories={categories} groups={proposalGroups} onClose={() => setEditing(null)} />}
     </>
   );
 }
 
-function RateEditor({ rate, materials, categories, onClose }: { rate: RateRowView; materials: { id: string; label: string }[]; categories: string[]; onClose: () => void }) {
+function RateEditor({ rate, materials, categories, groups, onClose }: { rate: RateRowView; materials: { id: string; label: string }[]; categories: string[]; groups: string[]; onClose: () => void }) {
   const [form, setForm] = useState(rate);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
@@ -109,7 +111,7 @@ function RateEditor({ rate, materials, categories, onClose }: { rate: RateRowVie
     start(async () => {
       const r = await saveRateAction({
         id: rate.id || null,
-        identity: { code: form.code, name: form.name, customerLabel: form.customerLabel, category: form.category, unit: form.unit, basis: form.unit === "hour" ? "units_per_hour" : form.basis, dimensionSource: form.dimensionSource },
+        identity: { code: form.code, name: form.name, customerLabel: form.customerLabel, proposalGroup: form.proposalGroup, category: form.category, unit: form.unit, basis: form.unit === "hour" ? "units_per_hour" : form.basis, dimensionSource: form.dimensionSource },
         values: { ...Object.fromEntries(VALUE_KEYS.map((k) => [k, form[k]])), productionRate: form.unit === "hour" ? "1" : form.productionRate, changeNote: form.changeNote },
         valuesChanged,
       });
@@ -134,6 +136,10 @@ function RateEditor({ rate, materials, categories, onClose }: { rate: RateRowVie
               <datalist id="rate-categories">{categories.map((c) => <option key={c} value={c} />)}</datalist>
             </Field>
             <Field label="Customer-facing name" className="sm:col-span-2"><Input value={form.customerLabel} onChange={(e) => set("customerLabel", e.target.value)} placeholder="Defaults to name" /></Field>
+            <Field label="Proposal group" hint="Lines in the same group share one “Paint …” line on the proposal, e.g. Walls, Trim, Siding. Leave empty for prep and repairs." className="sm:col-span-2">
+              <Input list="proposal-groups" value={form.proposalGroup} onChange={(e) => set("proposalGroup", e.target.value)} />
+              <datalist id="proposal-groups">{groups.map((g) => <option key={g} value={g} />)}</datalist>
+            </Field>
           </div>
           <div className="grid gap-3 rounded-md bg-surface-2 p-3 sm:grid-cols-4">
             <Field label="Measured in">

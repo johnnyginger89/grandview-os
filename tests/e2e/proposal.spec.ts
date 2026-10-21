@@ -29,7 +29,8 @@ test.describe("proposal", () => {
     // Make the ceiling an optional upgrade
     await page.getByRole("button", { name: /Ceilings – roll & cut/ }).click();
     await page.getByLabel("Colour").fill("SW 7008 Alabaster");
-    await page.getByText("Optional upgrade").click();
+    await page.getByText("Optional upgrade", { exact: true }).click();
+    await page.getByLabel(/Internal notes/).fill("SECRET-INTERNAL note for the office");
     await expect(page.getByText("All changes saved")).toBeVisible({ timeout: 10_000 });
 
     // Send (link only; email isn't configured in tests)
@@ -45,15 +46,20 @@ test.describe("proposal", () => {
     const cp = await customer.newPage();
     const res = await cp.goto(link);
     const html = (await res?.text()) ?? "";
-    for (const secret of ["laborCostPerHour", "billingRatePerHour", "targetMargin", "internalNotes", "rateSnapshot", "pricePerGallon"]) {
+    for (const secret of ["laborCostPerHour", "billingRatePerHour", "targetMargin", "internalNotes", "rateSnapshot", "pricePerGallon", "materialMarkupPct", "minimumJobPrice", "prepFactor", "overrideHours", "markupPct", "productionRate", "SECRET-INTERNAL"]) {
       expect(html, `public page must not contain ${secret}`).not.toContain(secret);
     }
-    await expect(cp.getByRole("heading", { name: "Interior repaint" })).toBeVisible();
+    await expect(cp.getByRole("heading", { level: 1 })).toContainText(/it's what's inside that counts/i);
+    await expect(cp.locator("#your-project").getByText("Interior repaint")).toBeVisible();
     await expect(cp.getByText("Great meeting you")).toBeVisible();
-    await expect(cp.getByText("Walls – roll & cut")).toBeVisible();
-    const before = await cp.locator("dt:has-text('Total') + dd").innerText();
-    await cp.getByRole("checkbox", { name: /Ceilings – roll & cut/ }).check();
-    await expect(cp.locator("dt:has-text('Total') + dd")).not.toHaveText(before);
+    await expect(cp.getByText("Paint Walls")).toBeVisible();
+    await expect(cp.getByText(/EST-\d+/).first()).toBeVisible();
+    await expect(cp.getByText("Not yet included")).toBeVisible();
+    await expect(cp.getByText(/for a period of 24 months/)).toBeVisible();
+    const before = await cp.getByTestId("grand-total").innerText();
+    await cp.getByRole("checkbox", { name: /Optional Ceilings – roll & cut/ }).first().check();
+    await expect(cp.getByTestId("grand-total")).not.toHaveText(before);
+    await expect(cp.getByText("Added", { exact: true })).toBeVisible();
 
     // Sign
     await cp.getByLabel("Full name").fill("Pat Customer");
@@ -64,9 +70,9 @@ test.describe("proposal", () => {
     await cp.mouse.down();
     for (let i = 1; i <= 12; i++) await cp.mouse.move(box.x + 20 + i * 18, box.y + 60 + (i % 2 ? -20 : 20));
     await cp.mouse.up();
-    await cp.getByText(/I have read and accept/).click();
-    await cp.getByRole("button", { name: /Accept & sign/ }).click();
-    await expect(cp.getByText("Accepted – thank you!")).toBeVisible();
+    await cp.getByText(/I agree to the Terms and Conditions/).click();
+    await cp.getByRole("button", { name: /^Accept – \$/ }).click();
+    await expect(cp.getByText("Accepted – thank you!").first()).toBeVisible();
     await customer.close();
 
     // Staff side: project created, estimate locked

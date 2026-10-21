@@ -10,7 +10,9 @@ import { listRevisions, listTemplates, loadEstimate } from "@/server/estimates";
 import { listProposals, proposalUrl } from "@/server/proposals";
 import { ProposalsPanel } from "./proposals-panel";
 import { listFactors, listRates, toSnapshot } from "@/server/rates";
-import { getPricing } from "@/server/settings";
+import { getPricing, getProposalTemplate } from "@/server/settings";
+import { resolveJobType } from "@/lib/proposal-template/resolve";
+import { JOB_TYPE_KEYS } from "@/lib/proposal-template/schema";
 import { EstimateEditor } from "./editor";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
@@ -25,7 +27,7 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
   if (!loaded) notFound();
   const { estimate, doc } = loaded;
 
-  const [customer, property, rates, factors, templates, revisions, pricing, proposalRows, contact, project] = await Promise.all([
+  const [customer, property, rates, factors, templates, revisions, pricing, proposalRows, contact, project, template] = await Promise.all([
     db.query.customers.findFirst({ where: eq(customers.id, estimate.customerId) }),
     estimate.propertyId ? db.query.properties.findFirst({ where: eq(properties.id, estimate.propertyId) }) : null,
     listRates(),
@@ -36,7 +38,14 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
     listProposals(id),
     db.query.contacts.findFirst({ where: and(eq(contacts.customerId, estimate.customerId), eq(contacts.isPrimary, true)) }),
     db.query.projects.findFirst({ where: eq(projects.estimateId, id), columns: { id: true, number: true } }),
+    getProposalTemplate(),
   ]);
+  const proposalText = Object.fromEntries(
+    JOB_TYPE_KEYS.map((k) => {
+      const r = resolveJobType(template, k);
+      return [k, { preparation: r.preparation[0]?.body ?? "", areasExcluded: r.areasExcludedDefault }];
+    }),
+  );
 
   return (
     <>
@@ -64,6 +73,8 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
         hoursPerDay={pricing.hoursPerCrewDay}
         canEdit={can(user.role, "estimates.write") && estimate.status !== "accepted"}
         showCosting={can(user.role, "estimates.costing")}
+        proposalText={proposalText}
+        canEditWording={can(user.role, "settings.manage")}
       />
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <ProposalsPanel

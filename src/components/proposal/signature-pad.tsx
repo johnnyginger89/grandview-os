@@ -31,7 +31,7 @@ export function SignaturePad({ onChange }: { onChange: (dataUrl: string) => void
         <canvas
           ref={canvas}
           aria-label="Signature pad: sign with your finger or mouse"
-          className="h-40 w-full touch-none"
+          className="h-48 w-full touch-none"
           onPointerDown={(e) => {
             e.currentTarget.setPointerCapture(e.pointerId);
             drawing.current = true;

@@ -10,7 +10,7 @@ const err = (e: unknown): Result => ({ ok: false, error: safeErrorMessage(e) });
 
 export interface RateFormInput {
   id: string | null;
-  identity: { code: string; name: string; customerLabel: string; category: string; unit: string; basis: string; dimensionSource: string };
+  identity: { code: string; name: string; customerLabel: string; proposalGroup?: string; category: string; unit: string; basis: string; dimensionSource: string };
   values: Record<string, string | number | null>;
   valuesChanged: boolean;
 }

@@ -9,6 +9,7 @@ import { can } from "@/lib/authz/permissions";
 import { formatCAD } from "@/lib/money";
 import { businessHour, startOfBusinessMonth } from "@/lib/time";
 import { formatDateTime } from "@/lib/utils";
+import { documentAlerts, ensureDocumentTasks } from "@/server/media";
 
 export const metadata = { title: "Dashboard" };
 
@@ -48,10 +49,26 @@ export default async function Dashboard() {
     .limit(8);
 
   const showMoney = can(user.role, "estimates.read");
+  const manage = can(user.role, "settings.manage");
+  const docAlerts = manage ? await documentAlerts() : [];
+  if (manage && docAlerts.some((a) => a.status !== "missing")) await ensureDocumentTasks(user.id);
 
   return (
     <>
       <PageHeader title={`Good ${hour < 12 ? "morning" : hour < 18 ? "afternoon" : "evening"}, ${user.name.split(" ")[0]}`} description="What needs attention today." />
+      {docAlerts.length > 0 && (
+        <div className="mb-4 space-y-2" role="status">
+          {docAlerts.map((a) => (
+            <Link
+              key={a.purpose}
+              href="/settings/proposals?section=documents"
+              className={`block rounded-lg px-4 py-3 text-sm hover:underline ${a.status === "expiring" ? "bg-warning-soft text-warning" : "bg-danger-soft text-danger"}`}
+            >
+              {a.message}
+            </Link>
+          ))}
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Leads to contact" value={toContact.n} tone={toContact.n > 0 ? "danger" : undefined} hint={<Link href="/leads" className="text-brand hover:underline">Open pipeline</Link>} />
         <Stat label="Follow-ups due" value={followUps.n} />

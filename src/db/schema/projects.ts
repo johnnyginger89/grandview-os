@@ -39,6 +39,9 @@ export const proposals = pgTable(
     selectedOptionIds: text("selected_option_ids").array(),
     acceptedTotals: jsonb("accepted_totals").$type<Record<string, string>>(),
     documentHash: text("document_hash"),
+    acceptedMessage: text("accepted_message"),
+    /** Insurance documents current when the customer signed. */
+    acceptedDocumentIds: uuid("accepted_document_ids").array(),
     declinedAt: ts("declined_at"),
     declineReason: text("decline_reason"),
   },
