@@ -153,7 +153,11 @@ export const estimates = pgTable(
     createdAt: ts("created_at").notNull().defaultNow(),
     updatedAt: ts("updated_at").notNull().defaultNow(),
   },
-  (t) => [index("estimates_customer_idx").on(t.customerId), index("estimates_status_idx").on(t.status)],
+  (t) => [
+    index("estimates_customer_idx").on(t.customerId),
+    index("estimates_status_idx").on(t.status),
+    index("estimates_opportunity_idx").on(t.opportunityId),
+  ],
 );
 
 export const AREA_KINDS = ["room", "elevation", "building", "area", "phase"] as const;

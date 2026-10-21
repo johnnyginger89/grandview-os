@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, asc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import {
@@ -12,15 +12,21 @@ import {
   outboundMessages,
   pipelineStages,
   properties,
+  user,
   type LEAD_CHANNELS,
 } from "@/db/schema";
+import { can } from "@/lib/authz/permissions";
 import { sendEmail } from "@/lib/email";
+import { stageTransitionPatch } from "@/lib/pipeline/stage-transition";
 import { parseBusinessDateTime } from "@/lib/time";
-import { formatDateTime, fullName, renderTemplate } from "@/lib/utils";
+import { formatDate, formatDateTime, fullName, renderTemplate } from "@/lib/utils";
 import { audit } from "./audit";
+import { milestoneUpdates } from "./lead-milestones";
 import { getCompany } from "./settings";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+type Opportunity = typeof opportunities.$inferSelect;
+type Stage = typeof pipelineStages.$inferSelect;
 
 const optStr = z
   .string()
@@ -127,6 +133,7 @@ export async function ingestLead(
   const name = fullName(input.firstName, input.lastName) || input.company || input.email || input.phone || "Unnamed lead";
 
   return db.transaction(async (tx) => {
+    const now = new Date();
     const stage = await stageByKey(opts.stageKey, tx);
 
     // Same external booking seen before → update in place.
@@ -140,7 +147,8 @@ export async function ingestLead(
           .set({
             estimateVisitAt: input.visitAt ?? existing.estimateVisitAt,
             bookingManageUrl: input.bookingManageUrl ?? existing.bookingManageUrl,
-            updatedAt: new Date(),
+            updatedAt: now,
+            ...milestoneUpdates(existing, { newVisitAt: input.visitAt }, now),
           })
           .where(eq(opportunities.id, existing.id));
         await tx.insert(activities).values({
@@ -203,7 +211,12 @@ export async function ingestLead(
     // A booking from someone with an open, un-booked lead promotes that lead.
     if (opts.stageKey === "estimate_booked") {
       const early = await tx
-        .select({ id: opportunities.id })
+        .select({
+          id: opportunities.id,
+          estimateVisitAt: opportunities.estimateVisitAt,
+          visitBookedAt: opportunities.visitBookedAt,
+          visitCompletedAt: opportunities.visitCompletedAt,
+        })
         .from(opportunities)
         .innerJoin(pipelineStages, eq(pipelineStages.id, opportunities.stageId))
         .where(and(eq(opportunities.customerId, customer.id), inArray(pipelineStages.key, ["new_lead", "contacted", "follow_up"])))
@@ -213,7 +226,7 @@ export async function ingestLead(
           .update(opportunities)
           .set({
             stageId: stage.id,
-            stageChangedAt: new Date(),
+            stageChangedAt: now,
             estimateVisitAt: input.visitAt ?? null,
             bookingRef: input.bookingRef,
             bookingManageUrl: input.bookingManageUrl,
@@ -221,7 +234,8 @@ export async function ingestLead(
             externalRef: opts.externalRef ?? null,
             propertyId: propertyId ?? undefined,
             nextFollowUpAt: null,
-            updatedAt: new Date(),
+            updatedAt: now,
+            ...milestoneUpdates(early[0], { newVisitAt: input.visitAt, toStageKey: stage.key }, now),
           })
           .where(eq(opportunities.id, early[0].id));
         await tx.insert(activities).values({
@@ -249,6 +263,7 @@ export async function ingestLead(
         timeline: input.timeline,
         estimatorId: input.estimatorId,
         estimateVisitAt: input.visitAt ?? null,
+        visitBookedAt: input.visitAt ? now : null,
         bookingRef: input.bookingRef,
         bookingManageUrl: input.bookingManageUrl,
         externalSource: opts.externalSource ?? null,
@@ -313,37 +328,112 @@ export async function markViewed(opportunityId: string, userId: string) {
   }
 }
 
-export async function moveStage(opportunityId: string, stageId: string, userId: string | null, lostReason?: string | null) {
+/**
+ * Move one lead inside an existing transaction. Returns "unchanged" when the lead is
+ * already in that stage. Bulk moves pass rows they have already loaded and locked.
+ */
+export async function moveStageInTx(
+  tx: Tx,
+  opportunityId: string,
+  stageId: string,
+  userId: string | null,
+  lostReason?: string | null,
+  preload?: { opp?: Opportunity; from?: Stage; to?: Stage },
+): Promise<"moved" | "unchanged"> {
+  // Lock the row so a concurrent move can't interleave between the read and the write.
+  const opp = preload?.opp ?? (await tx.select().from(opportunities).where(eq(opportunities.id, opportunityId)).for("update"))[0];
+  if (!opp) throw new Error("Lead not found");
+  const to = preload?.to ?? (await tx.query.pipelineStages.findFirst({ where: eq(pipelineStages.id, stageId) }));
+  if (!to) throw new Error("Stage not found");
+  if (opp.stageId === to.id) return "unchanged";
+  const from = preload?.from ?? (await tx.query.pipelineStages.findFirst({ where: eq(pipelineStages.id, opp.stageId) }));
+  const now = new Date();
+  await tx
+    .update(opportunities)
+    .set({ ...stageTransitionPatch(opp, to, now, lostReason), ...milestoneUpdates(opp, { toStageKey: to.key }, now) })
+    .where(eq(opportunities.id, opp.id));
+  await tx.insert(activities).values({
+    customerId: opp.customerId,
+    opportunityId: opp.id,
+    type: "stage_change",
+    body: `Moved from ${from?.name ?? "?"} to ${to.name}${to.kind === "lost" && lostReason ? ` (${lostReason})` : ""}`,
+    createdBy: userId,
+  });
+  await audit({ actorId: userId, action: "lead.stage", entityType: "opportunity", entityId: opp.id, before: { stage: from?.key }, after: { stage: to.key } }, tx);
+  return "moved";
+}
+
+export async function moveStage(opportunityId: string, stageId: string, userId: string | null, lostReason?: string | null): Promise<void> {
+  await db.transaction((tx) => moveStageInTx(tx, opportunityId, stageId, userId, lostReason));
+}
+
+/** Lock leads in id order so two bulk edits can't deadlock each other. */
+function lockOpportunities(tx: Tx, ids: string[]) {
+  return tx.select().from(opportunities).where(inArray(opportunities.id, ids)).orderBy(asc(opportunities.id)).for("update");
+}
+
+/** Move many leads at once. Each lead gets its own timeline entry and audit row, plus one summary audit row. */
+export async function bulkMoveStage(ids: string[], stageId: string, actorId: string, lostReason: string | null): Promise<{ moved: number; unchanged: number; missing: number }> {
   return db.transaction(async (tx) => {
-    const opp = await tx.query.opportunities.findFirst({ where: eq(opportunities.id, opportunityId) });
-    if (!opp) throw new Error("Lead not found");
-    const [from, to] = await Promise.all([
-      tx.query.pipelineStages.findFirst({ where: eq(pipelineStages.id, opp.stageId) }),
-      tx.query.pipelineStages.findFirst({ where: eq(pipelineStages.id, stageId) }),
-    ]);
+    const stages = await tx.select().from(pipelineStages);
+    const byId = new Map(stages.map((s) => [s.id, s]));
+    const to = byId.get(stageId);
     if (!to) throw new Error("Stage not found");
-    if (from?.id === to.id) return;
+    if (to.kind === "lost" && !lostReason) throw new Error("Choose why these leads were lost.");
+    const opps = await lockOpportunities(tx, ids);
+    const moved: string[] = [];
+    for (const opp of opps) {
+      const r = await moveStageInTx(tx, opp.id, to.id, actorId, lostReason, { opp, from: byId.get(opp.stageId), to });
+      if (r === "moved") moved.push(opp.id);
+    }
+    if (moved.length) {
+      await audit({ actorId, action: "lead.bulk_stage", entityType: "opportunity", entityId: null, after: { stage: to.key, ids: moved } }, tx);
+    }
+    return { moved: moved.length, unchanged: opps.length - moved.length, missing: ids.length - opps.length };
+  });
+}
+
+/** Set or clear the next follow-up on one or more leads. */
+export async function setNextFollowUp(ids: string[], at: Date | null, actorId: string): Promise<{ updated: number }> {
+  return db.transaction(async (tx) => {
+    const before = await lockOpportunities(tx, ids);
+    if (!before.length) return { updated: 0 };
     const now = new Date();
     await tx
       .update(opportunities)
-      .set({
-        stageId,
-        stageChangedAt: now,
-        wonAt: to.kind === "won" ? now : null,
-        closedAt: to.kind === "open" ? null : now,
-        lostReason: to.kind === "lost" ? (lostReason ?? opp.lostReason) : null,
-        lastContactedAt: to.key === "contacted" ? now : opp.lastContactedAt,
-        updatedAt: now,
-      })
-      .where(eq(opportunities.id, opportunityId));
-    await tx.insert(activities).values({
-      customerId: opp.customerId,
-      opportunityId,
-      type: "stage_change",
-      body: `Moved from ${from?.name ?? "?"} to ${to.name}${to.kind === "lost" && lostReason ? ` (${lostReason})` : ""}`,
-      createdBy: userId,
-    });
-    await audit({ actorId: userId, action: "lead.stage", entityType: "opportunity", entityId: opportunityId, before: { stage: from?.key }, after: { stage: to.key } }, tx);
+      .set({ nextFollowUpAt: at, updatedAt: now })
+      .where(inArray(opportunities.id, before.map((o) => o.id)));
+    // A "system" entry, so setting a follow-up doesn't count as contacting the customer.
+    const body = at ? `Follow-up set for ${formatDate(at, { weekday: "short", month: "short", day: "numeric" })}` : "Follow-up cleared";
+    await tx.insert(activities).values(before.map((o) => ({ customerId: o.customerId, opportunityId: o.id, type: "system" as const, body, createdBy: actorId })));
+    for (const o of before) {
+      await audit({ actorId, action: "lead.follow_up", entityType: "opportunity", entityId: o.id, before: { nextFollowUpAt: o.nextFollowUpAt?.toISOString() ?? null }, after: { nextFollowUpAt: at?.toISOString() ?? null } }, tx);
+    }
+    return { updated: before.length };
+  });
+}
+
+/** Assign (or remove) the estimator on one or more leads. Only active people who can write estimates qualify. */
+export async function assignEstimator(ids: string[], estimatorId: string | null, actorId: string): Promise<{ updated: number }> {
+  return db.transaction(async (tx) => {
+    let name: string | null = null;
+    if (estimatorId) {
+      const person = await tx.query.user.findFirst({ where: eq(user.id, estimatorId) });
+      if (!person || !person.active || !can(person.role, "estimates.write")) throw new Error("That person can't be assigned as estimator.");
+      name = person.name;
+    }
+    const before = await lockOpportunities(tx, ids);
+    if (!before.length) return { updated: 0 };
+    await tx
+      .update(opportunities)
+      .set({ estimatorId, updatedAt: new Date() })
+      .where(inArray(opportunities.id, before.map((o) => o.id)));
+    const body = name ? `Estimator set to ${name}` : "Estimator removed";
+    await tx.insert(activities).values(before.map((o) => ({ customerId: o.customerId, opportunityId: o.id, type: "system" as const, body, createdBy: actorId })));
+    for (const o of before) {
+      await audit({ actorId, action: "lead.estimator", entityType: "opportunity", entityId: o.id, before: { estimatorId: o.estimatorId }, after: { estimatorId } }, tx);
+    }
+    return { updated: before.length };
   });
 }
 

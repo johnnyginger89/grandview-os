@@ -16,7 +16,7 @@ export default async function ImportPage() {
   return (
     <>
       <PageHeader title="Settings" description="Bring your customers over from Markate. You review everything before it's added, and you can undo an import." />
-      <SettingsTabs active="import" showUsers={can(me.role, "users.manage")} />
+      <SettingsTabs active="import" role={me.role} />
       {!can(me.role, "customers.write") ? (
         <p className="text-sm text-muted">Importing customers needs permission to edit customers.</p>
       ) : (

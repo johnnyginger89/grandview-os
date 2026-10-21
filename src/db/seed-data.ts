@@ -6,6 +6,7 @@
  * Grandview's own rates (imported from PaintScout) before real estimates
  * are sent. Every seeded rate carries the change note "Starter value".
  */
+import type { Goals } from "@/lib/reporting/goals";
 import type { FactorKind } from "./schema/estimating";
 
 export const PIPELINE_STAGES = [
@@ -253,4 +254,15 @@ export const DEFAULT_PROPOSAL = {
   terms:
     "This proposal is valid until the date shown. Colours and sheens are confirmed with you before work begins. Changes to the scope after acceptance are handled by written change order. Start dates depend on weather for exterior work.",
   showAreaPrices: false,
+};
+
+/**
+ * Dashboard goals. STARTER VALUES (the owner's round numbers), labelled as such in
+ * Settings → Goals until the owner saves their own. Amounts are before GST.
+ */
+export const DEFAULT_GOALS: Goals = {
+  fiscalYearStartMonth: 1,
+  years: { "2026": { sales: "1000000.00", produced: "1000000.00", leadsPerMonth: null, monthlySales: null, monthlyProduced: null } },
+  longTerm: { amount: "5000000.00", year: 2030 },
+  excludedLostReasons: ["Spam / wrong number"],
 };

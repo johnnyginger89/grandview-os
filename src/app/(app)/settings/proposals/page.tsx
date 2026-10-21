@@ -7,7 +7,6 @@ import { JobTypesForm, JOB_TYPE_NAMES } from "@/components/proposal-settings/job
 import { SectionForm } from "@/components/proposal-settings/section-form";
 import { DEFAULT_PROPOSAL_TEMPLATE, SUGGESTED_NOTES } from "@/db/seed-data";
 import { requirePermission } from "@/lib/authz/guard";
-import { can } from "@/lib/authz/permissions";
 import { formatDate } from "@/lib/utils";
 import { currentDocuments, listMedia } from "@/server/media";
 import { getCompany, getProposalTemplateState, getSetting } from "@/server/settings";
@@ -122,7 +121,7 @@ export default async function ProposalSettingsPage({ searchParams }: { searchPar
   return (
     <>
       <PageHeader title="Settings" description="Your proposal's pictures, wording and insurance documents. Changes show on proposals right away." />
-      <SettingsTabs active="proposals" showUsers={can(me.role, "users.manage")} />
+      <SettingsTabs active="proposals" role={me.role} />
       <div className="grid gap-6 lg:grid-cols-[13rem_1fr]">
         <div className="lg:hidden"><SectionSelect pages={PAGES.map(({ key, label }) => ({ key, label }))} active={page.key} /></div>
         <nav aria-label="Proposal settings sections" className="hidden lg:block">

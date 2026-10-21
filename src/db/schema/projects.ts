@@ -74,6 +74,17 @@ export const projects = pgTable(
     notes: text("notes"),
     createdAt: ts("created_at").notNull().defaultNow(),
     updatedAt: ts("updated_at").notNull().defaultNow(),
+    /** When the customer signed. Set from the proposal's acceptedAt; the default covers rows inserted by code deployed before this column. */
+    soldAt: ts("sold_at").notNull().defaultNow(),
+    /** "Finish date": first move into complete/invoiced/closed. Editable; cleared if the job is reopened. Drives "Produced". */
+    completedAt: ts("completed_at"),
+    /** When a cancellation took effect; cleared if the job is reinstated. */
+    cancelledAt: ts("cancelled_at"),
   },
-  (t) => [index("projects_status_idx").on(t.status), uniqueIndex("projects_estimate_idx").on(t.estimateId)],
+  (t) => [
+    index("projects_status_idx").on(t.status),
+    uniqueIndex("projects_estimate_idx").on(t.estimateId),
+    index("projects_sold_idx").on(t.soldAt),
+    index("projects_completed_idx").on(t.completedAt),
+  ],
 );

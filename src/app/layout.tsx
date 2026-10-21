@@ -8,6 +8,7 @@ const robotoCondensed = Roboto_Condensed({ subsets: ["latin"], weight: ["600", "
 
 export const metadata: Metadata = {
   title: { default: "Grandview OS", template: "%s · Grandview OS" },
+  appleWebApp: { capable: true, title: "Grandview", statusBarStyle: "default" },
   description: "Business management for Grandview Painting Ltd.",
   robots: { index: false, follow: false },
 };

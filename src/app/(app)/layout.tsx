@@ -1,9 +1,11 @@
+import { QuickAdd, type QuickAddItem } from "@/components/quick-add";
 import { Sidebar, type NavItem } from "@/components/sidebar";
 import { requireUser } from "@/lib/authz/guard";
 import { can, ROLE_LABELS, type Permission } from "@/lib/authz/permissions";
 
 const NAV: (NavItem & { permission: Permission })[] = [
   { href: "/", label: "Dashboard", icon: "Gauge", permission: "dashboard.view" },
+  { href: "/performance", label: "Performance", icon: "ChartColumn", permission: "dashboard.view" },
   { href: "/my-jobs", label: "My Jobs", icon: "HardHat", permission: "projects.read_assigned" },
   { href: "/leads", label: "Leads & Pipeline", icon: "Workflow", permission: "pipeline.read" },
   { href: "/customers", label: "Customers", icon: "Users", permission: "customers.read" },
@@ -16,12 +18,18 @@ const NAV: (NavItem & { permission: Permission })[] = [
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser({ allowMfaPending: true });
   const items = NAV.filter((n) => can(user.role, n.permission)).map(({ permission: _p, ...n }) => n);
+  const quickAdd: QuickAddItem[] = [
+    ...(can(user.role, "pipeline.write") ? (["lead"] as const) : []),
+    ...(can(user.role, "customers.write") ? (["customer"] as const) : []),
+    ...(can(user.role, "estimates.write") ? (["estimate"] as const) : []),
+  ];
   return (
     <div className="min-h-screen">
       <Sidebar items={items} userName={user.name} roleLabel={ROLE_LABELS[user.role]} />
       <main className="lg:pl-60">
         <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">{children}</div>
       </main>
+      <QuickAdd items={quickAdd} />
     </div>
   );
 }

@@ -13,7 +13,6 @@ import {
   opportunities,
   outboundMessages,
   pipelineStages,
-  projects,
   properties,
   proposals,
 } from "@/db/schema";
@@ -25,6 +24,7 @@ import { audit } from "./audit";
 import { createRevision, loadEstimate, saveEstimateDoc } from "./estimates";
 import { moveStage, stageByKey } from "./leads";
 import { currentDocuments, visibleDocuments } from "./media";
+import { createSoldProject } from "./project-status";
 import { buildProposalView, normalizeView, type ProposalViewV2 } from "./proposal-view";
 import { getCompany, getProposalTemplate } from "./settings";
 
@@ -351,9 +351,8 @@ export async function acceptProposal(token: string, raw: unknown, meta: { ip: st
       .set({ status: "accepted", acceptedAt, totalHours: toDb(t.hours, 4), totalCost: toDb(t.totalCost), totalPrice: toDb(t.price), totalWithTax: toDb(t.total), updatedAt: acceptedAt })
       .where(eq(estimates.id, p.estimateId));
 
-    const [proj] = await tx
-      .insert(projects)
-      .values({
+    const proj = await createSoldProject(
+      {
         name: `${customer?.displayName ?? "Customer"} – ${doc.title}`,
         customerId: estimate.customerId,
         propertyId: estimate.propertyId,
@@ -365,9 +364,10 @@ export async function acceptProposal(token: string, raw: unknown, meta: { ip: st
         depositRequired: totals.deposit,
         estimatedHours: toDb(t.hours, 4),
         estimatedCost: toDb(t.totalCost),
-      })
-      .onConflictDoNothing({ target: projects.estimateId })
-      .returning();
+      },
+      { soldAt: acceptedAt, actorId: null, note: "Proposal signed" },
+      tx,
+    );
     await tx.insert(activities).values({
       customerId: estimate.customerId,
       opportunityId: estimate.opportunityId,

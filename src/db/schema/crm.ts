@@ -137,6 +137,10 @@ export const opportunities = pgTable(
     estimatorId: text("estimator_id").references(() => user.id),
     setterId: text("setter_id").references(() => user.id),
     estimateVisitAt: ts("estimate_visit_at"),
+    /** When the estimate visit was first booked (not when it happens). */
+    visitBookedAt: ts("visit_booked_at"),
+    /** When the estimate visit took place; set when the lead first reaches a post-visit stage. */
+    visitCompletedAt: ts("visit_completed_at"),
     bookingRef: text("booking_ref"),
     bookingManageUrl: text("booking_manage_url"),
     firstViewedAt: ts("first_viewed_at"),
@@ -155,6 +159,8 @@ export const opportunities = pgTable(
     index("opp_stage_idx").on(t.stageId),
     index("opp_customer_idx").on(t.customerId),
     uniqueIndex("opp_external_idx").on(t.externalSource, t.externalRef),
+    index("opp_created_idx").on(t.createdAt),
+    index("opp_closed_idx").on(t.closedAt),
   ],
 );
 
@@ -182,7 +188,11 @@ export const activities = pgTable(
     createdBy: text("created_by").references(() => user.id),
     createdAt: created(),
   },
-  (t) => [index("activities_customer_idx").on(t.customerId, t.createdAt), index("activities_opp_idx").on(t.opportunityId)],
+  (t) => [
+    index("activities_customer_idx").on(t.customerId, t.createdAt),
+    index("activities_opp_idx").on(t.opportunityId),
+    index("activities_opp_created_idx").on(t.opportunityId, t.createdAt),
+  ],
 );
 
 export const tasks = pgTable(

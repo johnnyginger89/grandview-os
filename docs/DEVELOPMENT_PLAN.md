@@ -61,6 +61,13 @@ Status key: ✅ done and tested · 🟡 partly done · ⬜ not started
 - ⬜ Time tracking: mobile clock in/out per job, approval
 - ⬜ Job costing: estimated vs actual dashboard, sub contract costs, material purchases
 
+### Batch 1 (Oct 2026): sales tracking and everyday screens
+- ✅ Performance dashboard: sales (signed), produced (finished jobs), backlog, leads by source/channel, visits, proposals, close rate, sales cycle, funnel, lost reasons, per salesperson, 12-month chart, period picker with comparisons, goals with pace; money only for owner/operations, counts for other office roles
+- ✅ Settings → Goals (owner only); project Status card with finish date and status history (single status writer; sold/finished/cancelled dates)
+- ✅ Leads & Pipeline list view (monday-style): grouped by stage, inline stage and follow-up edits with undo, bulk moves, search, filters, columns; phone cards with Call/Email
+- ✅ Estimates list grouped by month with "viewed" indicator; phone home screen with tiles, "$ (N jobs today)", Share booking link and a "+" quick-add; installable on the phone home screen
+- ⬜ Next: Gmail (send, replies into the OS), Slack, existing-jobs/history import from monday, schedule calendar, Google Calendar, CompanyCam (docs: scratchpad plan → this file as each ships)
+
 ### Phase 6 – advanced
 - ⬜ Change orders · ⬜ invoices (deposit/progress/final) + QBO sync · ⬜ reporting dashboard
 - ⬜ Automations (follow-up reminders, tasks) · ⬜ purchasing · ⬜ project messaging and photos

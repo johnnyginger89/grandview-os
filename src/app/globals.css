@@ -128,3 +128,35 @@ input[type="number"] {
     display: block;
   }
 }
+
+/*
+ * Chart tokens (performance dashboard). Sales = logo blue lifted into the chart
+ * lightness band; Produced = brand teal. Validated as a pair on #ffffff and --bg:
+ * CVD ΔE 19.1, normal-vision ΔE 23.7, contrast ≥ 3:1. Text never uses these.
+ */
+:root {
+  --chart-sales: #4a40c8; /* derived */
+  --chart-sales-track: #e4e2f8; /* derived: meter track, same ramp */
+  --chart-produced: #009abb; /* = --accent */
+  --chart-produced-track: #d6f0f5; /* derived */
+  --chart-goal: #56626c; /* = --text-muted: goal ticks and pace marker */
+  --chart-grid: #dce1e9; /* = --border */
+  --chart-muted: #8a949e; /* derived: sparklines */
+  --chart-band: #f4f6f9; /* = --bg: months inside the selected period */
+  --chart-step-1: #9a93e6; /* funnel ordinal ramp, light → dark */
+  --chart-step-2: #7f77dc;
+  --chart-step-3: #655cd2;
+  --chart-step-4: #4a40c8;
+  --chart-step-5: #3227a8;
+}
+
+@theme inline {
+  --color-chart-sales: var(--chart-sales);
+  --color-chart-sales-track: var(--chart-sales-track);
+  --color-chart-produced: var(--chart-produced);
+  --color-chart-produced-track: var(--chart-produced-track);
+  --color-chart-goal: var(--chart-goal);
+  --color-chart-grid: var(--chart-grid);
+  --color-chart-muted: var(--chart-muted);
+  --color-chart-band: var(--chart-band);
+}

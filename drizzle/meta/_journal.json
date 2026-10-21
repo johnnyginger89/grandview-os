@@ -43,6 +43,13 @@
       "when": 1792542112305,
       "tag": "0005_customer_imports",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792544295528,
+      "tag": "0006_dashboard_lists",
+      "breakpoints": true
     }
   ]
 }

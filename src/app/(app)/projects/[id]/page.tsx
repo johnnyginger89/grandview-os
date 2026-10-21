@@ -4,13 +4,52 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Badge, Card, CardHeader, PageHeader, Stat } from "@/components/ui";
 import { db } from "@/db";
-import { customers, projects, properties, proposals } from "@/db/schema";
+import { customers, PROJECT_STATUSES, projects, properties, proposals, type ProjectStatus } from "@/db/schema";
 import { requirePermission } from "@/lib/authz/guard";
 import { can } from "@/lib/authz/permissions";
+import { businessDate, formatIsoDate, todayIso } from "@/lib/calendar-date";
 import { formatCAD, formatNum } from "@/lib/money";
-import { formatAddress, formatDateTime, mapsUrl } from "@/lib/utils";
+import { formatAddress, formatDate, formatDateTime, mapsUrl } from "@/lib/utils";
+import { isDoneStatus, listStatusEvents, type StatusEventRow } from "@/server/project-status";
 import { proposalUrl } from "@/server/proposals";
 import { PROJECT_STATUS_LABEL, PROJECT_STATUS_TONE } from "../status";
+import { StatusControl, type StatusHistoryEntry } from "./status-control";
+
+function historyEntry(e: StatusEventRow): StatusHistoryEntry {
+  const label = (s: ProjectStatus) => PROJECT_STATUS_LABEL[s];
+  const effective = businessDate(e.effectiveAt);
+  const dateChange = e.fromStatus === e.toStatus;
+  const change =
+    e.source === "backfill" ? `${label(e.toStatus)} (when status history began)`
+    : e.fromStatus === null ? `Started as ${label(e.toStatus)}`
+    : dateChange ? `Finish date changed to ${formatIsoDate(effective)}`
+    : `${label(e.fromStatus)} → ${label(e.toStatus)}`;
+  // A back-dated finish or cancellation shows the day it counts from.
+  const backDated = !dateChange && e.source !== "backfill" && effective !== businessDate(e.changedAt);
+  return {
+    id: e.id,
+    change,
+    when: `${formatDate(e.changedAt)}${backDated ? ` (effective ${formatIsoDate(effective)})` : ""}`,
+    by: e.changedByName ?? (e.source === "import" ? "Import" : null),
+    note: dateChange || e.source === "backfill" ? null : e.note,
+  };
+}
+
+async function StatusCard({ p }: { p: typeof projects.$inferSelect }) {
+  const history = (await listStatusEvents(p.id, 10)).map(historyEntry);
+  return (
+    <StatusControl
+      projectId={p.id}
+      status={p.status}
+      options={PROJECT_STATUSES.map((s) => ({ value: s, label: PROJECT_STATUS_LABEL[s], done: isDoneStatus(s) }))}
+      soldDate={businessDate(p.soldAt)}
+      completedDate={p.completedAt ? businessDate(p.completedAt) : null}
+      cancelledDate={p.cancelledAt ? businessDate(p.cancelledAt) : null}
+      today={todayIso()}
+      history={history}
+    />
+  );
+}
 
 export default async function ProjectPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -49,6 +88,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
             {proposal && <><dt className="text-muted">Signed copy</dt><dd className="col-span-2"><a href={proposalUrl(proposal.token)} target="_blank" rel="noreferrer" className="text-brand hover:underline">Open signed proposal</a></dd></>}
           </dl>
         </Card>
+        {can(user.role, "projects.write") && <StatusCard p={p} />}
         <Card>
           <CardHeader title="Next steps" />
           <ul className="list-disc space-y-1 p-4 pl-8 text-sm text-muted">

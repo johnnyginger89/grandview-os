@@ -1,66 +1,57 @@
-import { and, asc, eq, gte, or } from "drizzle-orm";
+import { asc } from "drizzle-orm";
 import { Plus } from "lucide-react";
-import { LinkButton, PageHeader } from "@/components/ui";
+import { cookies } from "next/headers";
+import { LinkButton } from "@/components/ui";
 import { db } from "@/db";
-import { customers, opportunities, pipelineStages, properties } from "@/db/schema";
+import { pipelineStages } from "@/db/schema";
 import { requirePermission } from "@/lib/authz/guard";
 import { can } from "@/lib/authz/permissions";
+import { decodeListPrefs, LIST_PREFS_COOKIE, parseListParams, type StageInfo } from "@/lib/pipeline/list-view";
+import { listAssignableEstimators, listPipelineRows } from "@/server/pipeline-list";
 import { getList } from "@/server/settings";
-import { PipelineBoard, type BoardCard } from "./pipeline-board";
+import { LeadsWorkspace } from "./leads-workspace";
 
 export const metadata = { title: "Leads & Pipeline" };
 
-const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000);
-
-export default async function LeadsPage() {
+export default async function LeadsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const user = await requirePermission("pipeline.read");
-  const since = daysAgo(30);
-  const [stages, rows, lostReasons] = await Promise.all([
-    db.select().from(pipelineStages).orderBy(asc(pipelineStages.position)),
-    db
-      .select({
-        id: opportunities.id,
-        number: opportunities.number,
-        title: opportunities.title,
-        stageId: opportunities.stageId,
-        stageChangedAt: opportunities.stageChangedAt,
-        estimateVisitAt: opportunities.estimateVisitAt,
-        firstViewedAt: opportunities.firstViewedAt,
-        nextFollowUpAt: opportunities.nextFollowUpAt,
-        projectTypes: opportunities.projectTypes,
-        estimatedValue: opportunities.estimatedValue,
-        channel: opportunities.channel,
-        customerName: customers.displayName,
-        city: properties.city,
-        kind: pipelineStages.kind,
-      })
-      .from(opportunities)
-      .innerJoin(customers, eq(customers.id, opportunities.customerId))
-      .innerJoin(pipelineStages, eq(pipelineStages.id, opportunities.stageId))
-      .leftJoin(properties, eq(properties.id, opportunities.propertyId))
-      .where(or(eq(pipelineStages.kind, "open"), and(gte(opportunities.closedAt, since))))
-      .orderBy(asc(opportunities.stageChangedAt)),
-    getList("lost_reasons"),
-  ]);
+  const state = parseListParams(await searchParams);
+  // Read only: the browser writes this cookie (a cookie set by a Server Action would re-render the page).
+  const prefs = decodeListPrefs((await cookies()).get(LIST_PREFS_COOKIE)?.value);
+  const includeMoney = can(user.role, "estimates.read");
+  const canEdit = can(user.role, "pipeline.write");
 
-  const cards: BoardCard[] = rows.map((r) => ({
-    ...r,
-    stageChangedAt: r.stageChangedAt.toISOString(),
-    estimateVisitAt: r.estimateVisitAt?.toISOString() ?? null,
-    firstViewedAt: r.firstViewedAt?.toISOString() ?? null,
-    nextFollowUpAt: r.nextFollowUpAt?.toISOString() ?? null,
-  }));
+  const [stageRows, { rows, truncated }, lostReasons, leadSources, estimators] = await Promise.all([
+    db.select().from(pipelineStages).orderBy(asc(pipelineStages.position)),
+    listPipelineRows({ closed: state.closed, includeMoney }),
+    getList("lost_reasons"),
+    getList("lead_sources"),
+    // Read-only roles see names from the rows; only editors need the full list.
+    canEdit ? listAssignableEstimators() : Promise.resolve([]),
+  ]);
+  const stages: StageInfo[] = stageRows.map(({ id, key, name, kind, color, position, staleAfterDays }) => ({ id, key, name, kind, color, position, staleAfterDays }));
 
   return (
-    <>
-      <PageHeader
-        title="Leads & Pipeline"
-        description="Drag cards between stages, or change the stage on the lead. Won and lost show the last 30 days."
-        actions={can(user.role, "pipeline.write") && (
-          <LinkButton href="/leads/new"><Plus className="size-4" /> New lead</LinkButton>
-        )}
-      />
-      <PipelineBoard stages={stages} cards={cards} lostReasons={lostReasons} canEdit={can(user.role, "pipeline.write")} />
-    </>
+    <LeadsWorkspace
+      initialView={state.view ?? prefs.view ?? "board"}
+      initialState={state}
+      initialPrefs={prefs}
+      rows={rows}
+      truncated={truncated}
+      stages={stages}
+      lostReasons={lostReasons}
+      leadSources={leadSources}
+      estimators={estimators}
+      canEdit={canEdit}
+      includeMoney={includeMoney}
+      nowIso={new Date().toISOString()}
+      headerActions={
+        canEdit ? (
+          <LinkButton href="/leads/new">
+            <Plus className="size-4" /> New lead
+          </LinkButton>
+        ) : undefined
+      }
+    />
   );
 }

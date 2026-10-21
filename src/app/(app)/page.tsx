@@ -1,15 +1,18 @@
-import { and, asc, count, eq, gte, isNull, lte, sum } from "drizzle-orm";
+import { and, asc, count, eq, gte, isNull, lte } from "drizzle-orm";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Card, CardHeader, PageHeader, Stat } from "@/components/ui";
 import { db } from "@/db";
-import { customers, estimates, opportunities, pipelineStages, properties } from "@/db/schema";
+import { customers, opportunities, pipelineStages, properties } from "@/db/schema";
 import { requireUser } from "@/lib/authz/guard";
 import { can } from "@/lib/authz/permissions";
 import { formatCAD } from "@/lib/money";
-import { businessHour, startOfBusinessMonth } from "@/lib/time";
+import { businessHour } from "@/lib/time";
 import { formatDateTime } from "@/lib/utils";
+import { accessFor, getMonthSnapshot } from "@/server/dashboard";
 import { documentAlerts, ensureDocumentTasks } from "@/server/media";
+import { HomeTiles } from "./home-tiles";
+import { MonthSnapshot } from "./month-snapshot";
 
 export const metadata = { title: "Dashboard" };
 
@@ -19,10 +22,9 @@ export default async function Dashboard() {
 
   const now = new Date();
   const week = new Date(now.getTime() + 7 * 86_400_000);
-  const monthStart = startOfBusinessMonth(now);
   const hour = businessHour(now);
 
-  const [[toContact], [followUps], visits, [proposals], [wonMonth], [created30], [won30]] = await Promise.all([
+  const [[toContact], [followUps], visits, snapshot, [created30], [won30]] = await Promise.all([
     db.select({ n: count() }).from(opportunities).innerJoin(pipelineStages, eq(pipelineStages.id, opportunities.stageId)).where(eq(pipelineStages.key, "new_lead")),
     db.select({ n: count() }).from(opportunities).innerJoin(pipelineStages, eq(pipelineStages.id, opportunities.stageId)).where(and(eq(pipelineStages.kind, "open"), lte(opportunities.nextFollowUpAt, now))),
     db
@@ -33,8 +35,7 @@ export default async function Dashboard() {
       .leftJoin(properties, eq(properties.id, opportunities.propertyId))
       .where(and(eq(pipelineStages.key, "estimate_booked"), gte(opportunities.estimateVisitAt, new Date(now.getTime() - 12 * 3_600_000)), lte(opportunities.estimateVisitAt, week)))
       .orderBy(asc(opportunities.estimateVisitAt)),
-    db.select({ n: count(), value: sum(estimates.totalPrice) }).from(estimates).where(eq(estimates.status, "sent")),
-    db.select({ n: count(), value: sum(estimates.totalPrice) }).from(estimates).where(and(eq(estimates.status, "accepted"), gte(estimates.acceptedAt, monthStart))),
+    getMonthSnapshot(now, accessFor(user.role)),
     db.select({ n: count() }).from(opportunities).where(gte(opportunities.createdAt, new Date(now.getTime() - 30 * 86_400_000))),
     db.select({ n: count() }).from(opportunities).where(gte(opportunities.wonAt, new Date(now.getTime() - 30 * 86_400_000))),
   ]);
@@ -48,7 +49,7 @@ export default async function Dashboard() {
     .orderBy(asc(opportunities.createdAt))
     .limit(8);
 
-  const showMoney = can(user.role, "estimates.read");
+  const proposalsOutValue = snapshot.pipeline.proposalsOutValue;
   const manage = can(user.role, "settings.manage");
   const docAlerts = manage ? await documentAlerts() : [];
   if (manage && docAlerts.some((a) => a.status !== "missing")) await ensureDocumentTasks(user.id);
@@ -56,6 +57,7 @@ export default async function Dashboard() {
   return (
     <>
       <PageHeader title={`Good ${hour < 12 ? "morning" : hour < 18 ? "afternoon" : "evening"}, ${user.name.split(" ")[0]}`} description="What needs attention today." />
+      <HomeTiles role={user.role} />
       {docAlerts.length > 0 && (
         <div className="mb-4 space-y-2" role="status">
           {docAlerts.map((a) => (
@@ -69,11 +71,11 @@ export default async function Dashboard() {
           ))}
         </div>
       )}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <MonthSnapshot data={snapshot} />
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
         <Stat label="Leads to contact" value={toContact.n} tone={toContact.n > 0 ? "danger" : undefined} hint={<Link href="/leads" className="text-brand hover:underline">Open pipeline</Link>} />
         <Stat label="Follow-ups due" value={followUps.n} />
-        <Stat label="Proposals out" value={proposals.n} hint={showMoney ? formatCAD(proposals.value ?? 0) : undefined} />
-        <Stat label="Won this month" value={wonMonth.n} hint={showMoney ? formatCAD(wonMonth.value ?? 0) : undefined} tone="success" />
+        <Stat label="Proposals out" value={snapshot.pipeline.proposalsOut} hint={proposalsOutValue !== undefined ? formatCAD(proposalsOutValue) : undefined} />
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">

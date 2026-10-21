@@ -3,7 +3,9 @@ import Link from "next/link";
 import { useOptimistic, useState, useTransition } from "react";
 import { CalendarClock, Eye } from "lucide-react";
 import { Button, Select } from "@/components/ui";
-import { cn, formatDate, formatDateTime, relativeDays } from "@/lib/utils";
+import { daysInStage, isFollowUpDue, isStale, type PipelineRow, type StageInfo } from "@/lib/pipeline/list-view";
+import { stageTone } from "@/lib/pipeline/stage-colors";
+import { cn, formatDate, formatDateTime } from "@/lib/utils";
 import { moveStageAction } from "./actions";
 
 export interface BoardCard {
@@ -23,21 +25,29 @@ export interface BoardCard {
   kind: string;
 }
 
-interface Stage {
-  id: string;
-  key: string;
-  name: string;
-  kind: string;
-  color: string;
-  staleAfterDays: number | null;
+type Stage = Pick<StageInfo, "id" | "key" | "name" | "kind" | "color" | "staleAfterDays">;
+
+/** The board's slice of a list row. Money is already null for roles without estimates.read. */
+export function toBoardCard(r: PipelineRow): BoardCard {
+  return {
+    id: r.id,
+    number: r.number,
+    title: r.title,
+    stageId: r.stageId,
+    stageChangedAt: r.stageChangedAt,
+    estimateVisitAt: r.estimateVisitAt,
+    firstViewedAt: r.firstViewedAt,
+    nextFollowUpAt: r.nextFollowUpAt,
+    projectTypes: r.projectTypes,
+    estimatedValue: r.estimatedValue,
+    channel: r.channel,
+    customerName: r.customerName,
+    city: r.city,
+    kind: r.stageKind,
+  };
 }
 
-const DOT: Record<string, string> = {
-  amber: "bg-amber-500", sky: "bg-sky-500", blue: "bg-blue-600", violet: "bg-violet-500", indigo: "bg-indigo-500",
-  orange: "bg-orange-500", slate: "bg-slate-400", emerald: "bg-emerald-600", rose: "bg-rose-500",
-};
-
-export function PipelineBoard({ stages, cards, lostReasons, canEdit }: { stages: Stage[]; cards: BoardCard[]; lostReasons: string[]; canEdit: boolean }) {
+export function PipelineBoard({ stages, cards, lostReasons, canEdit, now }: { stages: Stage[]; cards: BoardCard[]; lostReasons: string[]; canEdit: boolean; now?: Date }) {
   const [optimistic, applyMove] = useOptimistic(cards, (state, m: { id: string; stageId: string }) =>
     state.map((c) => (c.id === m.id ? { ...c, stageId: m.stageId, stageChangedAt: new Date().toISOString() } : c)),
   );
@@ -88,11 +98,11 @@ export function PipelineBoard({ stages, cards, lostReasons, canEdit }: { stages:
           return (
             <section key={stage.id} aria-label={stage.name}>
               <header className="mb-1.5 flex items-center gap-2 px-1">
-                <span className={cn("size-2 rounded-full", DOT[stage.color] ?? "bg-slate-400")} />
+                <span className={cn("size-2 rounded-full", stageTone(stage.color).dot)} />
                 <h2 className="flex-1 text-xs font-semibold uppercase tracking-wide text-muted">{stage.name}</h2>
                 <span className="text-xs text-subtle tabular">{list.length}</span>
               </header>
-              {list.length > 0 && <div className="flex flex-col gap-2">{list.map((c) => <Card key={c.id} card={c} stage={stage} draggable={false} />)}</div>}
+              {list.length > 0 && <div className="flex flex-col gap-2">{list.map((c) => <Card key={c.id} card={c} stage={stage} draggable={false} now={now} />)}</div>}
             </section>
           );
         })}
@@ -111,12 +121,12 @@ export function PipelineBoard({ stages, cards, lostReasons, canEdit }: { stages:
                 className={cn("flex w-64 shrink-0 flex-col rounded-lg bg-surface-2 p-2 transition-colors", dragOver === stage.id && "bg-brand-soft ring-2 ring-brand/30")}
               >
                 <header className="mb-2 flex items-center gap-2 px-1">
-                  <span className={cn("size-2 rounded-full", DOT[stage.color] ?? "bg-slate-400")} />
+                  <span className={cn("size-2 rounded-full", stageTone(stage.color).dot)} />
                   <h2 className="flex-1 truncate text-xs font-semibold uppercase tracking-wide text-muted">{stage.name}</h2>
                   <span className="text-xs text-subtle tabular">{list.length}</span>
                 </header>
                 <div className="flex min-h-24 flex-col gap-2">
-                  {list.map((c) => <Card key={c.id} card={c} stage={stage} draggable={canEdit} />)}
+                  {list.map((c) => <Card key={c.id} card={c} stage={stage} draggable={canEdit} now={now} />)}
                 </div>
               </section>
             );
@@ -127,10 +137,10 @@ export function PipelineBoard({ stages, cards, lostReasons, canEdit }: { stages:
   );
 }
 
-function Card({ card, stage, draggable }: { card: BoardCard; stage: Stage; draggable: boolean }) {
-  const days = relativeDays(card.stageChangedAt) ?? 0;
-  const stale = stage.staleAfterDays != null && stage.kind === "open" && days >= stage.staleAfterDays;
-  const followUpDue = card.nextFollowUpAt && new Date(card.nextFollowUpAt) <= new Date();
+function Card({ card, stage, draggable, now = new Date() }: { card: BoardCard; stage: Stage; draggable: boolean; now?: Date }) {
+  const days = daysInStage(card, now);
+  const stale = isStale({ stageKind: stage.kind, stageChangedAt: card.stageChangedAt }, stage, now);
+  const followUpDue = isFollowUpDue({ stageKind: stage.kind, nextFollowUpAt: card.nextFollowUpAt }, now);
   return (
     <Link
       href={`/leads/${card.id}`}

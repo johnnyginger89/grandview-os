@@ -40,7 +40,7 @@ export default async function ImportPreviewPage({ params, searchParams }: { para
   return (
     <>
       <PageHeader title="Settings" description="Bring your customers over from Markate." />
-      <SettingsTabs active="import" showUsers={can(me.role, "users.manage")} />
+      <SettingsTabs active="import" role={me.role} />
       <nav className="mb-3 text-sm text-muted"><Link href="/settings/import" className="hover:text-text">Import</Link> / {batch.filename}</nav>
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
