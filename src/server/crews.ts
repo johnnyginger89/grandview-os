@@ -1,6 +1,7 @@
 import "server-only";
 import { and, asc, count, eq, gte, inArray, isNull, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
+import { outer } from "@/db/sql";
 import { crewMembers, crews, projects, scheduleEntries, user } from "@/db/schema";
 import { todayIso } from "@/lib/calendar-date";
 import { crewActiveSchema, crewMembersSchema, crewSchema, reorderCrewsSchema } from "@/lib/schedule/schemas";
@@ -20,7 +21,7 @@ export class CrewError extends Error {
 type Actor = { id: string };
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const memberCount = sql<number>`(select count(*)::int from ${crewMembers} where ${crewMembers.crewId} = ${crews.id})`;
+const memberCount = sql<number>`(select count(*)::int from ${crewMembers} where ${crewMembers.crewId} = ${outer(crews.id)})`;
 
 const crewColumns = {
   id: crews.id,

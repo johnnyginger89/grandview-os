@@ -48,7 +48,7 @@ function DocumentCard({ doc }: { doc: DocumentCardData }) {
   }
 
   return (
-    <Card>
+    <Card role="region" aria-label={doc.defaultTitle}>
       <CardHeader title={doc.defaultTitle} action={<Badge tone={status.tone}>{status.label}</Badge>} />
       <div className="space-y-4 p-4 text-sm">
         {doc.current ? (

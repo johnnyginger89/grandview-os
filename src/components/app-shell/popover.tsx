@@ -47,7 +47,7 @@ export function Popover({
         {button}
       </button>
       {open && (
-        <div className={cn("absolute top-full z-50 mt-2 min-w-56 overflow-hidden rounded-xl border border-border bg-surface py-1.5 shadow-pop", align === "right" ? "right-0" : "left-0")}>
+        <div role="group" aria-label={label} className={cn("absolute top-full z-50 mt-2 min-w-56 overflow-hidden rounded-xl border border-border bg-surface py-1.5 shadow-pop", align === "right" ? "right-0" : "left-0")}>
           {children(() => setOpen(false))}
         </div>
       )}

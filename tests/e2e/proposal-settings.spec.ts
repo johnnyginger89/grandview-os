@@ -76,7 +76,7 @@ test.describe("proposal settings (owner)", () => {
 
   test("the insurance certificate stays current, and expired ones are hidden", async ({ page, browser }) => {
     await page.goto("/settings/proposals?section=documents");
-    const card = page.locator("div.rounded-lg", { has: page.getByRole("heading", { name: "Liability insurance certificate" }) }).first();
+    const card = page.getByRole("region", { name: "Liability insurance certificate" });
     if (await card.getByRole("button", { name: "Upload new version" }).isVisible()) await card.getByRole("button", { name: "Upload new version" }).click();
     await card.locator("input[type=file]").setInputFiles({ name: "certificate.pdf", mimeType: "application/pdf", buffer: pdf("first") });
     await card.getByLabel("Expiry date").fill("2099-12-31");

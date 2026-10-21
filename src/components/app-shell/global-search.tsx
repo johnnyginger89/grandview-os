@@ -83,13 +83,16 @@ export function GlobalSearch({ variant, onNavigate }: { variant: "bar" | "sheet"
     };
   }, [text, ready]);
 
-  // "/" or Ctrl/Cmd+K focuses the desktop search box.
+  // "/" or Ctrl/Cmd+K focuses the desktop search box. On a page with its own filter box
+  // (marked data-page-search, e.g. Leads), "/" is left to that box; Ctrl/Cmd+K still comes here.
   useEffect(() => {
     if (variant !== "bar") return;
     const onKey = (e: KeyboardEvent) => {
       const slash = e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey && !isTyping(e.target);
       const cmdK = (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k";
       if (!slash && !cmdK) return;
+      const pageSearch = document.querySelector<HTMLElement>("[data-page-search]");
+      if (slash && pageSearch && pageSearch.offsetParent !== null) return;
       const input = inputRef.current;
       if (!input || input.offsetParent === null) return; // hidden on phones
       e.preventDefault();
@@ -277,7 +280,7 @@ export function GlobalSearch({ variant, onNavigate }: { variant: "bar" | "sheet"
               <X className="size-4" aria-hidden />
             </button>
           ) : (
-            variant === "bar" && !focused && <kbd className="rounded border border-border-strong bg-surface px-1.5 font-sans text-xs text-muted" aria-hidden>/</kbd>
+            variant === "bar" && !focused && <kbd className="rounded border border-border-strong bg-surface px-1.5 font-sans text-xs text-muted [body:has([data-page-search])_&]:hidden" aria-hidden>/</kbd>
           )}
         </span>
       </div>

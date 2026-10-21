@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Badge, Card, EmptyState, Input, LinkButton, PageHeader, Table, td, th } from "@/components/ui";
 import { db } from "@/db";
 import { customers, properties } from "@/db/schema";
+import { outer } from "@/db/sql";
 import { requirePermission } from "@/lib/authz/guard";
 import { can } from "@/lib/authz/permissions";
 import { formatDate } from "@/lib/utils";
@@ -23,7 +24,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
       phone: customers.phone,
       tags: customers.tags,
       createdAt: customers.createdAt,
-      city: sql<string | null>`(select ${properties.city} from ${properties} where ${properties.customerId} = ${customers.id} limit 1)`,
+      city: sql<string | null>`(select ${properties.city} from ${properties} where ${properties.customerId} = ${outer(customers.id)} order by ${properties.createdAt} limit 1)`,
     })
     .from(customers)
     .where(

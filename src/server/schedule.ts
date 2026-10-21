@@ -1,6 +1,7 @@
 import "server-only";
 import { and, asc, eq, gt, gte, inArray, isNull, lt, lte, ne, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
+import { outer } from "@/db/sql";
 import {
   activities,
   crewMembers,
@@ -181,7 +182,7 @@ const crewColumns = {
   worksSaturdays: crews.worksSaturdays,
   active: crews.active,
   sortOrder: crews.sortOrder,
-  memberCount: sql<number>`(select count(*)::int from ${crewMembers} where ${crewMembers.crewId} = ${crews.id})`,
+  memberCount: sql<number>`(select count(*)::int from ${crewMembers} where ${crewMembers.crewId} = ${outer(crews.id)})`,
 };
 
 /** Bookings, crews and readiness for a calendar window (at most 62 days). Cancelled jobs are left out. */

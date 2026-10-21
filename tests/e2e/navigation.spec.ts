@@ -42,6 +42,16 @@ test.describe("navigation and search (owner, desktop)", () => {
     await expect(page.getByRole("heading", { level: 1, name: "Leads" })).toBeVisible();
     await expect(mainNav(page).getByRole("link", { name: "Jobs", exact: true })).toHaveAttribute("aria-current", "page");
 
+    // "/" goes to the page's own filter box here; Ctrl+K still opens the main search.
+    await page.locator("body").click({ position: { x: 5, y: 400 } });
+    await page.keyboard.press("/");
+    await expect(page.getByRole("searchbox", { name: "Search leads" })).toBeFocused();
+    await page.keyboard.press("Escape");
+    await page.locator("body").click({ position: { x: 5, y: 400 } });
+    await page.keyboard.press("Control+k");
+    await expect(search(page)).toBeFocused();
+    await page.keyboard.press("Escape");
+
     await tabs.getByRole("link", { name: "Sold jobs" }).click();
     await expect(page).toHaveURL(/\/projects$/);
     await expect(page.getByRole("heading", { level: 1, name: "Sold jobs" })).toBeVisible();
@@ -60,12 +70,14 @@ test.describe("navigation and search (owner, desktop)", () => {
 
   test("+ New opens the common add screens", async ({ page }) => {
     await page.goto("/customers");
+    const menu = page.getByRole("group", { name: "New", exact: true });
     await page.getByRole("button", { name: "New", exact: true }).click();
-    for (const name of ["New lead", "New customer", "New estimate"]) await expect(page.getByRole("link", { name })).toBeVisible();
+    for (const name of ["New lead", "New customer", "New estimate"]) await expect(menu.getByRole("link", { name })).toBeVisible();
     await page.keyboard.press("Escape");
-    await expect(page.getByRole("link", { name: "New lead" })).toHaveCount(0);
+    await expect(menu).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "New", exact: true })).toBeFocused();
     await page.getByRole("button", { name: "New", exact: true }).click();
-    await page.getByRole("link", { name: "New customer" }).click();
+    await menu.getByRole("link", { name: "New customer" }).click();
     await expect(page).toHaveURL(/\/customers\/new$/);
 
     // The customer the search tests look for.
@@ -76,6 +88,10 @@ test.describe("navigation and search (owner, desktop)", () => {
     await page.getByLabel("City").fill("Surrey");
     await page.getByRole("button", { name: "Create customer" }).click();
     await expect(page).toHaveURL(/\/customers\/[0-9a-f-]{36}$/);
+
+    // The customer list shows the city from the customer's address.
+    await page.goto(`/customers?q=${encodeURIComponent(`Searchable ${stamp}`)}`);
+    await expect(page.getByRole("row", { name: new RegExp(`Searchable ${stamp}`) })).toContainText("Surrey");
   });
 
   test("search finds a customer by name, street or phone and opens it from the keyboard", async ({ page }) => {
@@ -86,6 +102,7 @@ test.describe("navigation and search (owner, desktop)", () => {
     await search(page).fill(`searchable ${stamp}`);
     const option = page.getByRole("option", { name: new RegExp(`Searchable ${stamp}`) });
     await expect(option).toBeVisible();
+    await expect(option).toContainText(`${STREET}, Surrey`);
     await expect(page.getByRole("group", { name: "Customers" })).toBeVisible();
     await page.keyboard.press("ArrowDown");
     await expect(option).toHaveAttribute("aria-selected", "true");
@@ -111,6 +128,8 @@ test.describe("navigation and search (owner, desktop)", () => {
     soldName = await sellThreeThousandDollarJob(page, browser);
     await page.goto("/projects");
     await page.getByRole("link", { name: new RegExp(soldName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")) }).first().click();
+    await expect(page).toHaveURL(/\/projects\/[0-9a-f-]{36}$/);
+    await expect(page.getByRole("heading", { level: 1 })).toContainText("#");
     soldNumber = (await page.getByRole("heading", { level: 1 }).innerText()).match(/#(\d+)/)![1];
 
     await page.goto("/customers");

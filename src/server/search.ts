@@ -4,6 +4,7 @@ import { PROJECT_STATUS_LABEL, PROJECT_STATUS_TONE } from "@/app/(app)/projects/
 import { STATUS_TONE as ESTIMATE_STATUS_TONE } from "@/app/(app)/estimates/status";
 import type { Tone } from "@/components/ui";
 import { db } from "@/db";
+import { outer } from "@/db/sql";
 import { contacts, customers, estimates, opportunities, pipelineStages, projects, properties, workOrders } from "@/db/schema";
 import { can } from "@/lib/authz/permissions";
 import { likePattern, parseSearchQuery, type NumberKind, type ParsedQuery } from "@/lib/search/query";
@@ -60,7 +61,7 @@ const explicitNumber = (q: ParsedQuery, kind: NumberKind) => (q.number && q.numb
 async function findCustomers(q: ParsedQuery, limit: number): Promise<SearchHit[]> {
   const address = sql<string | null>`(
     select concat_ws(', ', nullif(${properties.street}, ''), nullif(${properties.city}, ''))
-    from ${properties} where ${properties.customerId} = ${customers.id}
+    from ${properties} where ${properties.customerId} = ${outer(customers.id)}
     order by ${properties.createdAt} limit 1)`;
   const rows = await db
     .select({ id: customers.id, name: customers.displayName, type: customers.type, email: customers.email, phone: customers.phone, address })
@@ -73,12 +74,12 @@ async function findCustomers(q: ParsedQuery, limit: number): Promise<SearchHit[]
           (p) => [
             ilike(customers.displayName, p),
             ilike(customers.email, p),
-            sql`exists (select 1 from ${properties} where ${properties.customerId} = ${customers.id}
+            sql`exists (select 1 from ${properties} where ${properties.customerId} = ${outer(customers.id)}
               and (${properties.street} ilike ${p} or ${properties.city} ilike ${p} or ${properties.postalCode} ilike ${p} or ${properties.unit} ilike ${p} or ${properties.label} ilike ${p}))`,
-            sql`exists (select 1 from ${contacts} where ${contacts.customerId} = ${customers.id}
+            sql`exists (select 1 from ${contacts} where ${contacts.customerId} = ${outer(customers.id)}
               and (concat_ws(' ', ${contacts.firstName}, ${contacts.lastName}) ilike ${p} or ${contacts.email} ilike ${p}))`,
           ],
-          (d) => sql`(${digitsOf(customers.phone)} like ${`%${d}%`} or exists (select 1 from ${contacts} where ${contacts.customerId} = ${customers.id}
+          (d) => sql`(${digitsOf(customers.phone)} like ${`%${d}%`} or exists (select 1 from ${contacts} where ${contacts.customerId} = ${outer(customers.id)}
             and (${digitsOf(contacts.phone)} like ${`%${d}%`} or ${digitsOf(contacts.phone2)} like ${`%${d}%`})))`,
         ),
       ),

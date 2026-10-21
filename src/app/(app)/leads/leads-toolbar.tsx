@@ -101,6 +101,7 @@ export function LeadsToolbar({
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-subtle" aria-hidden />
           <Input
             ref={search}
+            data-page-search=""
             type="search"
             aria-label="Search leads"
             placeholder="Search name, phone, email, city, #…"
