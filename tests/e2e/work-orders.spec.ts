@@ -1,0 +1,163 @@
+import { expect, test, type Page } from "@playwright/test";
+import { expectNoAccess, statePath } from "./helpers";
+import { sellThreeThousandDollarJob } from "./sales";
+
+/*
+ * Crew work orders (spec-work-orders §5): create and issue, share by link with no
+ * money anywhere, issue a new version with a highlighted change, revoke, and keep
+ * painters out. The steps share one job, so the file runs in order.
+ */
+test.describe.configure({ mode: "serial" });
+
+const COLOUR = "SW 7008 Alabaster";
+const FIRST = "Start in the living room.";
+const SECOND = "Start in the kitchen instead.";
+const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+let projectPath = "";
+let shareLink = "";
+let workOrderId = "";
+
+const card = (page: Page) => page.getByRole("region", { name: "Work orders" });
+const row = (page: Page) => card(page).getByTestId("work-order").first();
+
+async function openAnonymously(browser: import("@playwright/test").Browser, url: string) {
+  const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+  const page = await context.newPage();
+  const res = await page.goto(url);
+  return { context, page, res };
+}
+
+test.describe("work orders (owner)", () => {
+  test.use({ storageState: statePath("owner") });
+
+  test("create and issue a work order for a signed job", async ({ page, browser }) => {
+    const name = await sellThreeThousandDollarJob(page, browser, { colour: COLOUR, internalNote: "SECRET-INTERNAL note for the office" });
+    await page.goto("/projects");
+    await page.getByRole("link", { name: new RegExp(escape(name)) }).first().click();
+    await expect(page).toHaveURL(/\/projects\/[0-9a-f-]{36}$/);
+    projectPath = new URL(page.url()).pathname;
+
+    await expect(card(page).getByText("No work orders yet.")).toBeVisible();
+    await card(page).getByRole("button", { name: "New work order" }).click();
+    const form = page.getByRole("dialog", { name: "New work order" });
+    await expect(form.getByLabel("Crew", { exact: true })).toHaveValue("");
+    await expect(form.getByLabel("Checklist item 1", { exact: true })).not.toHaveValue("");
+    await form.getByLabel("Special instructions").fill(`${FIRST}\n- Dog in the yard`);
+    await form.getByRole("button", { name: "Create work order" }).click();
+    await expect(card(page).getByText(/Work order created/)).toBeVisible();
+    await expect(row(page).getByText("Draft", { exact: true })).toBeVisible();
+    await expect(row(page).getByText(/Not issued yet/)).toBeVisible();
+
+    await row(page).getByRole("button", { name: "Issue", exact: true }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Issue work order" }).click();
+    await expect(card(page).getByText("Version 1 issued.")).toBeVisible();
+    await expect(row(page).getByText("Issued", { exact: true })).toBeVisible();
+    await expect(row(page).getByText(/Version 1, issued/)).toBeVisible();
+
+    const preview = await row(page).getByRole("link", { name: "Preview" }).getAttribute("href");
+    workOrderId = preview!.split("?")[0].split("/").at(-1)!;
+    expect(workOrderId).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  test("a share link shows the crew the job and nothing about money", async ({ page, browser }) => {
+    await page.goto(projectPath);
+    await row(page).getByRole("button", { name: "Create link" }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Who is it for?").fill("[TEST DATA] Niko's crew");
+    await dialog.getByLabel("Link works for").selectOption("30");
+    await dialog.getByRole("button", { name: "Create link" }).click();
+    shareLink = await dialog.getByLabel("Work order link").inputValue();
+    expect(shareLink).toMatch(/\/share\/wo\/[A-Za-z0-9_-]{43}$/);
+    await dialog.getByRole("button", { name: "Done" }).click();
+    await expect(row(page).getByTestId("work-order-link").getByText("[TEST DATA] Niko's crew")).toBeVisible();
+    await expect(row(page).getByText("Not opened yet")).toBeVisible();
+
+    const crew = await openAnonymously(browser, shareLink);
+    expect(crew.res?.status()).toBe(200);
+    const p = crew.page;
+    await expect(p.getByText("Work order", { exact: true })).toBeVisible();
+    await expect(p.getByRole("heading", { name: "Address and access" })).toBeVisible();
+    await expect(p.getByText("1 Example St").first()).toBeVisible();
+    await expect(p.getByRole("link", { name: "Open in Maps" })).toBeVisible();
+    await expect(p.getByText("Walls – roll & cut").first()).toBeVisible();
+    await expect(p.getByText("2 coats").first()).toBeVisible();
+    await expect(p.getByText(`Colour: ${COLOUR}`)).toBeVisible();
+    await expect(p.getByRole("heading", { name: "Special instructions" })).toBeVisible();
+    await expect(p.getByText(FIRST)).toBeVisible();
+    await expect(p.getByText("Dog in the yard")).toBeVisible();
+    await expect(p.getByRole("heading", { name: "Checklist" })).toBeVisible();
+    await expect(p.locator('meta[name="referrer"]')).toHaveAttribute("content", "no-referrer");
+    await expect(p.locator('meta[name="robots"]')).toHaveAttribute("content", /noindex/);
+
+    const html = (await crew.res?.text()) ?? "";
+    for (const secret of ["SECRET-INTERNAL", "price", "laborCostPerHour", "billingRatePerHour", "rateSnapshot", "overrideHours"]) expect(html, secret).not.toContain(secret);
+    expect(html).not.toMatch(/\bhours\b/i);
+    // React and Next use "$" in their own inline scripts and <!--$--> markers; the page itself must not contain one.
+    expect(html.replace(/<script\b[\s\S]*?<\/script>/gi, "").replace(/<!--[\s\S]*?-->/g, "")).not.toContain("$");
+    expect(await p.locator("body").innerText()).not.toContain("$");
+    await crew.context.close();
+
+    await page.reload();
+    await expect(row(page).getByText("Seen version 1")).toBeVisible();
+  });
+
+  test("issuing version 2 shows the crew what changed", async ({ page, browser }) => {
+    await page.goto(projectPath);
+    await row(page).getByRole("button", { name: "Edit" }).click();
+    const form = page.getByRole("dialog");
+    await form.getByLabel("Special instructions").fill(SECOND);
+    await form.getByRole("button", { name: "Save changes" }).click();
+    await expect(card(page).getByText(/Changes saved/)).toBeVisible();
+    await expect(row(page).getByText(/not issued yet: Special instructions/)).toBeVisible();
+
+    await row(page).getByRole("button", { name: "Issue new version" }).click();
+    const issue = page.getByRole("dialog", { name: "Issue version 2" });
+    await issue.getByLabel("What changed? (optional)").fill("Start room changed");
+    await issue.getByRole("button", { name: "Issue version 2" }).click();
+    await expect(card(page).getByText("Version 2 issued.")).toBeVisible();
+    await expect(row(page).getByText("Not yet opened since version 2")).toBeVisible();
+
+    const crew = await openAnonymously(browser, shareLink);
+    const p = crew.page;
+    await expect(p.getByText(/^Updated .+: version 2 replaces version 1\.$/)).toBeVisible();
+    await expect(p.getByText("Check the highlighted sections.")).toBeVisible();
+    await expect(p.getByText(SECOND)).toBeVisible();
+    await expect(p.getByText(FIRST)).toHaveCount(0);
+    const changed = p.locator('[data-section="specialInstructions"]');
+    await expect(changed).toHaveAttribute("data-changed", "true");
+    await expect(changed.getByText("Changed", { exact: true })).toBeVisible();
+    await expect(p.locator('[data-section="scope"]')).not.toHaveAttribute("data-changed", "true");
+    await crew.context.close();
+
+    await page.reload();
+    await expect(row(page).getByText("Seen version 2")).toBeVisible();
+  });
+
+  test("a revoked link stops working at once", async ({ page, browser }) => {
+    await page.goto(projectPath);
+    page.once("dialog", (d) => d.accept());
+    await row(page).getByRole("button", { name: /^Revoke link for/ }).click();
+    await expect(card(page).getByText(/Link turned off/)).toBeVisible();
+    await expect(row(page).getByText("Turned off", { exact: true })).toBeVisible();
+
+    const crew = await openAnonymously(browser, shareLink);
+    expect(crew.res?.status()).toBe(404);
+    await expect(crew.page.getByText("This work order link has expired or been turned off. Ask the office for a new one.")).toBeVisible();
+    await expect(crew.page.getByText(SECOND)).toHaveCount(0);
+    await crew.context.close();
+  });
+});
+
+test.describe("work orders (painter)", () => {
+  test.use({ storageState: statePath("painter") });
+
+  test("painters can't open the job or a work order for a crew they aren't on", async ({ page }) => {
+    test.skip(!projectPath || !workOrderId, "needs the owner steps above");
+    await expectNoAccess(page, projectPath);
+    await page.goto(`/my-jobs/work-orders/${workOrderId}`);
+    await expect(page.getByText("This page could not be found.")).toBeVisible();
+    await expect(page.getByText(SECOND)).toHaveCount(0);
+    // The "Work order" button on /my-jobs needs the painter booked in a crew, which this file doesn't set up.
+  });
+});

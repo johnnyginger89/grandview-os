@@ -266,3 +266,20 @@ export const DEFAULT_GOALS: Goals = {
   longTerm: { amount: "5000000.00", year: 2030 },
   excludedLostReasons: ["Spam / wrong number"],
 };
+
+/**
+ * Crew work orders (Settings → Work orders). STARTER VALUES: new work orders copy
+ * this checklist, and share links last this many days unless changed per link.
+ */
+export const DEFAULT_WORK_ORDER_SETTINGS = {
+  defaultChecklist: [
+    "Walk the job with the crew lead before starting",
+    "Protect floors, furniture and landscaping",
+    "Take before photos",
+    "Confirm colours on site before painting",
+    "Clean up daily",
+    "Take after photos",
+    "Final walk-through with the customer",
+  ],
+  defaultLinkDays: 60,
+} as const;

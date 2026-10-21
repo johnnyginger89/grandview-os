@@ -13,7 +13,9 @@ import { formatAddress, formatDate, formatDateTime, mapsUrl } from "@/lib/utils"
 import { isDoneStatus, listStatusEvents, type StatusEventRow } from "@/server/project-status";
 import { proposalUrl } from "@/server/proposals";
 import { PROJECT_STATUS_LABEL, PROJECT_STATUS_TONE } from "../status";
+import { ProjectScheduleCard } from "./schedule-card";
 import { StatusControl, type StatusHistoryEntry } from "./status-control";
+import { WorkOrdersCard } from "./work-orders-card";
 
 function historyEntry(e: StatusEventRow): StatusHistoryEntry {
   const label = (s: ProjectStatus) => PROJECT_STATUS_LABEL[s];
@@ -89,11 +91,14 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
           </dl>
         </Card>
         {can(user.role, "projects.write") && <StatusCard p={p} />}
+        {can(user.role, "schedule.read") && <ProjectScheduleCard projectId={p.id} user={user} />}
+        <WorkOrdersCard projectId={p.id} canEdit={can(user.role, "projects.write")} className="lg:col-span-2" />
         <Card>
           <CardHeader title="Next steps" />
           <ul className="list-disc space-y-1 p-4 pl-8 text-sm text-muted">
             <li>Collect the deposit and confirm the start date.</li>
-            <li>Scheduling, work orders and invoicing for projects are being added next.</li>
+            <li>Issue a work order for the crew and share its link.</li>
+            <li>Invoicing is being added next.</li>
           </ul>
         </Card>
       </div>

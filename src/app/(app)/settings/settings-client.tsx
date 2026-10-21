@@ -5,6 +5,7 @@ import { Badge, Button, Card, CardHeader, Field, FormError, Input, Select, Table
 import { ROLES } from "@/db/schema/auth";
 import { can, ROLE_LABELS } from "@/lib/authz/permissions";
 import { createUserAction, saveCompanyAction, saveListAction, savePricingAction, saveTemplateAction, updateUserAction } from "./actions";
+import { saveWorkOrderSettingsAction } from "./work-order-settings-actions";
 
 function Saved({ state }: { state: { ok: boolean; error?: string } | null }) {
   if (!state) return null;
@@ -189,6 +190,36 @@ export function UsersPanel({ users, meId, isOwner }: { users: { id: string; name
         </form>
       </Card>
     </div>
+  );
+}
+
+export function WorkOrderSettingsForm({ settings }: { settings: { defaultChecklist: string[]; defaultLinkDays: number } }) {
+  const [checklist, setChecklist] = useState(settings.defaultChecklist.join("\n"));
+  const [days, setDays] = useState(String(settings.defaultLinkDays));
+  const [state, setState] = useState<{ ok: boolean; error?: string } | null>(null);
+  const [pending, start] = useTransition();
+  function save() {
+    const n = Number(days.trim());
+    if (!Number.isInteger(n) || n < 1 || n > 365) {
+      setState({ ok: false, error: "Enter a whole number of days from 1 to 365." });
+      return;
+    }
+    const items = checklist.split("\n").map((s) => s.trim()).filter(Boolean);
+    start(async () => setState(await saveWorkOrderSettingsAction({ defaultChecklist: items, defaultLinkDays: n })));
+  }
+  return (
+    <Card className="max-w-2xl">
+      <CardHeader title="Work orders" description="Starting values for new crew work orders. Each work order can still be changed before it's issued." />
+      <div className="grid gap-4 p-4">
+        <Field label="Default checklist" hint="One item per line, up to 30. Copied onto every new work order.">
+          <Textarea rows={9} value={checklist} onChange={(e) => setChecklist(e.target.value)} />
+        </Field>
+        <Field label="Share links work for (days)" hint="How long a new share link works unless you pick another time. 1 to 365 days.">
+          <Input inputMode="numeric" className="w-32" value={days} onChange={(e) => setDays(e.target.value)} />
+        </Field>
+        <div className="flex items-center gap-3"><Button disabled={pending} onClick={save}>Save</Button><Saved state={state} /></div>
+      </div>
+    </Card>
   );
 }
 

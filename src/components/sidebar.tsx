@@ -6,6 +6,7 @@ import { useState } from "react";
 import {
   BookOpen,
   Calculator,
+  CalendarDays,
   ChartColumn,
   FolderKanban,
   Gauge,
@@ -21,7 +22,7 @@ import {
 import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
 
-const ICONS = { Gauge, ChartColumn, Workflow, Users, Calculator, FolderKanban, BookOpen, Settings, ShieldCheck, HardHat } as const;
+const ICONS = { Gauge, ChartColumn, Workflow, Users, Calculator, FolderKanban, CalendarDays, BookOpen, Settings, ShieldCheck, HardHat } as const;
 export type NavItem = { href: string; label: string; icon: keyof typeof ICONS };
 
 export function Sidebar({ items, userName, roleLabel }: { items: NavItem[]; userName: string; roleLabel: string }) {

@@ -139,6 +139,18 @@ const UNCACHED = [
   "src/app/(app)/leads/",
   "src/app/(app)/projects/",
   "src/app/(app)/settings/",
+  "src/server/schedule.ts",
+  "src/server/my-jobs.ts",
+  "src/server/crews.ts",
+  "src/server/readiness.ts",
+  "src/server/start-notices.ts",
+  "src/app/(app)/schedule/",
+  "src/app/(app)/my-jobs/",
+  "src/components/schedule/",
+  "src/server/work-orders.ts",
+  "src/components/work-order/",
+  "src/app/share/wo/",
+  "src/app/(preview)/projects/",
 ];
 const CACHE_APIS = new Set(["unstable_cache", "cacheLife", "cacheTag", "unstable_cacheLife", "unstable_cacheTag"]);
 
@@ -395,5 +407,219 @@ describe("migrations", () => {
       .filter((e) => e.idx >= ADDITIVE_FROM_IDX)
       .flatMap((e) => destructiveStatements(readFileSync(path.join(DRIZZLE, `${e.tag}.sql`), "utf8")).map((what) => `${e.tag}: ${what}`));
     expect(bad, "Migrations run before the new code is live: add tables, nullable or defaulted columns and indexes only").toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Rule: src/server/schedule.ts is the only writer of schedule_entries, so every
+// booking change keeps project dates and status in step and reaches the sync hook.
+// ---------------------------------------------------------------------------
+
+const SCHEDULE_WRITER = "src/server/schedule.ts";
+const RAW_SCHEDULE_WRITE = /\b(?:insert\s+into|update|delete\s+from)\s+"?schedule_entries"?(?=[\s"(]|$)/i;
+
+const isScheduleTable = (e: ts.Expression | undefined) =>
+  !!e && ((ts.isIdentifier(e) && e.text === "scheduleEntries") || (ts.isPropertyAccessExpression(e) && e.name.text === "scheduleEntries"));
+
+function scheduleWriteViolations(s: Source): string[] {
+  const sf = ast(s);
+  const out = new Set<string>();
+  visit(sf, (n) => {
+    for (const op of ["insert", "update", "delete"]) {
+      const call = methodCall(n, op);
+      if (call && isScheduleTable(call.arguments[0])) out.add(`${at(sf, n)} ${op}(scheduleEntries)`);
+    }
+    const text = literalText(n);
+    if (text && RAW_SCHEDULE_WRITE.test(text)) out.add(`${at(sf, n)} writes schedule_entries in SQL`);
+  });
+  return [...out];
+}
+
+describe("schedule_entries has a single writer", () => {
+  it("detects schedule writes (self-test)", () => {
+    const check = (text: string) => scheduleWriteViolations({ file: "x.ts", text });
+    for (const bad of [
+      `db.insert(scheduleEntries).values(v)`,
+      `tx.update(schema.scheduleEntries).set({ startDate })`,
+      `await tx.delete(scheduleEntries).where(eq(scheduleEntries.id, id))`,
+      "db.execute(sql`update schedule_entries set deleted_at = now()`)",
+      "db.execute(sql`DELETE FROM \"schedule_entries\" WHERE id = ${id}`)",
+      `const q = "insert into schedule_entries (project_id) values ($1)"`,
+    ])
+      expect(check(bad), bad).not.toEqual([]);
+    for (const ok of [
+      `db.select().from(scheduleEntries)`,
+      `db.insert(projectScheduling).values(v)`,
+      `await createEntry(input, user)`,
+      "db.execute(sql`select * from schedule_entries where deleted_at is null`)",
+    ])
+      expect(check(ok), ok).toEqual([]);
+  });
+
+  it("only schedule.ts inserts, updates or deletes schedule_entries", () => {
+    expect(SOURCES.some((s) => s.file === SCHEDULE_WRITER)).toBe(true);
+    const violations = SOURCES.filter((s) => s.file !== SCHEDULE_WRITER).flatMap(scheduleWriteViolations);
+    expect(violations, "Change bookings through createEntry / updateEntry / deleteEntry / splitEntry in src/server/schedule.ts").toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Rule (CLAUDE.md rule 2, spec-schedule §6, spec-work-orders §4): crew-facing
+// projections never name money or hour fields, so nothing can leak by accident.
+// ---------------------------------------------------------------------------
+
+const CREW_FACING = [
+  "src/server/my-jobs.ts",
+  "src/server/work-order-view.ts",
+  // The whole work-order service, token path included: it never names a money or hours column.
+  "src/server/work-orders.ts",
+  "src/app/(app)/my-jobs/",
+  "src/components/work-order/",
+  "src/app/share/wo/",
+  "src/app/(preview)/projects/[id]/work-orders/",
+];
+const MONEY_OR_HOURS = [
+  "contractPrice", "contractTotal", "depositRequired", "estimatedCost", "estimatedHours", "plannedHours",
+  "totalPrice", "totalCost", "totalHours", "totalWithTax", "laborCostPerHour", "billingRatePerHour", "pricePerGallon",
+  "contract_price", "contract_total", "deposit_required", "estimated_cost", "estimated_hours", "planned_hours",
+];
+const MONEY_OR_HOURS_RE = new RegExp(`\\b(${MONEY_OR_HOURS.join("|")})\\b`, "g");
+
+const inPaths = (file: string, paths: string[]) => paths.some((p) => (p.endsWith("/") ? file.startsWith(p) : file === p));
+
+describe("crew-facing code never names money or hours", () => {
+  it("detects forbidden identifiers (self-test)", () => {
+    expect("select { contractPrice: projects.contractPrice }".match(MONEY_OR_HOURS_RE)).not.toBeNull();
+    expect("row.planned_hours".match(MONEY_OR_HOURS_RE)).not.toBeNull();
+    expect("crewNotes, workingDays, quantity".match(MONEY_OR_HOURS_RE)).toBeNull();
+  });
+
+  it("my-jobs and work-order code has none", () => {
+    const files = SOURCES.filter((s) => inPaths(s.file, CREW_FACING));
+    expect(files.map((f) => f.file)).toEqual(expect.arrayContaining(["src/server/my-jobs.ts", "src/server/work-order-view.ts", "src/server/work-orders.ts", "src/app/share/wo/[token]/page.tsx"]));
+    const found = files.flatMap((f) => [...new Set(f.text.match(MONEY_OR_HOURS_RE) ?? [])].map((id) => `${f.file}: ${id}`));
+    expect(found, "Crew views are built from whitelisted fields only (no money, no hours)").toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Rule (spec-schedule §1.13): booking days are calendar days stored as `date`.
+// formatDate() treats "2026-10-26" as UTC midnight, which is Oct 25 in Vancouver;
+// schedule code formats days with formatIsoDate (src/lib/calendar-date.ts).
+// ---------------------------------------------------------------------------
+
+const SCHEDULE_UI = [
+  "src/app/(app)/schedule/",
+  "src/components/schedule/",
+  "src/app/(app)/my-jobs/",
+  "src/components/work-order/",
+  "src/app/(app)/projects/[id]/schedule-card.tsx",
+  "src/lib/schedule/",
+  "src/server/schedule.ts",
+  "src/server/my-jobs.ts",
+  "src/server/start-notices.ts",
+  "src/server/work-orders.ts",
+  "src/app/share/wo/",
+  "src/app/(preview)/projects/[id]/work-orders/",
+];
+const DAY_FIELD_FORMAT = /\bformatDate\(\s*[\w.?!\[\]"']*\b(startDate|endDate|notBefore|communicatedStart|communicatedEnd|dueDate|weekOf|firstWorkDay|lastWorkDay)\b/;
+
+describe("calendar days are formatted as calendar days", () => {
+  it("detects formatDate on a booking day (self-test)", () => {
+    expect(DAY_FIELD_FORMAT.test("{formatDate(e.startDate)}")).toBe(true);
+    expect(DAY_FIELD_FORMAT.test("formatDate(entry?.endDate, { dateStyle: 'long' })")).toBe(true);
+    expect(DAY_FIELD_FORMAT.test("formatIsoDate(e.startDate)")).toBe(false);
+    expect(DAY_FIELD_FORMAT.test("formatDate(p.soldAt)")).toBe(false);
+  });
+
+  it("schedule code never passes a date column to formatDate", () => {
+    const bad = SOURCES.filter((s) => inPaths(s.file, SCHEDULE_UI) && DAY_FIELD_FORMAT.test(s.text)).map((s) => s.file);
+    expect(bad, "Use formatIsoDate / shortDay / longDay for `date` columns").toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Rule (CLAUDE.md rule 8): customer email is human-initiated. Only known modules
+// send email, and start notices are sent only from server actions (a click after
+// a preview), never from the schedule service, its hooks or any automation.
+// ---------------------------------------------------------------------------
+
+const EMAIL_SENDERS = ["src/lib/email.ts", "src/lib/auth.ts", "src/server/leads.ts", "src/server/proposals.ts", "src/server/start-notices.ts"];
+
+function callsOf(s: Source, name: string): string[] {
+  const sf = ast(s);
+  const out: string[] = [];
+  visit(sf, (n) => {
+    if (ts.isCallExpression(n) && ((ts.isIdentifier(n.expression) && n.expression.text === name) || (ts.isPropertyAccessExpression(n.expression) && n.expression.name.text === name)))
+      out.push(at(sf, n));
+  });
+  return out;
+}
+
+describe("customer email is human-initiated", () => {
+  it("finds calls (self-test)", () => {
+    expect(callsOf({ file: "x.ts", text: "await sendEmail({ to })" }, "sendEmail")).toHaveLength(1);
+    expect(callsOf({ file: "x.ts", text: "await mail.sendStartNotice(input, user)" }, "sendStartNotice")).toHaveLength(1);
+    expect(callsOf({ file: "x.ts", text: "import { sendEmail } from '@/lib/email'" }, "sendEmail")).toHaveLength(0);
+  });
+
+  it("only known modules call sendEmail", () => {
+    const bad = SOURCES.filter((s) => !EMAIL_SENDERS.includes(s.file)).flatMap((s) => callsOf(s, "sendEmail"));
+    expect(bad, "Customer email goes through a human-initiated, previewed send (CLAUDE.md rule 8)").toEqual([]);
+  });
+
+  it("start notices are sent only from server actions", () => {
+    const bad = SOURCES.filter((s) => s.file !== "src/server/start-notices.ts" && !(s.file.startsWith("src/app/") && /\/actions\.ts$/.test(s.file)))
+      .flatMap((s) => callsOf(s, "sendStartNotice"));
+    expect(bad).toEqual([]);
+    const hooks = SOURCES.filter((s) => s.file === "src/server/schedule.ts" || s.file === "src/server/schedule-hooks.ts");
+    expect(hooks).toHaveLength(2);
+    for (const h of hooks) expect(h.text, h.file).not.toMatch(/start-notices|@\/lib\/email/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Rule (spec-work-orders §4): share-link tokens are handled in one place. Only
+// src/server/work-orders.ts touches work_order_links (hashes, expiry, opens), and
+// crew-facing work-order pages get their data from it, never from the database,
+// the estimate or the proposal directly.
+// ---------------------------------------------------------------------------
+
+const WORK_ORDER_SERVICE = "src/server/work-orders.ts";
+const WORK_ORDER_SCHEMA = "src/db/schema/work-orders.ts";
+const LINK_TABLE_RE = /\b(workOrderLinks|work_order_links|tokenHash|token_hash)\b/;
+const WORK_ORDER_PAGES = ["src/app/share/wo/", "src/components/work-order/", "src/app/(app)/my-jobs/work-orders/", "src/app/(preview)/projects/[id]/work-orders/"];
+const DIRECT_DATA_IMPORT = /from\s+["'](@\/db(?:\/[^"']*)?|@\/server\/(?:estimates|proposals|proposal-view|schedule|my-jobs))["']/;
+
+function directDataImports(s: Source): string[] {
+  return s.text
+    .split("\n")
+    .filter((line) => DIRECT_DATA_IMPORT.test(line) && !/^\s*import\s+type\b/.test(line))
+    .map((line) => `${s.file}: ${line.trim()}`);
+}
+
+describe("work-order links and pages go through the work-order service", () => {
+  it("detects link-table use and direct data imports (self-test)", () => {
+    expect(LINK_TABLE_RE.test("db.select().from(workOrderLinks)")).toBe(true);
+    expect(LINK_TABLE_RE.test("select token_hash from work_order_links")).toBe(true);
+    expect(LINK_TABLE_RE.test("const links = await listWorkOrders(id)")).toBe(false);
+    const check = (text: string) => directDataImports({ file: "x.tsx", text });
+    expect(check(`import { db } from "@/db";`)).toHaveLength(1);
+    expect(check(`import { workOrders } from "@/db/schema";`)).toHaveLength(1);
+    expect(check(`import { loadEstimate } from "@/server/estimates";`)).toHaveLength(1);
+    expect(check(`import type { WorkOrderStatus } from "@/db/schema/work-orders";`)).toHaveLength(0);
+    expect(check(`import { getWorkOrderForToken } from "@/server/work-orders";`)).toHaveLength(0);
+  });
+
+  it("only work-orders.ts reads or writes share links", () => {
+    expect(SOURCES.some((s) => s.file === WORK_ORDER_SERVICE)).toBe(true);
+    const bad = SOURCES.filter((s) => s.file !== WORK_ORDER_SERVICE && s.file !== WORK_ORDER_SCHEMA && !s.file.startsWith("src/db/schema/index") && LINK_TABLE_RE.test(s.text)).map((s) => s.file);
+    expect(bad, "Share-link tokens and counters are handled only by src/server/work-orders.ts").toEqual([]);
+  });
+
+  it("crew-facing work-order pages load data only through work-orders.ts", () => {
+    const files = SOURCES.filter((s) => inPaths(s.file, WORK_ORDER_PAGES));
+    expect(files.length).toBeGreaterThanOrEqual(3);
+    expect(files.flatMap(directDataImports), "Use getWorkOrderForToken / getWorkOrderForCrewMember / getWorkOrderForStaff").toEqual([]);
   });
 });

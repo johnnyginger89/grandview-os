@@ -1,7 +1,10 @@
 import { expect, type Browser, type Page } from "@playwright/test";
 
-/** Creates a customer and a $3,000 (pre-GST) estimate, sends it, and signs it as the customer. Returns the customer name. */
-export async function sellThreeThousandDollarJob(page: Page, browser: Browser) {
+/**
+ * Creates a customer and a $3,000 (pre-GST) estimate, sends it, and signs it as the customer. Returns the customer name.
+ * Optionally gives the walls a colour and the estimate an internal note (to check crew views never show it).
+ */
+export async function sellThreeThousandDollarJob(page: Page, browser: Browser, opts: { colour?: string; internalNote?: string } = {}) {
   const stamp = Date.now();
   const name = `Sale Test ${stamp} [TEST DATA]`;
   await page.goto("/customers/new");
@@ -16,7 +19,9 @@ export async function sellThreeThousandDollarJob(page: Page, browser: Browser) {
   await page.getByLabel("Add item").first().selectOption({ label: "Walls – roll & cut" });
   await page.getByRole("button", { name: /Walls – roll & cut/ }).click();
   await page.getByLabel("Override price").fill("3000");
+  if (opts.colour) await page.getByLabel("Colour", { exact: true }).fill(opts.colour);
   await page.getByRole("button", { name: /Walls – roll & cut/ }).click();
+  if (opts.internalNote) await page.getByLabel(/Internal notes/).fill(opts.internalNote);
   await expect(page.getByText("All changes saved")).toBeVisible({ timeout: 10_000 });
 
   await page.getByRole("button", { name: "Send proposal" }).click();

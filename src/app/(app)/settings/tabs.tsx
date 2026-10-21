@@ -20,6 +20,7 @@ export const TABS: readonly SettingsTab[] = [
   { key: "goals", label: "Goals", href: "/settings?tab=goals", visible: (r) => manage(r) && can(r, "financials.read") },
   { key: "lists", label: "Pick lists", href: "/settings?tab=lists", visible: manage },
   { key: "templates", label: "Email templates", href: "/settings?tab=templates", visible: manage },
+  { key: "work-orders", label: "Work orders", href: "/settings?tab=work-orders", visible: manage },
   { key: "users", label: "Users", href: "/settings?tab=users", visible: (r) => manage(r) && can(r, "users.manage") },
   { key: "integrations", label: "Integrations", href: "/settings?tab=integrations", visible: manage },
   { key: "import", label: "Import", href: "/settings/import", visible: manage },

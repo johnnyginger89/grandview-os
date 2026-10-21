@@ -54,10 +54,13 @@ Status key: ✅ done and tested · 🟡 partly done · ⬜ not started
 - ✅ Proposal presentation matching the owner's Markate proposal: cover per job type, About, Why us, Reviews, Portfolio (lightbox), Insurance & FAQ, the estimate document (FROM/TO, numbered service lines, upgrades, totals), full terms and warranty, Next step with signing; sticky section menu, phone layout with a sticky "Review & sign" bar, print/PDF of estimate + terms
 - ✅ Settings → Proposals editor: every picture and all wording editable without code, per-job-type covers/photos/warranty with inheritance, picture uploads and library, insurance documents with expiry (dashboard reminder 30 days ahead, hidden from customers once expired, proposals already sent always link the newest), sample preview per job type
 - ✅ Estimate editor: job type, PO number, custom preparation and exclusions per job, customer descriptions for areas, lines and cost items, "Preview proposal" (draft, not sent)
-- 🟡 Projects: list and detail pages (contract, deposit, signed copy); scheduling, work orders and invoicing next
-- ⬜ Projects: phases, tasks/checklists, buildings/units for strata, readiness checks (paint ordered, colour consult, deposit, pressure washing)
-- ⬜ Scheduling board: crews and subs on a timeline, drag-and-drop, capacity-based duration, conflicts
-- ⬜ Work orders: generated from project, secure expiring share links, PDF, versioning, no pricing
+- 🟡 Projects: list and detail pages (contract, deposit, signed copy, status, schedule card, work orders); invoicing next
+- ✅ Readiness checks per job (pressure washing, colours & paint, colour consult, deposit; editable in Schedule → Setup), shown on the job and the calendar
+- ⬜ Projects: tasks, buildings/units for strata
+- ✅ Schedule: crews and subs on a timeline (1/2/4 weeks) and month view, drag a sold job from "To schedule" onto a crew and day, move/resize, undo, booking types (painting, pressure washing, prep, touch-ups…), durations suggested from estimated hours and crew size, BC holidays and closed days, double-booking and "not before" warnings, tentative vs confirmed; phone agenda with a "Schedule…" sheet; estimators read-only
+- ✅ Customer start notices (the monday "Start Week Sent / Confirm / Start Date Sent / Confirm" stages): Send start week… and Send start date… with preview, interior/exterior wording, Mark confirmed (phone/text/email), and a "customer was told" warning when a booking moves afterwards; the project becomes Scheduled automatically when it's booked
+- ✅ My Jobs for crew logins: each booked job with dates, address, Open in Maps, office notes, lead sees the customer's phone; no prices, hours or contract details
+- ✅ Work orders: generated from the signed estimate (scope by area, coats, products, colours, preparation, exclusions), special instructions, equipment, safety, access, checklist; versioned (crews see what changed), print/save as PDF, opened from My Jobs or by a secure expiring share link for subs without a login (stored hashed, revocable, open tracking); never prices or hours
 - ⬜ Time tracking: mobile clock in/out per job, approval
 - ⬜ Job costing: estimated vs actual dashboard, sub contract costs, material purchases
 
@@ -66,13 +69,13 @@ Status key: ✅ done and tested · 🟡 partly done · ⬜ not started
 - ✅ Settings → Goals (owner only); project Status card with finish date and status history (single status writer; sold/finished/cancelled dates)
 - ✅ Leads & Pipeline list view (monday-style): grouped by stage, inline stage and follow-up edits with undo, bulk moves, search, filters, columns; phone cards with Call/Email
 - ✅ Estimates list grouped by month with "viewed" indicator; phone home screen with tiles, "$ (N jobs today)", Share booking link and a "+" quick-add; installable on the phone home screen
-- ⬜ Next: Gmail (send, replies into the OS), Slack, existing-jobs/history import from monday, schedule calendar, Google Calendar, CompanyCam (docs: scratchpad plan → this file as each ships)
+- ⬜ Next: Gmail (send, replies into the OS), Slack, Google Calendar, CompanyCam. Job and history import comes from the owner's Markate data (monday is being replaced, not imported)
 
 ### Phase 6 – advanced
 - ⬜ Change orders · ⬜ invoices (deposit/progress/final) + QBO sync · ⬜ reporting dashboard
 - ⬜ Automations (follow-up reminders, tasks) · ⬜ purchasing · ⬜ project messaging and photos
 - ✅ Import: Markate customer export (CSV) → Settings → Import, with column matching, preview, duplicate matching by email/phone (fills in missing details only), several addresses/contacts per customer, extra columns kept as customer details, and one-click undo
-- ⬜ Imports: monday.com Deals/Contacts, PaintScout rates and customers (API or CSV), QBO customers – same preview/undo pipeline
+- ⬜ Imports: Markate jobs/estimates/history (owner to send the export), PaintScout rates (API or CSV), QBO customers – same preview/undo pipeline
 
 ### Deployment readiness (owner approved Vercel Pro + Supabase, Oct 2026)
 - ✅ vercel.json: Montréal region (yul1), only `main` deploys, build runs migrations + baseline seed (production builds only)

@@ -50,6 +50,13 @@
       "when": 1792544295528,
       "tag": "0006_dashboard_lists",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792548341869,
+      "tag": "0007_schedule_work_orders",
+      "breakpoints": true
     }
   ]
 }

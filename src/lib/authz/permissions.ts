@@ -26,6 +26,12 @@ export const PERMISSIONS = [
   "settings.manage",
   "users.manage",
   "audit.read",
+  /** See /schedule (no money anywhere on it). */
+  "schedule.read",
+  /** Create, move, resize, split and remove bookings; readiness; scheduling preferences; start notices (with messages.send). */
+  "schedule.write",
+  /** Crews, crew members (an access grant) and schedule settings. */
+  "schedule.manage",
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
@@ -50,6 +56,9 @@ const MATRIX: Record<Role, readonly Permission[]> = {
     "projects.write",
     "financials.read",
     "audit.read",
+    "schedule.read",
+    "schedule.write",
+    "schedule.manage",
   ],
   estimator: [
     "dashboard.view",
@@ -62,16 +71,21 @@ const MATRIX: Record<Role, readonly Permission[]> = {
     "estimates.write",
     "estimates.costing",
     "rates.read",
+    "schedule.read",
   ],
   project_manager: [
     "dashboard.view",
     "customers.read",
     "pipeline.read",
+    // Start notices are a project manager's job (spec-schedule §12 Q1).
+    "messages.send",
     "estimates.read",
     "estimates.costing",
     "rates.read",
     "projects.read_all",
     "projects.write",
+    "schedule.read",
+    "schedule.write",
   ],
   crew_leader: ["projects.read_assigned"],
   painter: ["projects.read_assigned"],

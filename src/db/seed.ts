@@ -25,6 +25,7 @@ import {
   PROJECT_TYPES,
   RATES,
 } from "./seed-data";
+import { SCHEDULE_MESSAGE_TEMPLATES } from "./seed-schedule";
 import { ROLES } from "./schema/auth";
 
 async function seedSettings() {
@@ -128,7 +129,7 @@ async function seedMaterialsAndRates() {
 }
 
 async function seedTemplates() {
-  for (const t of MESSAGE_TEMPLATES) {
+  for (const t of [...MESSAGE_TEMPLATES, ...SCHEDULE_MESSAGE_TEMPLATES]) {
     await db.insert(s.messageTemplates).values(t).onConflictDoNothing({ target: s.messageTemplates.key });
   }
 }

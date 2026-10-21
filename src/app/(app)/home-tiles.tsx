@@ -1,5 +1,5 @@
 import { and, count, eq, gte, inArray, lte, sum } from "drizzle-orm";
-import { BookOpen, Calculator, ChartColumn, FolderKanban, Settings, Users, Workflow } from "lucide-react";
+import { BookOpen, Calculator, CalendarDays, ChartColumn, FolderKanban, Settings, Users, Workflow } from "lucide-react";
 import Link from "next/link";
 import type { ComponentType } from "react";
 import { db } from "@/db";
@@ -26,12 +26,13 @@ function Tile({ href, label, icon: Icon, badge }: { href: string; label: string;
 export async function HomeTiles({ role }: { role: string }) {
   const now = new Date();
   const money = can(role, "financials.read");
-  const [[toContact], [openEstimates], [activeJobs], [today], company] = await Promise.all([
+  const [[toContact], [openEstimates], [activeJobs], [toSchedule], [today], company] = await Promise.all([
     can(role, "pipeline.read")
       ? db.select({ n: count() }).from(opportunities).innerJoin(pipelineStages, eq(pipelineStages.id, opportunities.stageId)).where(eq(pipelineStages.key, "new_lead"))
       : [{ n: 0 }],
     can(role, "estimates.read") ? db.select({ n: count() }).from(estimates).where(inArray(estimates.status, ["draft", "sent"])) : [{ n: 0 }],
     can(role, "projects.read_all") ? db.select({ n: count() }).from(projects).where(inArray(projects.status, [...ACTIVE])) : [{ n: 0 }],
+    can(role, "schedule.read") ? db.select({ n: count() }).from(projects).where(eq(projects.status, "need_to_schedule")) : [{ n: 0 }],
     db
       .select({ n: count(), value: money ? sum(projects.contractPrice) : count() })
       .from(projects)
@@ -51,6 +52,7 @@ export async function HomeTiles({ role }: { role: string }) {
         {can(role, "estimates.read") && <Tile href="/estimates" label="Estimates" icon={Calculator} badge={openEstimates.n} />}
         {can(role, "customers.read") && <Tile href="/customers" label="Customers" icon={Users} />}
         {can(role, "projects.read_all") && <Tile href="/projects" label="Projects" icon={FolderKanban} badge={activeJobs.n} />}
+        {can(role, "schedule.read") && <Tile href="/schedule" label="Schedule" icon={CalendarDays} badge={toSchedule.n} />}
         {can(role, "rates.read") && <Tile href="/rates" label="Rate Library" icon={BookOpen} />}
         {can(role, "pipeline.read") && company.bookingUrl && <ShareBookingTile url={company.bookingUrl} companyName={company.displayName || company.name} />}
         {can(role, "settings.manage") && <Tile href="/settings" label="Settings" icon={Settings} />}

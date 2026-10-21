@@ -10,9 +10,10 @@ import { todayIso } from "@/lib/calendar-date";
 import { getGoals } from "@/server/goals";
 import { getCompany, getList, getPricing } from "@/server/settings";
 import { listUsers } from "@/server/users";
+import { getWorkOrderSettings } from "@/server/work-orders";
 import { GoalsForm } from "./goals-form";
 import { goalsToPayload } from "./goals-shared";
-import { CompanyForm, IntegrationsInfo, ListsForm, PricingForm, TemplatesForm, UsersPanel } from "./settings-client";
+import { CompanyForm, IntegrationsInfo, ListsForm, PricingForm, TemplatesForm, UsersPanel, WorkOrderSettingsForm } from "./settings-client";
 import { SettingsTabs, settingsTabAllowed } from "./tabs";
 
 export const metadata = { title: "Settings" };
@@ -44,6 +45,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       {tab === "users" && can(me.role, "users.manage") && (
         <UsersPanel meId={me.id} isOwner={me.role === "owner"} users={(await listUsers()).map((u) => ({ id: u.id, name: u.name, email: u.email, role: u.role, active: u.active, mfa: !!u.twoFactorEnabled }))} />
       )}
+      {tab === "work-orders" && <WorkOrderSettingsForm settings={await getWorkOrderSettings()} />}
       {tab === "integrations" && <IntegrationsInfo appUrl={appUrl} />}
     </>
   );
