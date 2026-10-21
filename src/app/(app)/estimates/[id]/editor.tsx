@@ -59,12 +59,13 @@ const JOB_TYPES = [
 ] as const;
 
 /** Text input that only commits valid numbers, so half-typed values never break the maths. */
-function NumInput({ value, onCommit, disabled, className, placeholder, ariaLabel }: { value: string | null | undefined; onCommit: (v: string) => void; disabled?: boolean; className?: string; placeholder?: string; ariaLabel: string }) {
+function NumInput({ value, onCommit, disabled, className, placeholder, ariaLabel, title }: { value: string | null | undefined; onCommit: (v: string) => void; disabled?: boolean; className?: string; placeholder?: string; ariaLabel: string; title?: string }) {
   const [text, setText] = useState(value ?? "");
   const [focused, setFocused] = useState(false);
   return (
     <input
       aria-label={ariaLabel}
+      title={title}
       inputMode="decimal"
       disabled={disabled}
       placeholder={placeholder}
@@ -258,8 +259,8 @@ export function EstimateEditor({
     const rate = rates.find((r) => r.id === rateId);
     if (!rate) return;
     const area = areaId ? doc.areas.find((a) => a.id === areaId) : undefined;
-    const hasDims = area && d(area.length).gt(0) && d(area.width).gt(0);
-    const source = hasDims && rate.dimensionSource !== "manual" ? (rate.dimensionSource as DocLine["quantitySource"]) : "manual";
+    // Follows the room size even if it's typed later; typing a number makes it manual.
+    const source = area && rate.dimensionSource !== "manual" ? (rate.dimensionSource as DocLine["quantitySource"]) : "manual";
     const line: DocLine = {
       id: uid(),
       areaId,
@@ -343,7 +344,13 @@ export function EstimateEditor({
             {outdated && <Badge tone="warning" className="ml-1" title="The master rate has changed since this line was added">rate changed</Badge>}
           </button>
           <div className="col-span-4 flex items-center gap-1 md:col-span-2">
-            <NumInput ariaLabel="Quantity" value={qty} disabled={ro || auto} onCommit={(v) => setLine(line.id, { quantity: v || "0", quantitySource: "manual" })} />
+            <NumInput
+              ariaLabel="Quantity"
+              value={qty}
+              disabled={ro}
+              title={auto ? "Worked out from the room size. Type a number to set it yourself." : undefined}
+              onCommit={(v) => v !== qty && setLine(line.id, { quantity: v || "0", quantitySource: "manual" })}
+            />
             <span className="w-10 shrink-0 text-xs text-muted">{unit}</span>
           </div>
           <div className="col-span-2 md:col-span-1">
@@ -477,7 +484,7 @@ export function EstimateEditor({
                     {isCollapsed ? <ChevronRight className="size-4" /> : <ChevronDown className="size-4" />}
                   </button>
                   <input aria-label="Area name" disabled={ro} value={area.name} onChange={(e) => setArea(area.id, { name: e.target.value })} className="min-w-32 flex-1 rounded border border-transparent bg-transparent px-1 font-semibold hover:border-border focus:border-ring focus:outline-none disabled:hover:border-transparent" />
-                  {area.kind === "room" && (
+                  {area.kind !== "phase" && (
                     <div className="flex items-center gap-1 text-xs text-muted">
                       <span className="w-14"><NumInput ariaLabel="Length (ft)" value={area.length} placeholder="L" disabled={ro} onCommit={(v) => setArea(area.id, { length: v || null })} /></span>×
                       <span className="w-14"><NumInput ariaLabel="Width (ft)" value={area.width} placeholder="W" disabled={ro} onCommit={(v) => setArea(area.id, { width: v || null })} /></span>×
