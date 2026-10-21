@@ -4,8 +4,8 @@
  * this only decides what is shown.
  */
 
-export type SectionKey = "home" | "jobs" | "schedule" | "customers" | "rates" | "my-jobs" | "settings";
-export type IconName = "home" | "jobs" | "schedule" | "customers" | "rates" | "my-jobs" | "settings" | "search" | "more";
+export type SectionKey = "home" | "leads" | "estimates" | "jobs" | "schedule" | "work-orders" | "customers" | "my-jobs" | "settings";
+export type IconName = SectionKey | "search" | "more";
 
 export interface NavItem {
   key: SectionKey;
@@ -21,18 +21,21 @@ export interface SectionTab {
 
 /** Tabs shown at the top of a section's main pages (not on detail pages). */
 export interface SectionTabs {
-  key: "home" | "jobs";
+  key: "home";
   tabs: SectionTab[];
 }
 
-/** URL prefixes each section owns, longest first where they overlap. */
+/** URL prefixes each section owns. */
 const SECTION_PATHS: [SectionKey, string[]][] = [
   ["my-jobs", ["/my-jobs"]],
-  ["jobs", ["/leads", "/estimates", "/projects"]],
+  ["leads", ["/leads"]],
+  ["estimates", ["/estimates"]],
+  ["jobs", ["/projects"]],
   ["schedule", ["/schedule"]],
+  ["work-orders", ["/work-orders"]],
   ["customers", ["/customers"]],
-  ["rates", ["/rates"]],
-  ["settings", ["/settings", "/account"]],
+  // Rates live under Settings.
+  ["settings", ["/settings", "/account", "/rates"]],
   ["home", ["/performance"]],
 ];
 
@@ -51,11 +54,4 @@ export function tabsFor(pathname: string, sections: SectionTabs[]): { key: Secti
     if (hit && s.tabs.length > 1) return { key: s.key, tabs: s.tabs, active: hit.href };
   }
   return null;
-}
-
-export const LAST_JOBS_TAB_KEY = "gv.jobs-tab";
-
-/** Where "Jobs" in the menu goes: the tab used last, if this person may still open it. */
-export function jobsHref(saved: string | null, tabs: SectionTab[], fallback: string): string {
-  return saved && tabs.some((t) => t.href === saved) ? saved : fallback;
 }

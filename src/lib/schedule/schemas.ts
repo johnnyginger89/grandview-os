@@ -35,7 +35,7 @@ const SPAN_MESSAGE = "Bookings can be at most 6 months long";
 
 /** `/schedule` search params. Never fails: garbage becomes the defaults. */
 export const windowQuerySchema = z.object({
-  view: z.enum(["timeline", "month"]).catch("timeline"),
+  view: z.enum(["timeline", "month"]).catch("month"),
   /** Default: startOfWeek(todayIso()). */
   from: isoDate.optional().catch(undefined),
   span: z.coerce.number().pipe(z.union([z.literal(7), z.literal(14), z.literal(28)])).optional().catch(undefined),

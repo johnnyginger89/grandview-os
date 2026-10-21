@@ -45,7 +45,7 @@ describe("schedule schemas", () => {
 
   it("turns garbage search params into defaults", () => {
     expect(windowQuerySchema.parse({ view: "<script>", from: "2026-02-30", span: "99", crews: `${C},nope`, focus: "x" })).toEqual({
-      view: "timeline",
+      view: "month",
       from: undefined,
       span: undefined,
       crews: [C],

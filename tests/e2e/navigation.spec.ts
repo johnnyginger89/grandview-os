@@ -21,51 +21,56 @@ const mainNav = (page: Page) => page.getByRole("navigation", { name: "Main" });
 test.describe("navigation and search (owner, desktop)", () => {
   test.use({ storageState: statePath("owner") });
 
-  test("the menu is short and named after the work", async ({ page }) => {
+  test("the menu is named after the work, with Rates under Settings", async ({ page }) => {
     await page.goto("/");
     const nav = mainNav(page);
-    for (const name of ["Home", "Jobs", "Schedule", "Customers", "Rates"]) await expect(nav.getByRole("link", { name, exact: true })).toBeVisible();
-    for (const old of ["Dashboard", "Performance", "Leads & Pipeline", "Estimates", "Projects", "Rate Library"]) await expect(nav.getByRole("link", { name: old, exact: true })).toHaveCount(0);
-    await expect(page.getByRole("link", { name: "Settings", exact: true })).toBeVisible();
+    for (const name of ["Home", "Leads", "Estimates", "Jobs", "Schedule", "Work orders", "Customers"]) await expect(nav.getByRole("link", { name, exact: true })).toBeVisible();
+    for (const old of ["Dashboard", "Performance", "Leads & Pipeline", "Projects", "Rate Library", "Rates"]) await expect(nav.getByRole("link", { name: old, exact: true })).toHaveCount(0);
     await expect(nav.getByRole("link", { name: "Home", exact: true })).toHaveAttribute("aria-current", "page");
+    await expect(page.getByRole("link", { name: "Grandview Painting home" })).toBeVisible();
 
     const homeTabs = page.getByRole("navigation", { name: "Home" });
     await homeTabs.getByRole("link", { name: "Performance" }).click();
     await expect(page).toHaveURL(/\/performance$/);
     await expect(nav.getByRole("link", { name: "Home", exact: true })).toHaveAttribute("aria-current", "page");
+
+    await page.getByRole("link", { name: "Settings", exact: true }).click();
+    await page.getByRole("navigation", { name: "Settings tabs" }).getByRole("link", { name: "Rates" }).click();
+    await expect(page).toHaveURL(/\/rates$/);
+    await expect(page.getByRole("link", { name: "Settings", exact: true })).toHaveAttribute("aria-current", "page");
   });
 
-  test("Jobs holds leads, estimates and sold jobs, and remembers the last tab", async ({ page }) => {
+  test("leads, estimates, jobs and work orders each have their own page", async ({ page }) => {
     await page.goto("/leads");
-    const tabs = page.getByRole("navigation", { name: "Jobs" });
-    await expect(tabs.getByRole("link", { name: "Leads" })).toHaveAttribute("aria-current", "page");
     await expect(page.getByRole("heading", { level: 1, name: "Leads" })).toBeVisible();
-    await expect(mainNav(page).getByRole("link", { name: "Jobs", exact: true })).toHaveAttribute("aria-current", "page");
+    await expect(mainNav(page).getByRole("link", { name: "Leads", exact: true })).toHaveAttribute("aria-current", "page");
 
     // "/" goes to the page's own filter box here; Ctrl+K still opens the main search.
-    await page.locator("body").click({ position: { x: 5, y: 400 } });
-    await page.keyboard.press("/");
-    await expect(page.getByRole("searchbox", { name: "Search leads" })).toBeFocused();
+    await expect(async () => {
+      await page.locator("body").click({ position: { x: 5, y: 600 } });
+      await page.keyboard.press("/");
+      await expect(page.getByRole("searchbox", { name: "Search leads" })).toBeFocused({ timeout: 500 });
+    }).toPass();
     await page.keyboard.press("Escape");
-    await page.locator("body").click({ position: { x: 5, y: 400 } });
+    await page.locator("body").click({ position: { x: 5, y: 600 } });
     await page.keyboard.press("Control+k");
     await expect(search(page)).toBeFocused();
     await page.keyboard.press("Escape");
 
-    await tabs.getByRole("link", { name: "Sold jobs" }).click();
-    await expect(page).toHaveURL(/\/projects$/);
-    await expect(page.getByRole("heading", { level: 1, name: "Sold jobs" })).toBeVisible();
+    for (const [name, url, heading] of [
+      ["Estimates", /\/estimates$/, "Estimates"],
+      ["Jobs", /\/projects$/, "Jobs"],
+      ["Work orders", /\/work-orders$/, "Work orders"],
+    ] as const) {
+      await mainNav(page).getByRole("link", { name, exact: true }).click();
+      await expect(page).toHaveURL(url);
+      await expect(page.getByRole("heading", { level: 1, name: heading })).toBeVisible();
+      await expect(mainNav(page).getByRole("link", { name, exact: true })).toHaveAttribute("aria-current", "page");
+    }
 
-    await mainNav(page).getByRole("link", { name: "Schedule", exact: true }).click();
-    await expect(page).toHaveURL(/\/schedule/);
-    await expect(mainNav(page).getByRole("link", { name: "Jobs", exact: true })).toHaveAttribute("href", "/projects");
-    await mainNav(page).getByRole("link", { name: "Jobs", exact: true }).click();
-    await expect(page).toHaveURL(/\/projects$/);
-
-    // Detail pages keep "Jobs" lit but drop the tabs.
+    // A detail page keeps its section lit.
     await page.goto("/estimates/new");
-    await expect(mainNav(page).getByRole("link", { name: "Jobs", exact: true })).toHaveAttribute("aria-current", "page");
-    await expect(page.getByRole("navigation", { name: "Jobs" })).toHaveCount(0);
+    await expect(mainNav(page).getByRole("link", { name: "Estimates", exact: true })).toHaveAttribute("aria-current", "page");
   });
 
   test("+ New opens the common add screens", async ({ page }) => {
@@ -96,8 +101,11 @@ test.describe("navigation and search (owner, desktop)", () => {
 
   test("search finds a customer by name, street or phone and opens it from the keyboard", async ({ page }) => {
     await page.goto("/");
-    await page.keyboard.press("/");
-    await expect(search(page)).toBeFocused();
+    // Retry until the page has loaded enough to listen for the shortcut.
+    await expect(async () => {
+      await page.keyboard.press("/");
+      await expect(search(page)).toBeFocused({ timeout: 500 });
+    }).toPass();
 
     await search(page).fill(`searchable ${stamp}`);
     const option = page.getByRole("option", { name: new RegExp(`Searchable ${stamp}`) });
@@ -136,14 +144,14 @@ test.describe("navigation and search (owner, desktop)", () => {
     await search(page).fill(`#${soldNumber}`);
     const first = page.getByRole("option").first();
     await expect(first).toContainText(`#${soldNumber}`);
-    await expect(page.getByRole("group").first()).toHaveAccessibleName("Sold jobs");
+    await expect(page.getByRole("group").first()).toHaveAccessibleName("Jobs");
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("Enter");
     await expect(page).toHaveURL(/\/projects\/[0-9a-f-]{36}$/);
 
     // By name: the job and the customer, not the signed estimate or the won lead a second time.
     await search(page).fill(soldName.split(" ").slice(0, 3).join(" "));
-    await expect(page.getByRole("group", { name: "Sold jobs" })).toBeVisible();
+    await expect(page.getByRole("group", { name: "Jobs", exact: true })).toBeVisible();
     await expect(page.getByRole("group", { name: "Customers" })).toBeVisible();
     await expect(page.getByRole("group", { name: "Estimates" })).toHaveCount(0);
     await expect(page.getByRole("group", { name: "Leads" })).toHaveCount(0);
@@ -160,7 +168,7 @@ test.describe("search for other roles", () => {
       await search(page).fill(soldName.split(" ").slice(0, 3).join(" "));
       await expect(page.getByRole("group", { name: "Customers" })).toBeVisible();
       await expect(page.getByRole("group", { name: "Estimates" })).toBeVisible();
-      await expect(page.getByRole("group", { name: "Sold jobs" })).toHaveCount(0);
+      await expect(page.getByRole("group", { name: "Jobs", exact: true })).toHaveCount(0);
       await expect(page.getByRole("group", { name: "Work orders" })).toHaveCount(0);
       const res = await page.request.get(`/api/search?q=${encodeURIComponent(`#${soldNumber}`)}`);
       expect(res.status()).toBe(200);
@@ -197,16 +205,17 @@ test.describe("phone navigation (owner)", () => {
   test("bottom bar, search sheet and More @mobile", async ({ page }) => {
     await page.goto("/");
     const bar = mainNav(page);
-    for (const name of ["Home", "Jobs", "Schedule"]) await expect(bar.getByRole("link", { name, exact: true })).toBeVisible();
-    await expect(bar.getByRole("button", { name: "Search" })).toBeVisible();
+    for (const name of ["Home", "Leads", "Estimates", "Schedule"]) await expect(bar.getByRole("link", { name, exact: true })).toBeVisible();
     await expect(bar.getByRole("button", { name: "More" })).toBeVisible();
+    const searchButton = page.getByRole("banner").getByRole("button", { name: "Search" });
+    await expect(searchButton).toBeVisible();
 
     // The "+" button sits above the bar, not under it.
     const plus = await page.getByRole("button", { name: "Add", exact: true }).boundingBox();
     const barBox = await bar.boundingBox();
     expect(plus!.y + plus!.height).toBeLessThanOrEqual(barBox!.y);
 
-    await bar.getByRole("button", { name: "Search" }).click();
+    await searchButton.click();
     const sheet = page.getByRole("dialog", { name: "Search" });
     await expect(sheet).toBeVisible();
     await expect(sheet.getByRole("combobox", { name: "Search" })).toBeFocused();
@@ -217,7 +226,7 @@ test.describe("phone navigation (owner)", () => {
 
     await bar.getByRole("button", { name: "More" }).click();
     const more = page.getByRole("dialog", { name: "More" });
-    for (const name of ["Customers", "Rates", "Settings"]) await expect(more.getByRole("link", { name })).toBeVisible();
+    for (const name of ["Jobs", "Work orders", "Customers", "Settings"]) await expect(more.getByRole("link", { name, exact: true })).toBeVisible();
     await more.getByRole("link", { name: "Customers" }).click();
     await expect(page).toHaveURL(/\/customers$/);
     await expect(more).toBeHidden();

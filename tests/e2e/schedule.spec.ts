@@ -75,6 +75,14 @@ test.describe("schedule (owner)", () => {
     await expect(drawer).toBeVisible();
     await expect(drawer.getByTestId("project-status")).toHaveText("Scheduled");
     await expect(drawer.getByText(NOTE)).toBeVisible();
+
+    // The month is the main view: the same booking shows there as a solid crew-coloured bar.
+    await page.goto(`/schedule?from=${startDate}`);
+    const month = page.locator('[data-testid="schedule-board"][data-layout="desktop"]').getByTestId("schedule-month");
+    await expect(month).toBeVisible();
+    const monthBar = month.getByRole("button", { name: new RegExp(`Job #${projectNumber}\\b`) }).first();
+    await expect(monthBar).toBeVisible();
+    expect(await monthBar.evaluate((el) => getComputedStyle(el).borderStyle)).not.toContain("dashed");
   });
 
   test("issue a work order for the crew", async ({ page }) => {

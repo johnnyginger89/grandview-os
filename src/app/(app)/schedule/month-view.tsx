@@ -9,11 +9,11 @@ import { matchesSearch, monthLayout, MONTH_LANES, type CalFor, type EntryConflic
 import { EntryBar } from "./entry-bar";
 import { barInfo, GhostBar, type BarHandlers, type BoardPreview } from "./timeline-view";
 
-const DATE_H = 22;
-const LANE_H = 24;
-const BAR_H = 21;
-const MORE_H = 20;
-const WEEK_H = DATE_H + MONTH_LANES * LANE_H + MORE_H;
+/** Row sizes; phones use the dense set so a whole month fits with less scrolling. */
+const SIZES = {
+  normal: { date: 22, lane: 24, bar: 21, more: 20 },
+  dense: { date: 18, lane: 17, bar: 15, more: 16 },
+};
 const DOW_LONG = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const pct = (n: number) => `${(n / 7) * 100}%`;
 
@@ -37,6 +37,7 @@ export function MonthView({
   preview,
   handlers,
   onShowDay,
+  dense = false,
 }: {
   grid: IsoDate[][];
   /** The 1st of the month shown. */
@@ -53,7 +54,10 @@ export function MonthView({
   preview: BoardPreview | null;
   handlers: BarHandlers;
   onShowDay: (date: IsoDate) => void;
+  dense?: boolean;
 }) {
+  const { date: DATE_H, lane: LANE_H, bar: BAR_H, more: MORE_H } = SIZES[dense ? "dense" : "normal"];
+  const WEEK_H = DATE_H + MONTH_LANES * LANE_H + MORE_H;
   const weeks = monthLayout(entries, grid);
   const company = calFor(null);
   const monthKey = month.slice(0, 7);

@@ -8,7 +8,7 @@ import { closedDayTitle } from "@/lib/schedule/holidays";
 import type { CrewDTO, EntryDTO } from "@/lib/schedule/types";
 import { cn } from "@/lib/utils";
 import { matchesSearch, type AgendaDay, type EntryConflict } from "./board-model";
-import { KIND_ICON, TENTATIVE_HATCH } from "./entry-bar";
+import { KIND_ICON } from "./entry-bar";
 
 /** Phones: the days ahead as a list of cards. Tapping a card opens the booking; dates change in its form. */
 export function AgendaView({
@@ -56,8 +56,7 @@ export function AgendaView({
                     data-testid="agenda-item"
                     data-project-number={e.projectNumber}
                     onClick={() => onOpen(e)}
-                    className={cn("w-full rounded-lg border border-border border-l-4 bg-surface px-3 py-2.5 text-left shadow-xs active:bg-surface-2", c.border, tentative && "border-dashed")}
-                    style={tentative ? TENTATIVE_HATCH : undefined}
+                    className={cn("w-full rounded-lg border border-border border-l-8 bg-surface px-3 py-2.5 text-left shadow-xs active:bg-surface-2", c.border)}
                   >
                     <div className="flex items-center gap-2 text-sm">
                       <span className={cn("size-2.5 shrink-0 rounded-full", crew ? c.dot : "border border-border-strong")} aria-hidden />

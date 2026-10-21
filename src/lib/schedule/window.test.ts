@@ -7,16 +7,20 @@ const settings = defaultScheduleSettings();
 const q = (params: Record<string, unknown>) => windowQuerySchema.parse(params);
 
 describe("resolveWindow", () => {
-  it("defaults to two weeks from this week's Monday", () => {
-    const w = resolveWindow(q({}), settings, "2026-10-21");
+  it("opens on this month by default", () => {
+    expect(resolveWindow(q({}), settings, "2026-10-21")).toMatchObject({ view: "month", month: "2026-10-01" });
+  });
+
+  it("the crew timeline defaults to two weeks from this week's Monday", () => {
+    const w = resolveWindow(q({ view: "timeline" }), settings, "2026-10-21");
     expect(w).toMatchObject({ view: "timeline", from: "2026-10-19", to: "2026-11-01", days: 14, span: 14, month: null, crews: [] });
     expect(shiftWindow(w, 1)).toBe("2026-11-02");
     expect(shiftWindow(w, -1)).toBe("2026-10-05");
   });
 
   it("snaps a mid-week `from` to the week start and honours the span", () => {
-    expect(resolveWindow(q({ from: "2026-10-08", span: "28" }), settings, "2026-10-21")).toMatchObject({ from: "2026-10-05", to: "2026-11-01", days: 28 });
-    expect(resolveWindow(q({ from: "2026-10-08" }), { ...settings, weekStartsOn: 0 }, "2026-10-21").from).toBe("2026-10-04");
+    expect(resolveWindow(q({ view: "timeline", from: "2026-10-08", span: "28" }), settings, "2026-10-21")).toMatchObject({ from: "2026-10-05", to: "2026-11-01", days: 28 });
+    expect(resolveWindow(q({ view: "timeline", from: "2026-10-08" }), { ...settings, weekStartsOn: 0 }, "2026-10-21").from).toBe("2026-10-04");
   });
 
   it("shows the whole month grid in month view, within the window limit", () => {

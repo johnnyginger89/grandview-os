@@ -1,10 +1,11 @@
 "use client";
 import {
-  BookOpen,
+  Calculator,
   CalendarDays,
   ChevronRight,
-  ClipboardList,
+  ClipboardCheck,
   Ellipsis,
+  FileText,
   HardHat,
   House,
   LogOut,
@@ -13,51 +14,37 @@ import {
   Settings,
   ShieldCheck,
   Users,
+  Workflow,
   X,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useCallback, useEffect, useState, useSyncExternalStore, type ComponentType, type ReactNode } from "react";
+import { useCallback, useState, type ComponentType, type ReactNode } from "react";
 import { QuickAdd, QUICK_ADD_ITEMS, type QuickAddItem } from "@/components/quick-add";
 import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
 import { GlobalSearch } from "./global-search";
-import { jobsHref, LAST_JOBS_TAB_KEY, sectionFor, tabsFor, type IconName, type NavItem, type SectionTabs } from "./nav";
+import { sectionFor, tabsFor, type IconName, type NavItem, type SectionTabs } from "./nav";
 import { Popover, popoverItem } from "./popover";
 import { Sheet } from "./sheet";
 
 const ICONS: Record<IconName, ComponentType<{ className?: string }>> = {
   home: House,
-  jobs: ClipboardList,
+  leads: Workflow,
+  estimates: Calculator,
+  jobs: ClipboardCheck,
   schedule: CalendarDays,
+  "work-orders": FileText,
   customers: Users,
-  rates: BookOpen,
   "my-jobs": HardHat,
   settings: Settings,
   search: Search,
   more: Ellipsis,
 };
 
-const JOBS_TAB_EVENT = "gv:jobs-tab";
-function subscribeJobsTab(onChange: () => void) {
-  window.addEventListener("storage", onChange);
-  window.addEventListener(JOBS_TAB_EVENT, onChange);
-  return () => {
-    window.removeEventListener("storage", onChange);
-    window.removeEventListener(JOBS_TAB_EVENT, onChange);
-  };
-}
-function readJobsTab(): string | null {
-  try {
-    return window.localStorage.getItem(LAST_JOBS_TAB_KEY);
-  } catch {
-    return null;
-  }
-}
-
 /** Sections that get their own spot in the phone bottom bar; the rest go under More. */
-const PHONE_BAR: NavItem["key"][] = ["home", "jobs", "schedule"];
+const PHONE_BAR: NavItem["key"][] = ["home", "leads", "estimates", "schedule"];
 
 export interface ShellUser {
   name: string;
@@ -147,11 +134,11 @@ function SideItem({ item, active }: { item: NavItem; active: boolean }) {
       href={item.href}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "flex h-10 items-center gap-3 rounded-lg px-3 text-[15px] font-medium transition-colors",
-        active ? "bg-sidebar-active text-brand" : "text-sidebar-text hover:bg-surface-2 hover:text-heading",
+        "flex h-11 items-center gap-3 rounded-lg px-3 text-[15px] font-medium transition-colors",
+        active ? "bg-sidebar-active text-white shadow-[inset_3px_0_0_var(--accent)]" : "text-sidebar-text hover:bg-white/10 hover:text-white",
       )}
     >
-      <Icon className={cn("size-[18px] shrink-0", active ? "text-brand" : "text-subtle")} aria-hidden />
+      <Icon className="size-[18px] shrink-0" aria-hidden />
       {item.label}
     </Link>
   );
@@ -161,7 +148,7 @@ function SectionTabStrip({ pathname, sections }: { pathname: string; sections: S
   const strip = tabsFor(pathname, sections);
   if (!strip) return null;
   return (
-    <nav aria-label={strip.key === "jobs" ? "Jobs" : "Home"} className="scrollbar-none -mt-1 mb-6 flex gap-6 overflow-x-auto border-b border-border print:hidden">
+    <nav aria-label="Home" className="scrollbar-none -mt-1 mb-6 flex gap-6 overflow-x-auto border-b border-border print:hidden">
       {strip.tabs.map((t) => {
         const active = t.href === strip.active;
         return (
@@ -182,7 +169,7 @@ function SectionTabStrip({ pathname, sections }: { pathname: string; sections: S
   );
 }
 
-function BottomBar({ items, more, canSearch, pathname, onSearch, onMore, moreOpen }: { items: NavItem[]; more: boolean; canSearch: boolean; pathname: string; onSearch: () => void; onMore: () => void; moreOpen: boolean }) {
+function BottomBar({ items, more, pathname, onMore, moreOpen }: { items: NavItem[]; more: boolean; pathname: string; onMore: () => void; moreOpen: boolean }) {
   const section = sectionFor(pathname);
   const cell = "flex h-16 flex-col items-center justify-center gap-1 text-[11px] font-medium";
   return (
@@ -200,14 +187,6 @@ function BottomBar({ items, more, canSearch, pathname, onSearch, onMore, moreOpe
             </li>
           );
         })}
-        {canSearch && (
-          <li className="flex-1">
-            <button type="button" onClick={onSearch} className={cn(cell, "w-full text-muted")}>
-              <Search className="size-6" aria-hidden />
-              Search
-            </button>
-          </li>
-        )}
         {more && (
           <li className="flex-1">
             <button type="button" onClick={onMore} aria-expanded={moreOpen} className={cn(cell, "w-full", moreOpen ? "text-brand" : "text-muted")}>
@@ -222,9 +201,8 @@ function BottomBar({ items, more, canSearch, pathname, onSearch, onMore, moreOpe
 }
 
 /**
- * The frame around every signed-in page: a short menu (left on desktop, bottom bar on
- * phones), one search box, "+ New", the account menu, and tabs for the sections that
- * have more than one main page (Home, Jobs).
+ * The frame around every signed-in page: the menu (left on desktop, bottom bar on
+ * phones), one search box, "+ New", the account menu, and the Today/Performance tabs.
  */
 export function AppShell({
   nav,
@@ -244,28 +222,14 @@ export function AppShell({
   children: ReactNode;
 }) {
   const pathname = usePathname();
-  const savedJobsTab = useSyncExternalStore(subscribeJobsTab, readJobsTab, () => null);
   const [sheet, setSheet] = useState<"search" | "more" | null>(null);
   const closeSheet = useCallback(() => setSheet(null), []);
 
-  const jobsTabs = sections.find((s) => s.key === "jobs")?.tabs ?? [];
-  const onJobsTab = jobsTabs.some((t) => t.href === pathname);
-  // "Jobs" returns to the tab used last (Leads, Estimates or Sold jobs).
-  useEffect(() => {
-    if (!onJobsTab) return;
-    try {
-      window.localStorage.setItem(LAST_JOBS_TAB_KEY, pathname);
-      window.dispatchEvent(new Event(JOBS_TAB_EVENT));
-    } catch {
-      // Private browsing can refuse storage; "Jobs" then opens the first tab.
-    }
-  }, [pathname, onJobsTab]);
-
-  const items = nav.map((n) => (n.key === "jobs" ? { ...n, href: jobsHref(savedJobsTab, jobsTabs, n.href) } : n));
+  const items = nav;
   const section = sectionFor(pathname);
   const barItems = items.filter((n) => PHONE_BAR.includes(n.key));
   const moreItems = [...items.filter((n) => !PHONE_BAR.includes(n.key)), ...(settings ? [settings] : [])];
-  const hasBottomBar = barItems.length + (canSearch ? 1 : 0) >= 2;
+  const hasBottomBar = barItems.length >= 2;
 
   return (
     <div
@@ -274,17 +238,17 @@ export function AppShell({
         hasBottomBar && "[--app-bottom:calc(4rem+env(safe-area-inset-bottom))] lg:[--app-bottom:0px]",
       )}
     >
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-border bg-sidebar lg:flex print:hidden">
-        <div className="flex h-14 shrink-0 items-center px-5">
-          <Brand />
-        </div>
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col bg-sidebar lg:flex print:hidden">
+        <Link href="/" aria-label="Grandview Painting home" className="mx-3 mt-4 mb-2 flex justify-center rounded-lg px-3 py-2 hover:bg-white/5">
+          <Image src="/brand/logo-white.png" alt="" width={176} height={80} priority />
+        </Link>
         <nav aria-label="Main" className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-3">
           {items.map((item) => (
             <SideItem key={item.key} item={item} active={section === item.key} />
           ))}
         </nav>
         {settings && (
-          <div className="border-t border-border p-3">
+          <div className="border-t border-white/10 p-3">
             <SideItem item={settings} active={section === "settings"} />
           </div>
         )}
@@ -301,7 +265,14 @@ export function AppShell({
 
         <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-border bg-surface px-4 lg:hidden print:hidden">
           <Brand compact />
-          <AccountMenu user={user} />
+          <div className="flex items-center gap-1">
+            {canSearch && (
+              <button type="button" onClick={() => setSheet("search")} aria-label="Search" className="grid size-11 place-items-center rounded-lg text-heading hover:bg-surface-2">
+                <Search className="size-6" aria-hidden />
+              </button>
+            )}
+            <AccountMenu user={user} />
+          </div>
         </header>
 
         <main className="pb-[calc(var(--app-bottom)+1.5rem)] lg:pb-8">
@@ -312,9 +283,7 @@ export function AppShell({
         </main>
       </div>
 
-      {hasBottomBar && (
-        <>
-          <BottomBar items={barItems} more={moreItems.length > 0} canSearch={canSearch} pathname={pathname} onSearch={() => setSheet("search")} onMore={() => setSheet("more")} moreOpen={sheet === "more"} />
+      {canSearch && (
           <Sheet open={sheet === "search"} onClose={closeSheet} label="Search" kind="full">
             <div className="flex h-full flex-col">
               <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4">
@@ -326,6 +295,10 @@ export function AppShell({
               <GlobalSearch variant="sheet" onNavigate={closeSheet} />
             </div>
           </Sheet>
+      )}
+      {hasBottomBar && (
+        <>
+          <BottomBar items={barItems} more={moreItems.length > 0} pathname={pathname} onMore={() => setSheet("more")} moreOpen={sheet === "more"} />
           <Sheet open={sheet === "more"} onClose={closeSheet} label="More" kind="bottom">
             <div className="flex items-center justify-between px-5 pt-4 pb-2">
               <h2 className="font-[family-name:var(--font-display)] text-lg font-bold text-heading">More</h2>

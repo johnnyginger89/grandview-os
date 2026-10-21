@@ -60,7 +60,7 @@ describe("results", () => {
       "select:opportunities": [[{ id: "l1", title: "Fence", customer: "Jordan Sample", stage: "Contacted", kind: "open", city: "Surrey" }]],
     });
     const r = await globalSearch(OWNER, "jordan");
-    expect(r.groups.map((g) => g.label)).toEqual(["Customers", "Sold jobs", "Estimates", "Leads"]);
+    expect(r.groups.map((g) => g.label)).toEqual(["Customers", "Jobs", "Estimates", "Leads"]);
     expect(r.groups[0].hits[0]).toEqual({
       kind: "customer",
       id: "c1",

@@ -18,7 +18,7 @@ export type { SearchGroup, SearchHit, SearchKind, SearchResult } from "@/lib/sea
 
 const GROUP_LABEL: Record<SearchKind, string> = {
   customer: "Customers",
-  job: "Sold jobs",
+  job: "Jobs",
   estimate: "Estimates",
   lead: "Leads",
   work_order: "Work orders",

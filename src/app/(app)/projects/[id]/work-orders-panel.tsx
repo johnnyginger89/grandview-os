@@ -203,27 +203,21 @@ export function WorkOrdersPanel({
   );
 }
 
-function LinkRow({ l, wo, canEdit, busy, now, url, onRevoke }: { l: WorkOrderLinkDTO; wo: WorkOrderDTO; canEdit: boolean; busy: boolean; now: string; url: string | undefined; onRevoke: () => void }) {
+function LinkRow({ l, canEdit, busy, now, url, onRevoke }: { l: WorkOrderLinkDTO; canEdit: boolean; busy: boolean; now: string; url: string | undefined; onRevoke: () => void }) {
   const active = l.status === "active";
   const left = daysLeft(l.expiresAt, new Date(now));
   const state =
     l.status === "revoked" ? `Turned off ${formatDate(l.revokedAt)}`
     : l.status === "expired" ? `Expired ${formatDate(l.expiresAt)}`
     : `Works until ${formatDate(l.expiresAt)}${left <= 7 ? ` (${plural(left, "day")} left)` : ""}`;
-  const opens = l.openCount ? `Opened ${plural(l.openCount, "time")}, last ${formatDateTime(l.lastOpenedAt)}` : "Not opened yet";
-  const seen = wo.status === "issued" && active && l.openCount > 0 ? l.lastOpenedVersion === wo.currentVersion : null;
   return (
     <li className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-3 py-2 text-sm" data-testid="work-order-link">
       <div className="min-w-0">
         <p className="flex flex-wrap items-center gap-2 font-medium">
           {l.label}
           {!active && <Badge tone="neutral">{l.status === "revoked" ? "Turned off" : "Expired"}</Badge>}
-          {seen === true && <Badge tone="success">Seen version {wo.currentVersion}</Badge>}
-          {seen === false && <Badge tone="warning">Not yet opened since version {wo.currentVersion}</Badge>}
         </p>
-        <p className="text-xs text-muted">
-          {state} · {opens}
-        </p>
+        <p className="text-xs text-muted">{state}</p>
       </div>
       <div className="flex flex-wrap gap-2">
         {active && url && <CopyButton text={url} label="Copy link" />}
@@ -327,7 +321,7 @@ function WorkOrderRow({
           {wo.links.length ? (
             <ul aria-label={`Share links for ${wo.number}`}>
               {wo.links.map((l) => (
-                <LinkRow key={l.id} l={l} wo={wo} canEdit={canEdit} busy={busy} now={now} url={remembered[l.id]} onRevoke={() => onRevoke(l)} />
+                <LinkRow key={l.id} l={l} canEdit={canEdit} busy={busy} now={now} url={remembered[l.id]} onRevoke={() => onRevoke(l)} />
               ))}
             </ul>
           ) : (

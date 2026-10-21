@@ -1,5 +1,5 @@
 "use client";
-import { AlertTriangle, ClipboardCheck, Droplets, GripVertical, Paintbrush, Palette, Wrench, type LucideIcon } from "lucide-react";
+import { AlertTriangle, ClipboardCheck, Clock, Droplets, GripVertical, Paintbrush, Palette, Wrench, type LucideIcon } from "lucide-react";
 import type { CSSProperties, KeyboardEvent, PointerEvent } from "react";
 import type { ScheduleEntryKind } from "@/lib/schedule/constants";
 import { crewColorClasses } from "@/lib/schedule/colors";
@@ -17,14 +17,8 @@ export const KIND_ICON: Record<ScheduleEntryKind, LucideIcon> = {
   touch_up: Wrench,
 };
 
-/** Diagonal hatch for tentative bookings (dashed border + hatch: pattern, not only colour). */
-export const TENTATIVE_HATCH: CSSProperties = {
-  backgroundImage: "repeating-linear-gradient(135deg, rgb(0 0 0 / 0.06) 0 4px, transparent 4px 9px)",
-};
-/** Lighter hatch over weekends and holidays inside a bar (those days aren't counted). */
-const OFF_DAY_HATCH: CSSProperties = {
-  backgroundImage: "repeating-linear-gradient(45deg, rgb(255 255 255 / 0.75) 0 3px, transparent 3px 7px)",
-};
+/** Weekends and holidays inside a bar are paled a little (those days aren't counted). */
+const OFF_DAY_SHADE: CSSProperties = { backgroundColor: "rgb(255 255 255 / 0.35)" };
 
 export type BarMode = "move" | "resize-start" | "resize-end";
 
@@ -112,18 +106,15 @@ export function EntryBar(p: EntryBarProps) {
         aria-label={label.replace(/^Job \d+/, `Job #${entry.projectNumber}`)}
         title={tooltip(p)}
         className={cn(
-          "relative flex h-full w-full items-center gap-1 overflow-hidden rounded-sm border border-l-4 text-left text-text shadow-xs outline-offset-1",
+          "relative flex h-full w-full items-center gap-1 overflow-hidden rounded-md text-left font-medium shadow-xs outline-offset-1",
           compact ? "px-1 text-[11px] leading-tight" : "px-1.5 text-xs",
-          c.bar,
-          c.border,
-          p.tentative ? "border-dashed border-border-strong" : "border-transparent",
-          p.conflict && "ring-2 ring-danger",
+          c.solid,
+          p.conflict && "ring-2 ring-danger ring-offset-1",
           p.match === true && "ring-2 ring-accent",
           editable && "cursor-grab active:cursor-grabbing",
           p.clipStart && "rounded-l-none",
           p.clipEnd && "rounded-r-none",
         )}
-        style={p.tentative ? TENTATIVE_HATCH : undefined}
         onClick={() => p.onOpen(entry)}
         onKeyDown={(e) => p.onKeyDown(e, entry)}
         onBlur={() => p.onBlur?.(entry)}
@@ -137,25 +128,25 @@ export function EntryBar(p: EntryBarProps) {
         }}
       >
         {p.offDays.map((i) => (
-          <span key={i} aria-hidden className="pointer-events-none absolute inset-y-0" style={{ left: `${(i / p.span) * 100}%`, width: `${100 / p.span}%`, ...OFF_DAY_HATCH }} />
+          <span key={i} aria-hidden className="pointer-events-none absolute inset-y-0" style={{ left: `${(i / p.span) * 100}%`, width: `${100 / p.span}%`, ...OFF_DAY_SHADE }} />
         ))}
-        {p.clipStart && <span aria-hidden className="relative shrink-0 text-muted">◂</span>}
+        {p.clipStart && <span aria-hidden className="relative shrink-0 opacity-80">◂</span>}
         {editable && <span aria-hidden className="w-2.5 shrink-0" />}
-        {p.conflict && <AlertTriangle className="relative size-3.5 shrink-0 text-danger" aria-hidden />}
-        <Icon className="relative size-3.5 shrink-0 text-muted" aria-hidden />
+        {p.conflict && <AlertTriangle className="relative size-3.5 shrink-0" aria-hidden />}
+        {p.tentative ? <Clock className="relative size-3.5 shrink-0 opacity-90" aria-hidden /> : <Icon className="relative size-3.5 shrink-0 opacity-90" aria-hidden />}
         <span className="relative min-w-0 flex-1 truncate">
           <span className="font-semibold">#{entry.projectNumber}</span> {entry.customerName}
-          {!compact && entry.city ? <span className="text-muted"> · {entry.city}</span> : null}
-          {entry.phaseLabel ? <span className="text-muted"> · {entry.phaseLabel}</span> : null}
+          {!compact && entry.city ? <span className="opacity-85"> · {entry.city}</span> : null}
+          {entry.phaseLabel ? <span className="opacity-85"> · {entry.phaseLabel}</span> : null}
         </span>
-        {p.clipEnd && <span aria-hidden className="relative shrink-0 text-muted">▸</span>}
+        {p.clipEnd && <span aria-hidden className="relative shrink-0 opacity-80">▸</span>}
       </button>
       {editable && (
         <>
           <span
             aria-label={`Drag #${entry.projectNumber} to move it`}
             role="img"
-            className="absolute inset-y-0 left-1 flex w-3 cursor-grab touch-none items-center text-muted"
+            className="absolute inset-y-0 left-1 flex w-3 cursor-grab touch-none items-center opacity-80"
             onPointerDown={(e) => p.onPointerDown(e, entry, "move")}
           >
             <GripVertical className={compact ? "size-3" : "size-3.5"} aria-hidden />

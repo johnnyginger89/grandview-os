@@ -15,6 +15,8 @@ const manage = (role: Role) => can(role, "settings.manage");
 export const TABS: readonly SettingsTab[] = [
   { key: "company", label: "Company", href: "/settings?tab=company", visible: manage },
   { key: "pricing", label: "Pricing defaults", href: "/settings?tab=pricing", visible: manage },
+  // Production rates, materials and multipliers. Estimators can open this tab only.
+  { key: "rates", label: "Rates", href: "/rates", visible: (r) => can(r, "rates.read") },
   { key: "proposals", label: "Proposals", href: "/settings/proposals", visible: manage },
   // Goals are company revenue targets, so they also need financials.read (owner only by default).
   { key: "goals", label: "Goals", href: "/settings?tab=goals", visible: (r) => manage(r) && can(r, "financials.read") },

@@ -71,7 +71,6 @@ test.describe("work orders (owner)", () => {
     expect(shareLink).toMatch(/\/share\/wo\/[A-Za-z0-9_-]{43}$/);
     await dialog.getByRole("button", { name: "Done" }).click();
     await expect(row(page).getByTestId("work-order-link").getByText("[TEST DATA] Niko's crew")).toBeVisible();
-    await expect(row(page).getByText("Not opened yet")).toBeVisible();
 
     const crew = await openAnonymously(browser, shareLink);
     expect(crew.res?.status()).toBe(200);
@@ -99,7 +98,6 @@ test.describe("work orders (owner)", () => {
     await crew.context.close();
 
     await page.reload();
-    await expect(row(page).getByText("Seen version 1")).toBeVisible();
   });
 
   test("issuing version 2 shows the crew what changed", async ({ page, browser }) => {
@@ -116,7 +114,6 @@ test.describe("work orders (owner)", () => {
     await issue.getByLabel("What changed? (optional)").fill("Start room changed");
     await issue.getByRole("button", { name: "Issue version 2" }).click();
     await expect(card(page).getByText("Version 2 issued.")).toBeVisible();
-    await expect(row(page).getByText("Not yet opened since version 2")).toBeVisible();
 
     const crew = await openAnonymously(browser, shareLink);
     const p = crew.page;
@@ -131,7 +128,6 @@ test.describe("work orders (owner)", () => {
     await crew.context.close();
 
     await page.reload();
-    await expect(row(page).getByText("Seen version 2")).toBeVisible();
   });
 
   test("a revoked link stops working at once", async ({ page, browser }) => {

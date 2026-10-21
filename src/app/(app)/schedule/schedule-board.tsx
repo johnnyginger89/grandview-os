@@ -1,5 +1,5 @@
 "use client";
-import { Settings, X } from "lucide-react";
+import { Clock, Settings, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useOptimistic, useRef, useState, useSyncExternalStore, useTransition, type KeyboardEvent, type PointerEvent } from "react";
 import { Dialog } from "@/components/dialog";
@@ -141,7 +141,7 @@ export function ScheduleBoard({
   const [drawerId, setDrawerId] = useState<string | null>(focus?.entryId ?? null);
   const [scheduling, setScheduling] = useState<UnscheduledJobDTO | null>(null);
   const [dayOpen, setDayOpen] = useState<IsoDate | null>(null);
-  const [phoneTab, setPhoneTab] = useState<"agenda" | "todo">("agenda");
+  const [phoneTab, setPhoneTab] = useState<"month" | "agenda" | "todo">("month");
   const [kbd, setKbd] = useState<{ entry: EntryDTO; draft: KeyboardDraft } | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
   const [announcement, setAnnouncement] = useState("");
@@ -551,9 +551,11 @@ export function ScheduleBoard({
       <PageHeader
         title="Schedule"
         description={
-          perms.canEdit
-            ? "Drag a job onto a crew and day, or use Schedule… on the job. Click a booking to change it."
-            : "Every crew's bookings at a glance. You can view the schedule but not change it."
+          isPhone !== false
+            ? undefined
+            : perms.canEdit
+              ? "Drag a job onto a crew and day, or use Schedule… on the job. Click a booking to change it."
+              : "Every crew's bookings at a glance. You can view the schedule but not change it."
         }
         actions={
           perms.canManage ? (
@@ -616,10 +618,11 @@ export function ScheduleBoard({
 
       {isPhone !== false && (
         <div className={cn(isPhone === null && "md:hidden")}>
-          <div role="tablist" aria-label="Schedule" className="mb-3 grid grid-cols-2 rounded-md border border-border-strong bg-surface p-0.5 text-sm">
+          <div role="tablist" aria-label="Schedule" className="mb-3 grid grid-cols-3 rounded-md border border-border-strong bg-surface p-0.5 text-sm">
             {(
               [
-                ["agenda", "Agenda"],
+                ["month", "Month"],
+                ["agenda", "List"],
                 ["todo", `To schedule (${toScheduleCount})`],
               ] as const
             ).map(([key, label]) => (
@@ -635,8 +638,30 @@ export function ScheduleBoard({
               </button>
             ))}
           </div>
-          <div role="tabpanel" aria-label={phoneTab === "agenda" ? "Agenda" : "To schedule"} className="space-y-3">
-            {phoneTab === "agenda" ? (
+          <div role="tabpanel" aria-label={phoneTab === "month" ? "Month" : phoneTab === "agenda" ? "List" : "To schedule"} className="space-y-3">
+            {phoneTab === "month" ? (
+              win.view === "month" && grid ? (
+                <MonthView
+                  grid={grid}
+                  month={win.month ?? win.from}
+                  today={today}
+                  entries={visible}
+                  closed={closed}
+                  calFor={calFor}
+                  crewsById={crewsById}
+                  conflicts={conflicts}
+                  readiness={readiness}
+                  search={search}
+                  editable={false}
+                  preview={null}
+                  handlers={handlers}
+                  onShowDay={setDayOpen}
+                  dense
+                />
+              ) : (
+                <LinkButton href={hrefFor({ view: "month" })} variant="secondary" className="w-full">Show the month</LinkButton>
+              )
+            ) : phoneTab === "agenda" ? (
               <AgendaView days={agenda} today={today} crewsById={crewsById} conflicts={conflicts} search={search} onOpen={openDrawer} />
             ) : (
               sidebar(false)
@@ -796,12 +821,12 @@ function Legend({ canEdit }: { canEdit: boolean }) {
   return (
     <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted print:hidden">
       <span className="inline-flex items-center gap-1.5">
-        <span className="inline-block h-3 w-5 rounded-sm border border-dashed border-border-strong" style={{ backgroundImage: "repeating-linear-gradient(135deg, rgb(0 0 0 / 0.12) 0 3px, transparent 3px 6px)" }} aria-hidden />
-        Tentative (start date not confirmed)
+        <span className="inline-block h-3 w-5 rounded-sm bg-slate-600" aria-hidden />
+        Each crew has its own colour
       </span>
       <span className="inline-flex items-center gap-1.5">
-        <span className="inline-block h-3 w-5 rounded-sm border-l-4 border-l-slate-500 bg-slate-100" aria-hidden />
-        Confirmed
+        <Clock className="size-3.5" aria-hidden />
+        Tentative (start date not confirmed)
       </span>
       <span className="inline-flex items-center gap-1.5">
         <span className="inline-block h-3 w-5 rounded-sm ring-2 ring-danger" aria-hidden />

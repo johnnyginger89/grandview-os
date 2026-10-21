@@ -29,10 +29,10 @@
   --success-soft: #e4f3e9;
   --info: #00728c; /* darker teal so small text passes AA */
   --info-soft: #e0f3f7;
-  /* Light menu: white panel, navy-grey text, the active item tinted logo blue. */
-  --sidebar: #ffffff;
-  --sidebar-text: #3d4654; /* derived */
-  --sidebar-active: var(--brand-soft);
+  /* Desktop menu: Grandview navy with the white logo; text passes 4.5:1 on navy. */
+  --sidebar: #103362;
+  --sidebar-text: #d3dcea; /* derived */
+  --sidebar-active: rgb(255 255 255 / 0.14);
   --accent: #009abb;
   --ring: #009abb;
   --elevation-card: 0 1px 2px rgb(16 51 98 / 0.06);

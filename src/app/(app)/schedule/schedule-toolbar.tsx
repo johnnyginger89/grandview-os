@@ -76,8 +76,8 @@ export function ScheduleToolbar({
           label="View"
           className="hidden md:inline-flex"
           items={[
-            { text: "Timeline", href: hrefFor({ view: "timeline", from: inView ? today : win.from }), current: win.view === "timeline" },
             { text: "Month", href: hrefFor({ view: "month", from: inView ? today : win.from }), current: win.view === "month" },
+            { text: "By crew", href: hrefFor({ view: "timeline", from: inView ? today : win.from }), current: win.view === "timeline" },
           ]}
         />
         <div className="inline-flex items-center gap-1">

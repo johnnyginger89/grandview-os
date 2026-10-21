@@ -2,6 +2,7 @@ import "server-only";
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { db } from "@/db";
+import { outer } from "@/db/sql";
 import { contacts, crewMembers, crews, customers, projects, properties, proposals, scheduleEntries, user, workOrderLinks, workOrders, workOrderVersions } from "@/db/schema";
 import type { WorkOrderStatus } from "@/db/schema/work-orders";
 import type { EstimateDoc } from "@/lib/estimating/document";
@@ -765,4 +766,66 @@ export async function getWorkOrderForStaff(workOrderId: string, opts: { version?
   if (!view) return null;
   const before = views.get(version - 1);
   return { ...base, shown: { kind: "version", version }, view, changed: before ? changedSections(before, view) : [], comparedWith: before ? version - 1 : null };
+}
+
+export interface WorkOrderListRow {
+  id: string;
+  /** "WO-7001". */
+  number: string;
+  title: string;
+  status: WorkOrderStatus;
+  currentVersion: number;
+  crewName: string | null;
+  projectId: string;
+  projectNumber: number;
+  customerName: string;
+  /** When the current version was issued (ISO). */
+  issuedAt: string | null;
+  /** Share links that still work. */
+  activeLinks: number;
+  updatedAt: string;
+}
+
+/** Every work order, newest first, for the Work orders page (staff with projects.read_all). */
+export async function listAllWorkOrders(opts: { status?: WorkOrderStatus } = {}, now: Date = new Date()): Promise<WorkOrderListRow[]> {
+  const issuedAt = sql<Date | null>`(select max(${workOrderVersions.issuedAt}) from ${workOrderVersions}
+    where ${workOrderVersions.workOrderId} = ${outer(workOrders.id)} and ${workOrderVersions.version} = ${outer(workOrders.currentVersion)})`;
+  const activeLinks = sql<number>`(select count(*)::int from ${workOrderLinks}
+    where ${workOrderLinks.workOrderId} = ${outer(workOrders.id)} and ${workOrderLinks.revokedAt} is null and ${workOrderLinks.expiresAt} > ${now})`;
+  const rows = await db
+    .select({
+      id: workOrders.id,
+      number: workOrders.number,
+      title: workOrders.title,
+      status: workOrders.status,
+      currentVersion: workOrders.currentVersion,
+      crewName: crews.name,
+      projectId: projects.id,
+      projectNumber: projects.number,
+      customerName: customers.displayName,
+      issuedAt,
+      activeLinks,
+      updatedAt: workOrders.updatedAt,
+    })
+    .from(workOrders)
+    .innerJoin(projects, eq(projects.id, workOrders.projectId))
+    .innerJoin(customers, eq(customers.id, projects.customerId))
+    .leftJoin(crews, eq(crews.id, workOrders.crewId))
+    .where(opts.status ? eq(workOrders.status, opts.status) : undefined)
+    .orderBy(desc(workOrders.updatedAt))
+    .limit(500);
+  return rows.map((r) => ({
+    id: r.id,
+    number: workOrderNumber(r.number),
+    title: r.title,
+    status: r.status,
+    currentVersion: r.currentVersion,
+    crewName: r.crewName,
+    projectId: r.projectId,
+    projectNumber: r.projectNumber,
+    customerName: r.customerName,
+    issuedAt: r.issuedAt ? new Date(r.issuedAt).toISOString() : null,
+    activeLinks: Number(r.activeLinks) || 0,
+    updatedAt: r.updatedAt.toISOString(),
+  }));
 }

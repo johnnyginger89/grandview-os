@@ -9,7 +9,7 @@ import { formatCAD } from "@/lib/money";
 import { formatDate } from "@/lib/utils";
 import { PROJECT_STATUS_LABEL, PROJECT_STATUS_TONE } from "./status";
 
-export const metadata = { title: "Sold jobs" };
+export const metadata = { title: "Jobs" };
 
 export default async function ProjectsPage() {
   const user = await requirePermission("projects.read_all");
@@ -23,9 +23,9 @@ export default async function ProjectsPage() {
     .limit(300);
   return (
     <>
-      <PageHeader title="Sold jobs" description="Every signed job, from scheduling to finished. Added automatically when a customer signs." />
+      <PageHeader title="Jobs" description="Every sold job, from scheduling to finished. Added automatically when a customer signs." />
       {rows.length === 0 ? (
-        <EmptyState title="No sold jobs yet" description="Send a proposal from an estimate. When the customer signs it, the job appears here." />
+        <EmptyState title="No jobs yet" description="Send a proposal from an estimate. When the customer signs it, the job appears here." />
       ) : (
         <Card>
           <Table>

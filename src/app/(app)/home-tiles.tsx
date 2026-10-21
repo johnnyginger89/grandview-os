@@ -1,5 +1,5 @@
 import { and, count, eq, gte, inArray, lte, sum } from "drizzle-orm";
-import { BookOpen, Calculator, CalendarDays, ChartColumn, FolderKanban, Settings, Users, Workflow } from "lucide-react";
+import { BookOpen, Calculator, CalendarDays, ChartColumn, FileText, FolderKanban, Settings, Users, Workflow } from "lucide-react";
 import Link from "next/link";
 import type { ComponentType } from "react";
 import { db } from "@/db";
@@ -51,7 +51,8 @@ export async function HomeTiles({ role }: { role: string }) {
         {can(role, "pipeline.read") && <Tile href="/leads" label="Leads" icon={Workflow} badge={toContact.n} />}
         {can(role, "estimates.read") && <Tile href="/estimates" label="Estimates" icon={Calculator} badge={openEstimates.n} />}
         {can(role, "customers.read") && <Tile href="/customers" label="Customers" icon={Users} />}
-        {can(role, "projects.read_all") && <Tile href="/projects" label="Sold jobs" icon={FolderKanban} badge={activeJobs.n} />}
+        {can(role, "projects.read_all") && <Tile href="/projects" label="Jobs" icon={FolderKanban} badge={activeJobs.n} />}
+        {can(role, "projects.read_all") && <Tile href="/work-orders" label="Work orders" icon={FileText} />}
         {can(role, "schedule.read") && <Tile href="/schedule" label="Schedule" icon={CalendarDays} badge={toSchedule.n} />}
         {can(role, "rates.read") && <Tile href="/rates" label="Rates" icon={BookOpen} />}
         {can(role, "pipeline.read") && company.bookingUrl && <ShareBookingTile url={company.bookingUrl} companyName={company.displayName || company.name} />}

@@ -41,7 +41,10 @@ test.describe("estimator", () => {
     await expectNoAccess(page, "/settings/proposals");
     await expectNoAccess(page, "/settings/proposals/preview?jobType=interior");
     await page.goto("/rates");
-    await expect(page.getByRole("heading", { level: 1, name: "Rates" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Settings tabs" }).getByRole("link", { name: "Rates" })).toHaveAttribute("aria-current", "page");
+    // Estimators only see the Rates tab of Settings.
+    await expect(page.getByRole("navigation", { name: "Settings tabs" }).getByRole("link")).toHaveCount(1);
     await expect(page.getByRole("button", { name: "New rate" })).toHaveCount(0);
   });
 });

@@ -6,6 +6,7 @@ import { materials } from "@/db/schema";
 import { requirePermission } from "@/lib/authz/guard";
 import { can } from "@/lib/authz/permissions";
 import { listFactors, listRates } from "@/server/rates";
+import { SettingsTabs } from "../settings/tabs";
 import { FactorsEditor, MaterialsTable, RatesTable } from "./rates-client";
 
 export const metadata = { title: "Rates" };
@@ -24,7 +25,8 @@ export default async function RatesPage({ searchParams }: { searchParams: Promis
 
   return (
     <>
-      <PageHeader title="Rates" description="Changes create a new version. Existing estimates keep the rates they were built with." />
+      <PageHeader title="Settings" description="Rates: changes create a new version. Existing estimates keep the rates they were built with." />
+      <SettingsTabs active="rates" role={user.role} />
       <nav className="mb-4 flex gap-1 border-b border-border">
         {TABS.map((t) => (
           <Link key={t.key} href={`/rates?tab=${t.key}`} className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${tab === t.key ? "border-brand text-brand" : "border-transparent text-muted hover:text-text"}`}>{t.label}</Link>
