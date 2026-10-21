@@ -1,22 +1,5 @@
 "use client";
-import {
-  Calculator,
-  CalendarDays,
-  ChevronRight,
-  ClipboardCheck,
-  Ellipsis,
-  FileText,
-  HardHat,
-  House,
-  LogOut,
-  Plus,
-  Search,
-  Settings,
-  ShieldCheck,
-  Users,
-  Workflow,
-  X,
-} from "lucide-react";
+import { Calculator, CalendarDays, ChevronRight, ClipboardCheck, Ellipsis, FileText, HardHat, House, LogOut, MessagesSquare, Plus, Search, Settings, ShieldCheck, Users, Workflow, X } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -39,6 +22,7 @@ const ICONS: Record<IconName, ComponentType<{ className?: string }>> = {
   "work-orders": FileText,
   customers: Users,
   "my-jobs": HardHat,
+  chat: MessagesSquare,
   settings: Settings,
   search: Search,
   more: Ellipsis,
@@ -46,6 +30,8 @@ const ICONS: Record<IconName, ComponentType<{ className?: string }>> = {
 
 /** Sections that get their own spot in the phone bottom bar; the rest go under More. */
 const PHONE_BAR: NavItem["key"][] = ["home", "leads", "estimates", "schedule"];
+/** Painters and subs: their jobs and their chats. */
+const FIELD_PHONE_BAR: NavItem["key"][] = ["my-jobs", "chat"];
 
 export interface ShellUser {
   name: string;
@@ -228,8 +214,9 @@ export function AppShell({
 
   const items = nav;
   const section = sectionFor(pathname);
-  const barItems = items.filter((n) => PHONE_BAR.includes(n.key));
-  const moreItems = [...items.filter((n) => !PHONE_BAR.includes(n.key)), ...(settings ? [settings] : [])];
+  const bar = items.some((n) => n.key === "home") ? PHONE_BAR : FIELD_PHONE_BAR;
+  const barItems = items.filter((n) => bar.includes(n.key));
+  const moreItems = [...items.filter((n) => !bar.includes(n.key)), ...(settings ? [settings] : [])];
   const hasBottomBar = barItems.length >= 2;
 
   return (

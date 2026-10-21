@@ -23,13 +23,13 @@ const TODAY = "2026-10-27"; // Tuesday
 
 const KEYS = [
   "accessNotes", "address", "contact", "crewName", "crewNotes", "customerName", "dayNumber", "endDate", "entryId", "jobTitle", "kind", "kindLabel",
-  "mapsUrl", "phaseLabel", "projectNumber", "projectTypes", "section", "startDate", "tentative", "workingDays",
+  "mapsUrl", "phaseLabel", "projectId", "projectNumber", "projectTypes", "section", "startDate", "tentative", "workingDays",
 ].sort();
 
 function row(extra: Partial<FieldJobRow> = {}): FieldJobRow {
   return {
     entryId: "e-1", kind: "work", phaseLabel: "Bldg B", startDate: "2026-10-26", endDate: "2026-10-30", crewNotes: " Bring the tall ladder ",
-    crewId: "crew-1", crewName: "[TEST DATA] Sub crew", worksSaturdays: false, projectNumber: 3018, projectName: "[TEST DATA] Kim – Exterior repaint",
+    crewId: "crew-1", crewName: "[TEST DATA] Sub crew", worksSaturdays: false, projectId: "p-1", projectNumber: 3018, projectName: "[TEST DATA] Kim – Exterior repaint",
     estimateTitle: "Exterior repaint", projectStatus: "scheduled", confirmation: "date_sent", customerName: "[TEST DATA] Kim", street: "1 Example St",
     unit: null, city: "Surrey", province: "BC", postalCode: "V3S 0A1", accessNotes: "Gate code 1234", projectTypes: ["Exterior"],
     contactFirstName: "Kim", contactLastName: "Lee", contactPhone: "604-555-0100", customerPhone: null, ...extra,

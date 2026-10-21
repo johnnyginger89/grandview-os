@@ -31,6 +31,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     ...NAV.filter((n) => can(user.role, n.permission)).map(({ key, href, label, icon }) => ({ key, href, label, icon })),
     // Field roles, plus office staff who also belong to a crew (feasibility review F28).
     ...(myJobs ? [{ key: "my-jobs", href: "/my-jobs", label: "My Jobs", icon: "my-jobs" } as const] : []),
+    // One chat per job: office staff see every job's, crews the jobs they're on.
+    ...(myJobs || can(user.role, "projects.read_all") ? [{ key: "chat", href: "/chat", label: "Chat", icon: "chat" } as const] : []),
   ];
   // Estimators can read rates but not change settings: their Settings opens on Rates.
   const settingsHref = can(user.role, "settings.manage") ? "/settings" : can(user.role, "rates.read") ? "/rates" : null;

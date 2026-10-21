@@ -4,7 +4,7 @@
  * this only decides what is shown.
  */
 
-export type SectionKey = "home" | "leads" | "estimates" | "jobs" | "schedule" | "work-orders" | "customers" | "my-jobs" | "settings";
+export type SectionKey = "home" | "leads" | "estimates" | "jobs" | "schedule" | "work-orders" | "customers" | "my-jobs" | "chat" | "settings";
 export type IconName = SectionKey | "search" | "more";
 
 export interface NavItem {
@@ -28,6 +28,7 @@ export interface SectionTabs {
 /** URL prefixes each section owns. */
 const SECTION_PATHS: [SectionKey, string[]][] = [
   ["my-jobs", ["/my-jobs"]],
+  ["chat", ["/chat"]],
   ["leads", ["/leads"]],
   ["estimates", ["/estimates"]],
   ["jobs", ["/projects"]],

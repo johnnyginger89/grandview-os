@@ -35,6 +35,7 @@ import type { EstimateDoc } from "@/lib/estimating/document";
 import { jobTitle } from "@/lib/schedule/format";
 import { formatAddress, formatDate, renderTemplate } from "@/lib/utils";
 import { audit } from "./audit";
+import { postSystemMessage } from "./job-chat";
 import { notify, notifyLater, officeRecipients } from "./notifications";
 import { markColoursChosen } from "./readiness";
 import { getScheduleSettings } from "./schedule-settings";
@@ -474,6 +475,7 @@ async function sign(s: SelectionRow, raw: unknown, meta: SignMeta): Promise<{ id
     );
   });
 
+  await postSystemMessage(p.id, `Colours signed by ${input.signedName} (${input.rows.length} ${input.rows.length === 1 ? "line" : "lines"}). They're on the work order once it's issued again.`);
   notifyLater(async () => {
     const recipients = await officeRecipients([p.projectManagerId], meta.actor?.id ?? null);
     await notify(

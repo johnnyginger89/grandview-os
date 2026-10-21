@@ -13,6 +13,7 @@ import { formatAddress, formatDate, formatDateTime, mapsUrl } from "@/lib/utils"
 import { isDoneStatus, listStatusEvents, type StatusEventRow } from "@/server/project-status";
 import { proposalUrl } from "@/server/proposals";
 import { PROJECT_STATUS_LABEL, PROJECT_STATUS_TONE } from "../status";
+import { ChatCard } from "./chat-card";
 import { ColoursCard } from "./colours-card";
 import { ProjectScheduleCard } from "./schedule-card";
 import { StatusControl, type StatusHistoryEntry } from "./status-control";
@@ -95,6 +96,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         {can(user.role, "schedule.read") && <ProjectScheduleCard projectId={p.id} user={user} />}
         <ColoursCard projectId={p.id} className="lg:col-span-2" />
         <WorkOrdersCard projectId={p.id} canEdit={can(user.role, "projects.write")} className="lg:col-span-2" />
+        <ChatCard projectId={p.id} />
         <Card>
           <CardHeader title="Next steps" />
           <ul className="list-disc space-y-1 p-4 pl-8 text-sm text-muted">

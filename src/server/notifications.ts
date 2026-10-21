@@ -112,6 +112,34 @@ export async function notify(userIds: string[], n: NewNotification): Promise<voi
   }
 }
 
+/**
+ * Like notify, but keeps one unread notice per person for the same thing (a job's chat):
+ * a new message updates it instead of adding another line to the bell. Phones show only
+ * the latest too (same tag). Never throws.
+ */
+export async function notifyCollapsed(userIds: string[], n: NewNotification & { entityId: string }): Promise<void> {
+  const ids = [...new Set(userIds.filter(Boolean))];
+  if (!ids.length) return;
+  try {
+    const open = await db
+      .select({ id: notifications.id, userId: notifications.userId })
+      .from(notifications)
+      .where(and(inArray(notifications.userId, ids), eq(notifications.kind, n.kind), eq(notifications.entityId, n.entityId), isNull(notifications.readAt)));
+    if (open.length)
+      await db
+        .update(notifications)
+        .set({ title: n.title, body: n.body ?? null, href: n.href ?? null, createdAt: new Date() })
+        .where(inArray(notifications.id, open.map((o) => o.id)));
+    const have = new Set(open.map((o) => o.userId));
+    const fresh = ids.filter((id) => !have.has(id));
+    if (fresh.length)
+      await db.insert(notifications).values(fresh.map((userId) => ({ userId, kind: n.kind, title: n.title, body: n.body ?? null, href: n.href ?? null, entityType: n.entityType ?? null, entityId: n.entityId })));
+    await push(ids, n);
+  } catch (e) {
+    console.error("[notifications] could not notify", n.kind, e instanceof Error ? e.message : e);
+  }
+}
+
 /** Runs a notice after the response is sent, so the customer or user never waits for it. */
 export function notifyLater(task: () => Promise<void>): void {
   try {

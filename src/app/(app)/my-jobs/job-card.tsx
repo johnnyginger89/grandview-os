@@ -1,4 +1,4 @@
-import { ClipboardList, KeyRound, MapPin, MessageSquareText, Palette, Phone } from "lucide-react";
+import { ClipboardList, KeyRound, MapPin, MessageSquareText, MessagesSquare, Palette, Phone } from "lucide-react";
 import Link from "next/link";
 import { Badge, buttonClass, Card } from "@/components/ui";
 import { dateRangeLabel, workingDaysLabel } from "@/lib/schedule/format";
@@ -88,11 +88,16 @@ export function JobCard({ job, workOrderHref }: { job: FieldJobView; workOrderHr
           </Link>
         )}
 
-        {workOrderHref && (
-          <Link href={workOrderHref} className={buttonClass("secondary", "md", "w-full sm:w-auto")}>
-            <ClipboardList className="size-4" aria-hidden /> Work order
+        <div className="flex flex-wrap gap-2">
+          {workOrderHref && (
+            <Link href={workOrderHref} className={buttonClass("secondary", "md", "flex-1 sm:flex-none")}>
+              <ClipboardList className="size-4" aria-hidden /> Work order
+            </Link>
+          )}
+          <Link href={`/chat/${job.projectId}`} className={buttonClass("secondary", "md", "flex-1 sm:flex-none")}>
+            <MessagesSquare className="size-4" aria-hidden /> Job chat
           </Link>
-        )}
+        </div>
       </article>
     </Card>
   );

@@ -23,6 +23,7 @@ import {
 } from "@/lib/work-orders/schemas";
 import type { NewWorkOrderDefaults, WorkOrderDTO, WorkOrderFieldsDTO } from "@/lib/work-orders/types";
 import { audit } from "./audit";
+import { postSystemMessage } from "./job-chat";
 import { crewIdsForUser } from "./crews";
 import { loadEstimate } from "./estimates";
 import { getScheduleSettings } from "./schedule-settings";
@@ -541,7 +542,7 @@ export async function updateWorkOrder(raw: unknown, actor: Actor): Promise<{ id:
 /** Freeze what the crew sees now as the next version. Refused when nothing changed since the current one. */
 export async function issueWorkOrder(raw: unknown, actor: Actor): Promise<{ id: string; projectId: string; version: number }> {
   const input = issueWorkOrderSchema.parse(raw);
-  return db.transaction(async (tx) => {
+  const issued = await db.transaction(async (tx) => {
     const [wo] = await tx.select().from(workOrders).where(eq(workOrders.id, input.id)).for("update");
     if (!wo) throw new WorkOrderError(NOT_FOUND);
     if (wo.status === "cancelled") throw new WorkOrderError(CANCELLED_WO);
@@ -563,8 +564,10 @@ export async function issueWorkOrder(raw: unknown, actor: Actor): Promise<{ id: 
       { actorId: actor.id, action: "work_order.issue", entityType: "work_order", entityId: wo.id, before: { status: wo.status, version: wo.currentVersion }, after: { status: "issued", version, changeNote: input.changeNote, changed } },
       tx,
     );
-    return { id: wo.id, projectId: wo.projectId, version };
+    return { id: wo.id, projectId: wo.projectId, version, number: wo.number ?? 0 };
   });
+  await postSystemMessage(issued.projectId, `Work order ${workOrderNumber(issued.number)} version ${issued.version} issued${input.changeNote ? `: ${input.changeNote}` : ""}.`);
+  return { id: issued.id, projectId: issued.projectId, version: issued.version };
 }
 
 /** Crews lose access at once (share links and /my-jobs only show issued work orders). Versions and links are kept. */

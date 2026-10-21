@@ -1,12 +1,20 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
-  "regions": ["yul1"],
+  "regions": [
+    "yul1"
+  ],
   "buildCommand": "pnpm run build:vercel",
   "git": {
     "deploymentEnabled": {
       "*": false,
       "main": true
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/daily-updates",
+      "schedule": "0 0,23 * * *"
+    }
+  ]
 }

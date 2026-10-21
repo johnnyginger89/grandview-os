@@ -37,6 +37,8 @@ export interface FieldJobRow {
   crewId: string;
   crewName: string;
   worksSaturdays: boolean;
+  /** For the job's chat link. */
+  projectId: string;
   projectNumber: number | null;
   projectName: string;
   estimateTitle: string | null;
@@ -73,6 +75,7 @@ export function toFieldJobView(row: FieldJobRow, opts: { isLead: boolean; today:
   const contactName = fullName(row.contactFirstName, row.contactLastName) || row.customerName;
   return {
     entryId: row.entryId,
+    projectId: row.projectId,
     kind: row.kind,
     kindLabel: kindLabel(row.kind),
     phaseLabel: row.phaseLabel,
@@ -187,6 +190,7 @@ export async function listFieldJobs(viewer: { id: string }, now: Date = new Date
       crewId: r.crewId,
       crewName: r.crewName,
       worksSaturdays: r.worksSaturdays,
+      projectId: r.projectId,
       projectNumber: r.projectNumber,
       projectName: r.projectName,
       estimateTitle: r.estimateTitle,

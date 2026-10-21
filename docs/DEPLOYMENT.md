@@ -166,6 +166,8 @@ is written to logs.
 | `EMAIL_REPLY_TO` | no | Reply-to address for outgoing email |
 | `BETTER_AUTH_TRUSTED_ORIGINS` | no | Extra allowed addresses, comma separated, e.g. the vercel.app address after switching to the custom domain |
 | `DB_POOL_MAX` | no | Database connections per server instance (default 3) |
+| `CRON_SECRET` | recommended | Any long random text (`openssl rand -hex 24`). Vercel sends it with the 4 pm daily-update reminder so nobody else can set it off |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | no | Phone notification keys; made automatically and kept in the database when not set |
 
 The app refuses to start on the live site if a required setting is missing or too short.
 Two-factor sign-in can't be turned off there, and development test logins are blocked there.

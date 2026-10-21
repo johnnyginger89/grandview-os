@@ -56,6 +56,7 @@ export function createFakeDb() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db: any = {
     select: () => chain("select"),
+    selectDistinct: () => chain("select"),
     insert: (t: unknown) => chain("insert", t),
     update: (t: unknown) => chain("update", t),
     delete: (t: unknown) => chain("delete", t),

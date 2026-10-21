@@ -177,6 +177,7 @@ export interface NoticePreview {
 /** What a crew member sees on /my-jobs. Built field by field; no money, no hours, no internal notes. */
 export interface FieldJobView {
   entryId: string;
+  projectId: string;
   kind: ScheduleEntryKind;
   kindLabel: string;
   phaseLabel: string | null;
