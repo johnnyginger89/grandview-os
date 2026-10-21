@@ -9,6 +9,7 @@ import { requirePermission } from "@/lib/authz/guard";
 import { can } from "@/lib/authz/permissions";
 import { formatCAD } from "@/lib/money";
 import { formatAddress, formatDate, formatDateTime, mapsUrl } from "@/lib/utils";
+import { listColourSelectionsForCustomer } from "@/server/colour-selections";
 import { AddContactForm, AddPropertyForm, EditCustomer } from "./customer-forms";
 
 export default async function CustomerPage({ params }: { params: Promise<{ id: string }> }) {
@@ -18,13 +19,15 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
   const customer = await db.query.customers.findFirst({ where: eq(customers.id, id) });
   if (!customer) notFound();
 
-  const [people, props, opps, ests, timeline] = await Promise.all([
+  const [people, props, opps, ests, timeline, colours] = await Promise.all([
     db.query.contacts.findMany({ where: eq(contacts.customerId, id), orderBy: [desc(contacts.isPrimary), asc(contacts.createdAt)] }),
     db.query.properties.findMany({ where: eq(properties.customerId, id), orderBy: asc(properties.createdAt) }),
     db.select({ o: opportunities, stage: pipelineStages.name, kind: pipelineStages.kind }).from(opportunities).innerJoin(pipelineStages, eq(pipelineStages.id, opportunities.stageId)).where(eq(opportunities.customerId, id)).orderBy(desc(opportunities.createdAt)),
     can(me.role, "estimates.read") ? db.query.estimates.findMany({ where: eq(estimates.customerId, id), orderBy: desc(estimates.createdAt) }) : Promise.resolve([]),
     db.select({ a: activities, author: user.name }).from(activities).leftJoin(user, eq(user.id, activities.createdBy)).where(eq(activities.customerId, id)).orderBy(desc(activities.createdAt)).limit(50),
+    listColourSelectionsForCustomer(id),
   ]);
+  const canOpenJobs = can(me.role, "projects.read_all");
 
   const accepted = ests.filter((e) => e.status === "accepted");
   const lifetime = accepted.reduce((s, e) => s + Number(e.totalPrice), 0);
@@ -52,7 +55,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
 
       {customer.tags.length > 0 && <p className="mb-4 flex flex-wrap gap-1.5">{customer.tags.map((t) => <Badge key={t}>{t}</Badge>)}</p>}
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-4 lg:grid-cols-3 [&>*]:min-w-0">
         <div className="space-y-4">
           {Object.keys(customer.customFields ?? {}).length > 0 && (
             <Card>
@@ -127,6 +130,27 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
                   </Link></li>
                 ))}
                 {ests.length === 0 && <li className="px-4 py-3 text-muted">None.</li>}
+              </ul>
+            </Card>
+          )}
+          {colours.length > 0 && (
+            <Card role="region" aria-label="Colour selections">
+              <CardHeader title="Colour selections" />
+              <ul className="divide-y divide-border text-sm">
+                {colours.map((c) => {
+                  const label = c.signedAt ? `Signed by ${c.signedName}, ${formatDate(c.signedAt)}` : c.status === "sent" ? "Sent, waiting for the customer" : "Being filled in";
+                  const text = (
+                    <>
+                      <span className="block font-medium">Job #{c.projectNumber} · {c.jobTitle}</span>
+                      <span className="block text-muted">{label}{c.status === "replaced" ? " (replaced by newer colours)" : ""} · {c.rowCount} {c.rowCount === 1 ? "line" : "lines"}</span>
+                    </>
+                  );
+                  return (
+                    <li key={c.id}>
+                      {canOpenJobs ? <Link href={`/projects/${c.projectId}/colours/${c.id}`} className="block px-4 py-2.5 hover:bg-surface-2">{text}</Link> : <div className="px-4 py-2.5">{text}</div>}
+                    </li>
+                  );
+                })}
               </ul>
             </Card>
           )}

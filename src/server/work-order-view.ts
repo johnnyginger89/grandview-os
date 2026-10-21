@@ -7,6 +7,7 @@ import "server-only";
  * labour hours and paint to buy (from crew-quantities) when the work-order settings
  * say so: the owner wants crews to see their hours, never the money (Oct 2026).
  */
+import { colourLabel } from "@/lib/colours/schemas";
 import { crewQuantities, hoursLabel, paintToBuy, paintToBuyLabel, type PaintNeed } from "@/lib/estimating/crew-quantities";
 import { isIncluded } from "@/lib/estimating/engine";
 import { resolvedQuantity, type DocArea, type DocLine, type EstimateDoc } from "@/lib/estimating/document";
@@ -34,6 +35,15 @@ export interface WorkOrderScopeItem {
   detail: Block[];
   /** Estimated labour hours, "3.5". Only when hours are shown and the item takes time. */
   hours?: string;
+}
+
+/** One row of the customer's signed colour selections. */
+export interface WorkOrderColour {
+  room: string;
+  surface: string;
+  /** "SW 7008 Alabaster". */
+  colour: string;
+  sheen: string;
 }
 
 /** One row of "Paint to order". */
@@ -88,6 +98,8 @@ export interface WorkOrderView {
   prepHours?: string;
   /** What to buy, when paint is shown (older versions don't have it). */
   paint?: WorkOrderPaint[];
+  /** The customer's signed colours, when there are any. */
+  colours?: WorkOrderColour[];
   excluded: string[];
   specialInstructions: Block[];
   equipment: Block[];
@@ -120,6 +132,8 @@ export interface WorkOrderInput {
   crew: { name: string; lead: string | null } | null;
   /** Labour hours and paint to order are optional extras (the work-order settings). */
   show: { hours: boolean; paint: boolean };
+  /** Rows of the customer's signed colour forms; those with a lineId set that estimate line's colour and sheen. */
+  colours?: readonly { room: string; surface: string; colour: string; code: string; sheen: string; lineId?: string | null }[];
   /** The project's non-deleted bookings. */
   bookings: readonly {
     kind: ScheduleEntryKind;
@@ -220,8 +234,23 @@ function buildPreparation(doc: EstimateDoc, tpl: ProposalTemplate, company: Work
   return out;
 }
 
+/** The signed colours win over whatever the estimate said, line by line. */
+function withSignedColours(doc: EstimateDoc, colours: NonNullable<WorkOrderInput["colours"]>): EstimateDoc {
+  const byLine = new Map(colours.filter((c) => c.lineId && (c.colour || c.code)).map((c) => [c.lineId!, c]));
+  if (!byLine.size) return doc;
+  return {
+    ...doc,
+    lines: doc.lines.map((l) => {
+      const c = byLine.get(l.id);
+      return c ? { ...l, colour: colourLabel(c), sheen: c.sheen || l.sheen } : l;
+    }),
+  };
+}
+
 export function buildWorkOrderView(input: WorkOrderInput): WorkOrderView {
-  const { doc, workOrder: wo, show } = input;
+  const { workOrder: wo, show } = input;
+  const colours = (input.colours ?? []).filter((c) => c.colour || c.code);
+  const doc = withSignedColours(input.doc, colours);
   const q = show.hours || show.paint ? crewQuantities(doc) : null;
   const hours = show.hours && q ? q.lineHours : null;
   const prepHours = hours ? sum(doc.lines.filter((l) => isIncluded(l) && isPrep(l)).map((l) => hours.get(l.id))) : null;
@@ -264,6 +293,7 @@ export function buildWorkOrderView(input: WorkOrderInput): WorkOrderView {
     preparation: buildPreparation(doc, input.template, input.company),
     ...(prepHours && prepHours.gt(0) ? { prepHours: hoursLabel(prepHours) } : {}),
     ...(show.paint && q ? { paint: q.paint.map(paintRow) } : {}),
+    ...(colours.length ? { colours: colours.map((c) => ({ room: c.room, surface: c.surface, colour: colourLabel(c), sheen: c.sheen })) } : {}),
     excluded: splitLines(doc.areasExcluded ?? resolved.areasExcludedDefault),
     specialInstructions: parseProse(wo.specialInstructions),
     equipment: parseProse(wo.equipment),
@@ -272,7 +302,7 @@ export function buildWorkOrderView(input: WorkOrderInput): WorkOrderView {
   };
 }
 
-export const WORK_ORDER_SECTIONS = ["details", "bookings", "access", "scope", "paint", "preparation", "excluded", "specialInstructions", "equipment", "safety", "checklist"] as const;
+export const WORK_ORDER_SECTIONS = ["details", "bookings", "access", "scope", "colours", "paint", "preparation", "excluded", "specialInstructions", "equipment", "safety", "checklist"] as const;
 export type WorkOrderSection = (typeof WORK_ORDER_SECTIONS)[number];
 
 function sectionValue(v: WorkOrderView, s: WorkOrderSection): unknown {
@@ -288,6 +318,8 @@ function sectionValue(v: WorkOrderView, s: WorkOrderSection): unknown {
       return [v.preparation, v.prepHours ?? null];
     case "paint":
       return v.paint ?? [];
+    case "colours":
+      return v.colours ?? [];
     default:
       return v[s];
   }

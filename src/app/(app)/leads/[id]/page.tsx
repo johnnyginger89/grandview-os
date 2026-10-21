@@ -62,7 +62,7 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
         }
       />
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-4 lg:grid-cols-3 [&>*]:min-w-0">
         <div className="space-y-4 lg:col-span-1">
           <Card>
             <CardHeader title="Contact" action={<Link href={`/customers/${customer.id}`} className="text-xs text-brand hover:underline">Customer record</Link>} />

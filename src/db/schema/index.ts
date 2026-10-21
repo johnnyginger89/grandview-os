@@ -9,3 +9,4 @@ export * from "./imports";
 export * from "./schedule";
 export * from "./work-orders";
 export * from "./notifications";
+export * from "./colours";

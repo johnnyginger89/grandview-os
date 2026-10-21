@@ -221,6 +221,22 @@ Thanks,
 {{company_name}}`,
   },
   {
+    key: "colour_form",
+    name: "Choosing colours",
+    channel: "email" as const,
+    subject: "Choose your colours – {{company_name}}",
+    body: `Hi {{first_name}},
+
+Please fill in your colours for {{job_title}} here, then sign at the bottom:
+{{colour_form_link}}
+
+For each room, list the surface, the colour name and code, and the sheen. If you're not sure about anything, just call us at {{company_phone}}.
+
+Thanks,
+{{sender_name}}
+{{company_name}}`,
+  },
+  {
     key: "lead_booking_link",
     name: "New lead – book your estimate",
     channel: "email" as const,
@@ -307,3 +323,17 @@ export const DEFAULT_WORK_ORDER_SETTINGS = {
   showHours: true,
   showPaint: true,
 } as const;
+
+/**
+ * The colour selection form's wording and lists. STARTING TEXT ONLY: the owner can
+ * change it in Settings → Work orders.
+ */
+export const DEFAULT_COLOUR_FORM = {
+  changeWarning:
+    "Changing your mind: your paint is mixed to order from these colours. If you change a colour after the paint has been ordered, the new paint and any extra work will cost extra.",
+  coverageWarning:
+    "Whites and bright colours: some whites and vibrant colours (such as bright reds, yellows and oranges) don't cover as well as other colours and may need a third coat to look even, which can add to the cost.",
+  sheens: ["Flat", "Matte", "Eggshell", "Satin", "Pearl", "Semi-gloss", "Gloss"],
+  surfaces: ["Walls", "Ceiling", "Baseboards", "Trim", "Doors", "Door frames", "Windows", "Cabinets", "Accent wall", "Siding", "Soffits", "Fascia", "Deck", "Fence"],
+  linkDays: 30,
+};

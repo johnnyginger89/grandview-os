@@ -10,6 +10,7 @@ export const SECTION_LABEL: Record<WorkOrderSection, string> = {
   bookings: "Schedule",
   access: "Address and access",
   scope: "Scope of work",
+  colours: "Colours",
   paint: "Paint to order",
   preparation: "Preparation",
   excluded: "Not included",

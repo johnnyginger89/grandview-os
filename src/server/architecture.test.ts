@@ -551,7 +551,7 @@ describe("calendar days are formatted as calendar days", () => {
 // a preview), never from the schedule service, its hooks or any automation.
 // ---------------------------------------------------------------------------
 
-const EMAIL_SENDERS = ["src/lib/email.ts", "src/lib/auth.ts", "src/server/leads.ts", "src/server/proposals.ts", "src/server/start-notices.ts"];
+const EMAIL_SENDERS = ["src/lib/email.ts", "src/lib/auth.ts", "src/server/leads.ts", "src/server/proposals.ts", "src/server/start-notices.ts", "src/server/colour-selections.ts"];
 
 function callsOf(s: Source, name: string): string[] {
   const sf = ast(s);
@@ -594,6 +594,8 @@ describe("customer email is human-initiated", () => {
 
 const WORK_ORDER_SERVICE = "src/server/work-orders.ts";
 const WORK_ORDER_SCHEMA = "src/db/schema/work-orders.ts";
+// The colour form has its own customer links (colour_selections.token_hash), handled only by its service.
+const COLOUR_LINK_FILES = ["src/server/colour-selections.ts", "src/db/schema/colours.ts"];
 const LINK_TABLE_RE = /\b(workOrderLinks|work_order_links|tokenHash|token_hash)\b/;
 const WORK_ORDER_PAGES = ["src/app/share/wo/", "src/components/work-order/", "src/app/(app)/my-jobs/work-orders/", "src/app/(preview)/projects/[id]/work-orders/"];
 const DIRECT_DATA_IMPORT = /from\s+["'](@\/db(?:\/[^"']*)?|@\/server\/(?:estimates|proposals|proposal-view|schedule|my-jobs))["']/;
@@ -620,7 +622,10 @@ describe("work-order links and pages go through the work-order service", () => {
 
   it("only work-orders.ts reads or writes share links", () => {
     expect(SOURCES.some((s) => s.file === WORK_ORDER_SERVICE)).toBe(true);
-    const bad = SOURCES.filter((s) => s.file !== WORK_ORDER_SERVICE && s.file !== WORK_ORDER_SCHEMA && !s.file.startsWith("src/db/schema/index") && LINK_TABLE_RE.test(s.text)).map((s) => s.file);
+    const bad = SOURCES.filter((s) => s.file !== WORK_ORDER_SERVICE && s.file !== WORK_ORDER_SCHEMA && !COLOUR_LINK_FILES.includes(s.file) && !s.file.startsWith("src/db/schema/index") && LINK_TABLE_RE.test(s.text)).map((s) => s.file);
+    // …and nothing but the colour service touches colour-form link hashes.
+    const colourBad = SOURCES.filter((s) => COLOUR_LINK_FILES.every((f) => f !== s.file) && /\bcolourSelections\.tokenHash\b/.test(s.text)).map((s) => s.file);
+    expect(colourBad).toEqual([]);
     expect(bad, "Share-link tokens and counters are handled only by src/server/work-orders.ts").toEqual([]);
   });
 

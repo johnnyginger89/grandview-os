@@ -2,7 +2,7 @@ import { MapPin, Phone } from "lucide-react";
 import Image from "next/image";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
-import type { Block, WorkOrderPaint, WorkOrderScopeItem, WorkOrderSection, WorkOrderView } from "@/server/work-order-view";
+import type { Block, WorkOrderColour, WorkOrderPaint, WorkOrderScopeItem, WorkOrderSection, WorkOrderView } from "@/server/work-order-view";
 import { PrintButton } from "./print-button";
 
 /*
@@ -72,6 +72,20 @@ function ItemFacts({ item }: { item: WorkOrderScopeItem }) {
   return (
     <ul className="mt-1.5 flex flex-wrap gap-1.5 text-sm" aria-label="Details">
       {facts.map((f) => <li key={f} className="rounded-md bg-surface-2 px-2 py-0.5 print:bg-transparent print:px-0 print:pr-3">{f}</li>)}
+    </ul>
+  );
+}
+
+function ColourList({ rows }: { rows: WorkOrderColour[] }) {
+  return (
+    <ul className="divide-y divide-border rounded-lg border border-border" aria-label="Colours">
+      {rows.map((r, i) => (
+        <li key={i} className="grid gap-x-4 gap-y-0.5 px-3 py-2.5 sm:grid-cols-[1fr_1fr_auto] print:break-inside-avoid">
+          <p className="font-medium">{[r.room, r.surface].filter(Boolean).join(" · ") || "—"}</p>
+          <p>{r.colour}</p>
+          <p className="text-sm text-muted sm:text-right">{r.sheen}</p>
+        </li>
+      ))}
     </ul>
   );
 }
@@ -235,6 +249,19 @@ export function WorkOrderDocument({
           <p className="text-muted">No painting items on this job. Check the special instructions below.</p>
         )}
       </Section>
+
+      {show("colours", !!view.colours?.length) && (
+        <Section id="colours" title="Colours" changed={is("colours")}>
+          {view.colours?.length ? (
+            <>
+              <ColourList rows={view.colours} />
+              <p className="mt-2 text-xs text-muted">Chosen and signed off by the customer.</p>
+            </>
+          ) : (
+            <Removed />
+          )}
+        </Section>
+      )}
 
       {show("paint", !!view.paint?.length) && (
         <Section id="paint" title="Paint to order" changed={is("paint")}>

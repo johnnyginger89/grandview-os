@@ -57,11 +57,11 @@ export function PerformanceSections({ dto, canEditGoals }: SectionsProps) {
       {dto.money ? <MoneyHero dto={dto} money={dto.money} canEditGoals={canEditGoals} /> : <CountHero dto={dto} />}
       <KpiGrid dto={dto} />
       <MonthlyCard dto={dto} />
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2 [&>*]:min-w-0">
         <SourcesCard dto={dto} />
         <FunnelCard dto={dto} />
       </div>
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2 [&>*]:min-w-0">
         <LostCard dto={dto} />
         <PeopleCard dto={dto} />
       </div>

@@ -106,3 +106,27 @@ export async function applyLinkedReadiness(
       set: { state: change.state, dueDate: change.dueDate, updatedBy: input.actorId, updatedAt: new Date() },
     });
 }
+
+/**
+ * Inside the colour-form signing transaction: the readiness checks tied to colour consults
+ * (normally "Colour consult") are ticked off as done, unless marked not needed. Internal only.
+ */
+export async function markColoursChosen(tx: Tx, input: { projectId: string; checks: readonly ReadinessCheck[]; actorId: string | null; note: string }): Promise<string[]> {
+  const keys = input.checks.filter((c) => c.linkedEntryKind === "colour_consult").map((c) => c.key);
+  if (!keys.length) return [];
+  const rows = await rowsFor([input.projectId], tx);
+  const changed: string[] = [];
+  for (const key of keys) {
+    const row = rows.find((r) => r.checkKey === key);
+    if (row && (row.state === "done" || row.state === "not_needed")) continue;
+    await tx
+      .insert(projectReadiness)
+      .values({ projectId: input.projectId, checkKey: key, state: "done", note: input.note, updatedBy: input.actorId })
+      .onConflictDoUpdate({
+        target: [projectReadiness.projectId, projectReadiness.checkKey],
+        set: { state: "done", note: input.note, updatedBy: input.actorId, updatedAt: new Date() },
+      });
+    changed.push(key);
+  }
+  return changed;
+}

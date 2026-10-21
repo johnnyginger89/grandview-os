@@ -122,6 +122,17 @@ export function notifyLater(task: () => Promise<void>): void {
   }
 }
 
+/** Active office people who hear about every job (owner, admins, operations managers), plus `extra` user ids, minus `except`. */
+export async function officeRecipients(extra: (string | null | undefined)[] = [], except?: string | null): Promise<{ id: string; role: Role }[]> {
+  const office = await db
+    .select({ id: user.id, role: user.role })
+    .from(user)
+    .where(and(eq(user.active, true), inArray(user.role, ALWAYS_TOLD)));
+  const ids = extra.filter((x): x is string => !!x);
+  const more = ids.length ? await db.select({ id: user.id, role: user.role }).from(user).where(and(eq(user.active, true), inArray(user.id, ids))) : [];
+  return [...office, ...more].filter((u, i, all) => all.findIndex((x) => x.id === u.id) === i && u.id !== except);
+}
+
 export type ProposalEvent = "viewed" | "accepted" | "declined";
 
 /**
@@ -149,13 +160,7 @@ export async function notifyProposalEvent(event: ProposalEvent, proposalId: stri
       .where(eq(proposals.id, proposalId));
     if (!row) return;
 
-    const office = await db
-      .select({ id: user.id, role: user.role })
-      .from(user)
-      .where(and(eq(user.active, true), inArray(user.role, ALWAYS_TOLD)));
-    const preparers = [row.estimatorId, row.createdBy].filter((x): x is string => !!x);
-    const extra = preparers.length ? await db.select({ id: user.id, role: user.role }).from(user).where(and(eq(user.active, true), inArray(user.id, preparers))) : [];
-    const recipients = [...office, ...extra].filter((u, i, all) => all.findIndex((x) => x.id === u.id) === i && u.id !== opts.actorId);
+    const recipients = await officeRecipients([row.estimatorId, row.createdBy], opts.actorId);
     if (!recipients.length) return;
 
     const who = row.customer;

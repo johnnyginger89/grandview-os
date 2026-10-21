@@ -3,7 +3,7 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypt
 import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { outer } from "@/db/sql";
-import { contacts, crewMembers, crews, customers, projects, properties, proposals, scheduleEntries, user, workOrderLinks, workOrders, workOrderVersions } from "@/db/schema";
+import { colourSelections, contacts, crewMembers, crews, customers, projects, properties, proposals, scheduleEntries, user, workOrderLinks, workOrders, workOrderVersions } from "@/db/schema";
 import type { WorkOrderStatus } from "@/db/schema/work-orders";
 import type { EstimateDoc } from "@/lib/estimating/document";
 import { dateRangeLabel, jobTitle, kindLabel } from "@/lib/schedule/format";
@@ -162,6 +162,12 @@ async function signedDoc(p: ProjectRow): Promise<EstimateDoc | null> {
   return null;
 }
 
+/** The signed estimate of a job (with the customer's chosen options), or null. Used by the colour form. */
+export async function signedDocForProject(projectId: string): Promise<EstimateDoc | null> {
+  const p = await loadProject(projectId);
+  return p ? signedDoc(p) : null;
+}
+
 /**
  * Jobs brought over from another system have no signed estimate. Their work order
  * carries no scope, preparation or exclusions, only what staff write on it. Only
@@ -217,8 +223,18 @@ async function bookingsFor(projectId: string): Promise<WorkOrderInput["bookings"
 
 type Sources = Omit<WorkOrderInput, "workOrder" | "version" | "issuedAt" | "crew"> & { signed: boolean };
 
+/** The customer's signed colour forms (oldest first; a replaced form is left out). */
+async function signedColours(projectId: string): Promise<NonNullable<WorkOrderInput["colours"]>> {
+  const rows = await db
+    .select({ rows: colourSelections.rows })
+    .from(colourSelections)
+    .where(and(eq(colourSelections.projectId, projectId), eq(colourSelections.status, "signed")))
+    .orderBy(asc(colourSelections.signedAt));
+  return rows.flatMap((r) => r.rows ?? []);
+}
+
 async function loadSources(p: ProjectRow): Promise<Sources> {
-  const [doc, customerRows, contactRows, property, bookings, pmRows, company, template, settings] = await Promise.all([
+  const [doc, customerRows, contactRows, property, bookings, pmRows, company, template, settings, colours] = await Promise.all([
     signedDoc(p),
     db.select({ name: customers.displayName, phone: customers.phone }).from(customers).where(eq(customers.id, p.customerId)).limit(1),
     db.select({ phone: contacts.phone }).from(contacts).where(and(eq(contacts.customerId, p.customerId), eq(contacts.isPrimary, true))).limit(1),
@@ -228,6 +244,7 @@ async function loadSources(p: ProjectRow): Promise<Sources> {
     getCompany(),
     getProposalTemplate(),
     getWorkOrderSettings(),
+    signedColours(p.id),
   ]);
   const customer = customerRows[0];
   if (!customer) throw new WorkOrderError("The customer for this job no longer exists.");
@@ -244,6 +261,7 @@ async function loadSources(p: ProjectRow): Promise<Sources> {
     projectManager: pm ? { name: pm.name, phone: pm.phone } : null,
     // Hours and paint come from the signed estimate only; a job without one has neither.
     show: { hours: !!doc && settings.showHours, paint: !!doc && settings.showPaint },
+    colours,
   };
 }
 

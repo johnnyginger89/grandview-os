@@ -245,6 +245,36 @@ describe("labour hours and paint to order", () => {
   });
 });
 
+describe("the customer's signed colours", () => {
+  const colours = [
+    { room: "Kitchen", surface: "Walls", colour: "Chantilly Lace", code: "OC-65", sheen: "Matte", lineId: uuid(1) },
+    { room: "Kitchen", surface: "Baseboards", colour: "", code: "", sheen: "Semi-gloss", lineId: uuid(2) },
+    { room: "Front door", surface: "Door", colour: "Hale Navy", code: "HC-154", sheen: "Gloss", lineId: null },
+  ];
+  const v = buildWorkOrderView(input({ colours, show: { hours: false, paint: true } }));
+
+  it("put the chosen colour on the item it was chosen for, over the estimate's", () => {
+    const walls = v.scope.find((a) => a.area === "Kitchen")!.items[0];
+    expect(walls).toMatchObject({ colour: "OC-65 Chantilly Lace", sheen: "Matte" });
+    // A row without a colour changes nothing.
+    expect(v.scope.find((a) => a.area === "Kitchen")!.items[1]).toMatchObject({ colour: null, sheen: null });
+  });
+
+  it("list every coloured row, and buy paint in those colours", () => {
+    expect(v.colours).toEqual([
+      { room: "Kitchen", surface: "Walls", colour: "OC-65 Chantilly Lace", sheen: "Matte" },
+      { room: "Front door", surface: "Door", colour: "HC-154 Hale Navy", sheen: "Gloss" },
+    ]);
+    expect(v.paint?.[0]).toMatchObject({ colour: "OC-65 Chantilly Lace", sheen: "Matte" });
+  });
+
+  it("count as a change to issue, and are left out when there are none", () => {
+    const without = buildWorkOrderView(input({ show: { hours: false, paint: true } }));
+    expect("colours" in without).toBe(false);
+    expect(changedSections(without, v)).toEqual(["scope", "colours", "paint"]);
+  });
+});
+
 describe("changedSections", () => {
   it("names the sections that differ between versions", () => {
     const v1 = buildWorkOrderView(input());

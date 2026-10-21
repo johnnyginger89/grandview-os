@@ -5,6 +5,7 @@ import { Badge, Button, Card, CardHeader, Field, FormError, Input, Select, Table
 import { ROLES } from "@/db/schema/auth";
 import { can, ROLE_LABELS } from "@/lib/authz/permissions";
 import { createUserAction, saveCompanyAction, saveListAction, savePricingAction, saveTemplateAction, updateUserAction } from "./actions";
+import { saveColourFormSettingsAction } from "./colour-form-settings-actions";
 import { saveWorkOrderSettingsAction } from "./work-order-settings-actions";
 
 function Saved({ state }: { state: { ok: boolean; error?: string } | null }) {
@@ -242,6 +243,40 @@ export function WorkOrderSettingsForm({
         <Field label="Share links work for (days)" hint="How long a new share link works unless you pick another time. 1 to 365 days.">
           <Input inputMode="numeric" className="w-32" value={days} onChange={(e) => setDays(e.target.value)} />
         </Field>
+        <div className="flex items-center gap-3"><Button disabled={pending} onClick={save}>Save</Button><Saved state={state} /></div>
+      </div>
+    </Card>
+  );
+}
+
+export function ColourFormSettingsForm({ settings }: { settings: { changeWarning: string; coverageWarning: string; sheens: string[]; surfaces: string[]; linkDays: number } }) {
+  const [changeWarning, setChangeWarning] = useState(settings.changeWarning);
+  const [coverageWarning, setCoverageWarning] = useState(settings.coverageWarning);
+  const [sheens, setSheens] = useState(settings.sheens.join("\n"));
+  const [surfaces, setSurfaces] = useState(settings.surfaces.join("\n"));
+  const [days, setDays] = useState(String(settings.linkDays));
+  const [state, setState] = useState<{ ok: boolean; error?: string } | null>(null);
+  const [pending, start] = useTransition();
+  const lines = (s: string) => s.split("\n").map((x) => x.trim()).filter(Boolean);
+  function save() {
+    const n = Number(days.trim());
+    if (!Number.isInteger(n) || n < 1 || n > 365) {
+      setState({ ok: false, error: "Enter a whole number of days from 1 to 365." });
+      return;
+    }
+    start(async () => setState(await saveColourFormSettingsAction({ changeWarning, coverageWarning, sheens: lines(sheens), surfaces: lines(surfaces), linkDays: n })));
+  }
+  return (
+    <Card className="mt-4 max-w-2xl" role="region" aria-label="Colour form">
+      <CardHeader title="Colour form" description="The customer ticks both notes before signing their colours. The wording they agreed to is kept with each signed form." />
+      <div className="grid gap-4 p-4">
+        <Field label="Note about changing colours"><Textarea rows={3} value={changeWarning} onChange={(e) => setChangeWarning(e.target.value)} /></Field>
+        <Field label="Note about whites and bright colours"><Textarea rows={3} value={coverageWarning} onChange={(e) => setCoverageWarning(e.target.value)} /></Field>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Sheens to pick from" hint="One per line."><Textarea rows={7} value={sheens} onChange={(e) => setSheens(e.target.value)} /></Field>
+          <Field label="Surfaces to pick from" hint="One per line. People can still type their own."><Textarea rows={7} value={surfaces} onChange={(e) => setSurfaces(e.target.value)} /></Field>
+        </div>
+        <Field label="Customer links work for (days)"><Input inputMode="numeric" className="w-32" value={days} onChange={(e) => setDays(e.target.value)} /></Field>
         <div className="flex items-center gap-3"><Button disabled={pending} onClick={save}>Save</Button><Saved state={state} /></div>
       </div>
     </Card>

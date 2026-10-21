@@ -92,7 +92,7 @@ export async function ProjectScheduleCard({ projectId, user }: { projectId: stri
           </LinkButton>
         }
       />
-      <div className="grid lg:grid-cols-5">
+      <div className="grid lg:grid-cols-5 [&>*]:min-w-0">
         <div className="space-y-4 p-4 lg:col-span-3">
           {rows.length ? (
             <Table aria-label="Bookings">

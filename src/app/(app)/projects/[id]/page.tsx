@@ -13,6 +13,7 @@ import { formatAddress, formatDate, formatDateTime, mapsUrl } from "@/lib/utils"
 import { isDoneStatus, listStatusEvents, type StatusEventRow } from "@/server/project-status";
 import { proposalUrl } from "@/server/proposals";
 import { PROJECT_STATUS_LABEL, PROJECT_STATUS_TONE } from "../status";
+import { ColoursCard } from "./colours-card";
 import { ProjectScheduleCard } from "./schedule-card";
 import { StatusControl, type StatusHistoryEntry } from "./status-control";
 import { WorkOrdersCard } from "./work-orders-card";
@@ -80,7 +81,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
           <Stat label="Estimated cost" value={formatCAD(p.estimatedCost)} />
         </div>
       )}
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2 [&>*]:min-w-0">
         <Card>
           <CardHeader title="Contract" />
           <dl className="grid grid-cols-3 gap-y-2 p-4 text-sm">
@@ -92,6 +93,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         </Card>
         {can(user.role, "projects.write") && <StatusCard p={p} />}
         {can(user.role, "schedule.read") && <ProjectScheduleCard projectId={p.id} user={user} />}
+        <ColoursCard projectId={p.id} className="lg:col-span-2" />
         <WorkOrdersCard projectId={p.id} canEdit={can(user.role, "projects.write")} className="lg:col-span-2" />
         <Card>
           <CardHeader title="Next steps" />
