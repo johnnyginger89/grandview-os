@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { statePath } from "./helpers";
+import { addRoom, startBlankEstimate } from "./sales";
 
 test.describe("owner", () => {
 test.use({ storageState: statePath("owner") });
@@ -35,14 +36,9 @@ test("owner: set booking link, create lead, send booking link, build estimate", 
 
   // Estimate from lead
   await page.getByRole("link", { name: "Create estimate" }).click();
-  await page.getByRole("button", { name: "Create and start estimating" }).click();
-  await expect(page).toHaveURL(/\/estimates\/[0-9a-f-]{36}/);
+  await startBlankEstimate(page);
 
-  await page.getByRole("button", { name: "Living room" }).click();
-  await page.getByLabel("Length (ft)").fill("15");
-  await page.getByLabel("Width (ft)").fill("12");
-  await page.getByLabel("Height (ft)").fill("8");
-  await page.getByLabel("Add item").first().selectOption({ label: "Walls – roll & cut" });
+  await addRoom(page, "Living room", { size: "15 12 8", only: ["Walls – roll & cut"] });
   // Walls auto-calculated from dimensions: 2 × (15 + 12) × 8 = 432 sq ft
   await expect(page.getByLabel("Quantity").first()).toHaveValue("432");
   await page.getByLabel("Add item").first().selectOption({ label: "Door slab (per side)" });
@@ -50,9 +46,9 @@ test("owner: set booking link, create lead, send booking link, build estimate", 
 
   await expect(page.getByText("All changes saved")).toBeVisible({ timeout: 10_000 });
   // Small job → minimum price applies
-  await expect(page.getByText("Minimum job adjustment")).toBeVisible();
+  await expect(page.getByText("Minimum job price applied")).toBeVisible();
   await expect(page.getByText("$2,000.00").first()).toBeVisible();
-  await expect(page.getByText("$2,100.00")).toBeVisible();
+  await expect(page.getByTestId("editor-total")).toHaveText("$2,100.00");
 
   // Survives reload
   await page.reload();
@@ -60,7 +56,8 @@ test("owner: set booking link, create lead, send booking link, build estimate", 
 
   // Mark sent creates revision 1
   page.once("dialog", (d) => d.accept());
-  await page.getByRole("button", { name: "Mark as sent" }).click();
+  await page.getByRole("button", { name: "More ways to send" }).click();
+  await page.getByRole("button", { name: "Mark as sent without emailing" }).click();
   await expect(page.getByText("rev 1")).toBeVisible();
 });
 

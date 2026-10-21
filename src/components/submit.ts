@@ -7,7 +7,9 @@ import { startTransition, type FormEvent } from "react";
 export function submitWith(dispatch: (form: FormData) => void) {
   return (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const form = new FormData(e.currentTarget);
+    // Include the button that was pressed (name/value), as a normal form post would.
+    const submitter = (e.nativeEvent as SubmitEvent).submitter;
+    const form = new FormData(e.currentTarget, submitter instanceof HTMLButtonElement && submitter.name ? submitter : undefined);
     startTransition(() => dispatch(form));
   };
 }

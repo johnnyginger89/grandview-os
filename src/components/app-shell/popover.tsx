@@ -11,12 +11,15 @@ export function Popover({
   button,
   buttonClassName,
   align = "right",
+  side = "below",
   children,
 }: {
   label: string;
   button: ReactNode;
   buttonClassName?: string;
   align?: "left" | "right";
+  /** "above" for buttons near the bottom of the screen. */
+  side?: "below" | "above";
   children: (close: () => void) => ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -47,7 +50,7 @@ export function Popover({
         {button}
       </button>
       {open && (
-        <div role="group" aria-label={label} className={cn("absolute top-full z-50 mt-2 min-w-56 overflow-hidden rounded-xl border border-border bg-surface py-1.5 shadow-pop", align === "right" ? "right-0" : "left-0")}>
+        <div role="group" aria-label={label} className={cn("absolute z-50 min-w-56 overflow-hidden rounded-xl border border-border bg-surface py-1.5 shadow-pop", align === "right" ? "right-0" : "left-0", side === "above" ? "bottom-full mb-2" : "top-full mt-2")}>
           {children(() => setOpen(false))}
         </div>
       )}

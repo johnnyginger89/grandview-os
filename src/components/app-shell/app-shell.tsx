@@ -217,7 +217,9 @@ export function AppShell({
   const bar = items.some((n) => n.key === "home") ? PHONE_BAR : FIELD_PHONE_BAR;
   const barItems = items.filter((n) => bar.includes(n.key));
   const moreItems = [...items.filter((n) => !bar.includes(n.key)), ...(settings ? [settings] : [])];
-  const hasBottomBar = barItems.length >= 2;
+  // The estimate editor has its own bar (total and Send) along the bottom; two bars eat a phone screen.
+  const ownBar = /^\/estimates\/[0-9a-f-]{36}$/i.test(pathname);
+  const hasBottomBar = barItems.length >= 2 && !ownBar;
 
   return (
     <div

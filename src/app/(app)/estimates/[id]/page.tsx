@@ -6,13 +6,13 @@ import { contacts, customers, projects, properties } from "@/db/schema";
 import { requirePermission } from "@/lib/authz/guard";
 import { can } from "@/lib/authz/permissions";
 import { formatAddress } from "@/lib/utils";
-import { listRevisions, listTemplates, loadEstimate } from "@/server/estimates";
+import { listRevisions, listTemplates, loadEstimate, recentColours } from "@/server/estimates";
 import { followUpHistory, listProposals, proposalEmailDraft, proposalUrl } from "@/server/proposals";
 import { calculateDoc } from "@/lib/estimating/document";
 import { formatCAD } from "@/lib/money";
-import { ProposalsPanel, type ProposalOption } from "./proposals-panel";
-import { listFactors, listRates, toSnapshot } from "@/server/rates";
-import { getPricing, getProposalTemplate } from "@/server/settings";
+import type { ProposalOption } from "./proposal-types";
+import { listFactors, listMaterialOptions, listRates, toSnapshot } from "@/server/rates";
+import { getEstimatingPresets, getPricing, getProposalTemplate } from "@/server/settings";
 import { resolveJobType } from "@/lib/proposal-template/resolve";
 import { JOB_TYPE_KEYS } from "@/lib/proposal-template/schema";
 import { CompanyCamSection } from "@/components/companycam/companycam-section";
@@ -30,7 +30,7 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
   if (!loaded) notFound();
   const { estimate, doc } = loaded;
 
-  const [customer, property, rates, factors, templates, revisions, pricing, proposalRows, contact, project, template, emailDraft, followUps] = await Promise.all([
+  const [customer, property, rates, factors, templates, revisions, pricing, proposalRows, contact, project, template, emailDraft, followUps, presets, recent, materials] = await Promise.all([
     db.query.customers.findFirst({ where: eq(customers.id, estimate.customerId) }),
     estimate.propertyId ? db.query.properties.findFirst({ where: eq(properties.id, estimate.propertyId) }) : null,
     listRates(),
@@ -44,6 +44,10 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
     getProposalTemplate(),
     proposalEmailDraft(id, user),
     followUpHistory(id),
+    getEstimatingPresets(),
+    recentColours(),
+    // $/gal goes to the browser only for logins that may see costs.
+    can(user.role, "estimates.costing") ? listMaterialOptions() : [],
   ]);
   // Optional upgrades and their prices, for "Mark as accepted".
   const calc = calculateDoc(doc);
@@ -72,11 +76,13 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
           number: estimate.number ?? 0,
           status: estimate.status,
           revision: estimate.revision,
+          customerId: estimate.customerId,
           customerName: customer?.displayName ?? "",
           address: property ? formatAddress(property) : null,
           opportunityId: estimate.opportunityId,
           validUntil: estimate.validUntil?.toISOString() ?? null,
           updatedAt: estimate.updatedAt.toISOString(),
+          project: project ? { id: project.id, number: project.number } : null,
         }}
         initialDoc={doc}
         rates={rates.filter((r) => r.version).map((r) => ({ id: r.rate.id, code: r.rate.code, category: r.rate.category, dimensionSource: r.rate.dimensionSource, snapshot: toSnapshot(r) }))}
@@ -88,29 +94,26 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
         showCosting={can(user.role, "estimates.costing")}
         proposalText={proposalText}
         canEditWording={can(user.role, "settings.manage")}
-      />
-      <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        <ProposalsPanel
-          estimateId={id}
-          customerName={customer?.displayName ?? ""}
-          followUps={followUps}
-          canSend={can(user.role, "estimates.write") && estimate.status !== "accepted"}
-          defaultEmail={contact?.email ?? customer?.email ?? ""}
-          emailDraft={emailDraft ?? { subject: "", body: "" }}
-          acceptName={(contact ? [contact.firstName, contact.lastName].filter(Boolean).join(" ") : "") || customer?.displayName || ""}
-          options={options}
-          rows={proposalRows.map((p) => ({
+        presets={presets}
+        recentColours={recent}
+        materials={materials}
+        proposals={{
+          canSend: can(user.role, "estimates.write") && estimate.status !== "accepted",
+          customerName: customer?.displayName ?? "",
+          followUps,
+          defaultEmail: contact?.email ?? customer?.email ?? "",
+          emailDraft: emailDraft ?? { subject: "", body: "" },
+          acceptName: (contact ? [contact.firstName, contact.lastName].filter(Boolean).join(" ") : "") || customer?.displayName || "",
+          options,
+          rows: proposalRows.map((p) => ({
             id: p.id, revision: p.revision, status: p.status, link: proposalUrl(p.token), sentTo: p.sentTo, sentAt: p.sentAt.toISOString(),
             firstViewedAt: p.firstViewedAt?.toISOString() ?? null, viewCount: p.viewCount, acceptedAt: p.acceptedAt?.toISOString() ?? null,
             acceptedName: p.acceptedName, acceptedMethod: p.acceptedMethod, declineReason: p.declineReason,
-          }))}
-        />
-        {project && (
-          <Link href={`/projects/${project.id}`} className="self-start rounded-lg border border-success/30 bg-success-soft p-4 text-sm text-success hover:underline">
-            Accepted – project #{project.number} was created automatically. Open project →
-          </Link>
-        )}
-        <CompanyCamSection entityType="estimate" entityId={id} className="lg:col-span-2" />
+          })),
+        }}
+      />
+      <div className="mt-4">
+        <CompanyCamSection entityType="estimate" entityId={id} />
       </div>
     </>
   );

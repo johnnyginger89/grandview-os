@@ -87,6 +87,17 @@ export function toSnapshot(r: RateRow): RateSnapshot {
   };
 }
 
+/** Paint products to choose from on an estimate line, as the snapshot the engine reads. Includes $/gal: costing logins only. */
+export async function listMaterialOptions() {
+  const rows = await db.select().from(materials).where(eq(materials.active, true)).orderBy(asc(materials.manufacturer), asc(materials.name));
+  return rows.map((m) => ({
+    id: m.id,
+    label: [m.manufacturer, m.name, m.finish].filter(Boolean).join(" "),
+    finish: m.finish,
+    snapshot: { productId: m.id, productName: [m.manufacturer, m.name, m.finish].filter(Boolean).join(" "), coverage: m.coverage, pricePerGallon: m.pricePerGallon, containerGallons: m.containerGallons },
+  }));
+}
+
 export async function getRateSnapshot(rateId: string): Promise<RateSnapshot | null> {
   const rows = await db
     .select({ rate: productionRates, version: productionRateVersions, material: materials })

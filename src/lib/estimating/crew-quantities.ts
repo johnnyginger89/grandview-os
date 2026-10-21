@@ -36,6 +36,7 @@ export function lineHours(line: LineInput): Decimal | null {
 }
 
 export interface PaintNeed {
+  key: string;
   product: string;
   colour: string | null;
   sheen: string | null;
@@ -58,6 +59,11 @@ export interface CrewQuantities {
 
 const clean = (s: string | null | undefined) => s?.trim() || null;
 const keyPart = (s: string | null) => (s ?? "").toLowerCase().replace(/\s+/g, " ");
+
+/** Lines share a paint when product, colour and sheen match (case and spacing ignored). */
+export function paintKey(material: { productId?: string | null; productName: string }, colour: string | null | undefined, sheen: string | null | undefined): string {
+  return [clean(material.productId) ?? keyPart(clean(material.productName)), keyPart(clean(colour)), keyPart(clean(sheen))].join("|");
+}
 
 /**
  * Hours and paint for what the customer is getting: required lines and selected options.
@@ -83,9 +89,9 @@ export function crewQuantities(doc: EstimateDoc): CrewQuantities {
     if (!material || !product || !(line.coats > 0)) return;
     const colour = clean(docLine.colour);
     const sheen = clean(docLine.sheen);
-    const key = [clean(material.productId) ?? keyPart(product), keyPart(colour), keyPart(sheen)].join("|");
+    const key = paintKey(material, colour, sheen);
     let need = groups.get(key);
-    if (!need) groups.set(key, (need = { product, colour, sheen, gallons: ZERO, noCoverage: [], noQuantity: [] }));
+    if (!need) groups.set(key, (need = { key, product, colour, sheen, gallons: ZERO, noCoverage: [], noQuantity: [] }));
 
     if (!positive(material.coverage)) need.noCoverage.push(line.id);
     else if (!positive(line.quantity)) need.noQuantity.push(line.id);

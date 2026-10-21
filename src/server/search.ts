@@ -236,3 +236,10 @@ export async function globalSearch(user: { role: string }, raw: string, opts: { 
       .filter((g) => g.hits.length > 0),
   };
 }
+
+/** Customer picker (new estimate): same matching as the search box, customers only. */
+export async function searchCustomers(raw: string, limit = 8): Promise<{ id: string; name: string; detail: string }[]> {
+  const q = parseSearchQuery(raw, { estimatePrefix: "" });
+  if (!q) return [];
+  return (await findCustomers(q, Math.min(Math.max(limit, 1), 20))).map((h) => ({ id: h.id, name: h.title, detail: h.detail }));
+}

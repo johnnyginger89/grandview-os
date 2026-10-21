@@ -1,5 +1,5 @@
 import "server-only";
-import { asc, desc, eq, max } from "drizzle-orm";
+import { and, asc, desc, eq, gte, isNotNull, max, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   activities,
@@ -26,8 +26,19 @@ export class EstimateLockedError extends Error {
   }
 }
 
+const JOB_TITLES: Record<string, string> = {
+  interior: "Interior repaint",
+  exterior: "Exterior repaint",
+  interior_exterior: "Interior & exterior repaint",
+  cabinets: "Cabinet painting",
+  staining: "Deck / fence staining",
+  commercial: "Commercial painting",
+  strata: "Strata painting",
+  repairs: "Repairs",
+};
+
 export async function createEstimate(
-  input: { customerId?: string | null; opportunityId?: string | null; propertyId?: string | null; title?: string; jobType?: string },
+  input: { customerId?: string | null; opportunityId?: string | null; propertyId?: string | null; title?: string; jobType?: string; templateId?: string | null },
   userId: string,
 ) {
   let { customerId, propertyId } = input;
@@ -43,6 +54,11 @@ export async function createEstimate(
   if (!propertyId) {
     const p = await db.query.properties.findFirst({ where: eq(properties.customerId, customerId) });
     propertyId = p?.id ?? null;
+  }
+  if (!title) {
+    // "Interior repaint – 1 Example St": rename it in the editor if you like.
+    const street = propertyId ? (await db.query.properties.findFirst({ where: eq(properties.id, propertyId), columns: { street: true } }))?.street : null;
+    title = [JOB_TITLES[input.jobType ?? "interior"] ?? "Painting", street].filter(Boolean).join(" – ");
   }
   const pricing = await getPricing();
   const validUntil = new Date(Date.now() + pricing.estimateValidDays * 86_400_000);
@@ -69,6 +85,11 @@ export async function createEstimate(
     .returning();
   await db.insert(activities).values({ customerId, opportunityId: input.opportunityId ?? null, type: "estimate", body: `Estimate #${row.number} created`, createdBy: userId });
   await audit({ actorId: userId, action: "estimate.create", entityType: "estimate", entityId: row.id });
+  if (input.templateId) {
+    // Same as "Add from template" in the editor, done before the estimate first opens.
+    const [parts, loaded] = await Promise.all([templateToDocParts(input.templateId), loadEstimate(row.id)]);
+    if (loaded) await saveEstimateDoc(row.id, { ...loaded.doc, areas: parts.areas, lines: parts.lines, costItems: parts.costItems });
+  }
   return row;
 }
 
@@ -312,4 +333,17 @@ export async function templateToDocParts(templateId: string) {
     })),
     costItems: p.costItems.map((c) => ({ ...c, id: crypto.randomUUID() })),
   };
+}
+
+/** Colours used on estimates in the last 60 days, most used first (for the colour picker). */
+export async function recentColours(now = new Date(), limit = 20): Promise<string[]> {
+  const rows = await db
+    .select({ colour: sql<string>`min(trim(${estimateLines.colour}))`, n: sql<number>`count(*)::int` })
+    .from(estimateLines)
+    .innerJoin(estimates, eq(estimates.id, estimateLines.estimateId))
+    .where(and(isNotNull(estimateLines.colour), sql`trim(${estimateLines.colour}) <> ''`, gte(estimates.updatedAt, new Date(now.getTime() - 60 * 86_400_000))))
+    .groupBy(sql`lower(trim(${estimateLines.colour}))`)
+    .orderBy(desc(sql`count(*)`))
+    .limit(limit);
+  return rows.map((r) => r.colour);
 }

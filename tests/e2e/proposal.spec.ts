@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { statePath } from "./helpers";
+import { addRoom, startBlankEstimate, writeInternalNote } from "./sales";
 
 test.describe("proposal", () => {
   test.use({ storageState: statePath("owner") });
@@ -14,13 +15,9 @@ test.describe("proposal", () => {
     await page.getByLabel("City").fill("Surrey");
     await page.getByRole("button", { name: "Create customer" }).click();
     await page.getByRole("link", { name: "New estimate" }).click();
-    await page.getByLabel("Job title").fill("Interior repaint");
-    await page.getByRole("button", { name: "Create and start estimating" }).click();
-    await page.getByRole("button", { name: "Living room" }).click();
-    await page.getByLabel("Length (ft)").fill("20");
-    await page.getByLabel("Width (ft)").fill("15");
-    await page.getByLabel("Height (ft)").fill("9");
-    await page.getByLabel("Add item").first().selectOption({ label: "Walls – roll & cut" });
+    await page.getByLabel("Job title (optional)").fill("Interior repaint");
+    await startBlankEstimate(page);
+    await addRoom(page, "Living room", { size: "20x15x9", only: ["Walls – roll & cut"] });
     // Price the walls above the $2,000 minimum so an upgrade visibly changes the total.
     await page.getByRole("button", { name: /Walls – roll & cut/ }).click();
     await page.getByLabel("Override price").fill("3000");
@@ -30,7 +27,7 @@ test.describe("proposal", () => {
     await page.getByRole("button", { name: /Ceilings – roll & cut/ }).click();
     await page.getByLabel("Colour").fill("SW 7008 Alabaster");
     await page.getByText("Optional upgrade", { exact: true }).click();
-    await page.getByLabel(/Internal notes/).fill("SECRET-INTERNAL note for the office");
+    await writeInternalNote(page, "SECRET-INTERNAL note for the office");
     await expect(page.getByText("All changes saved")).toBeVisible({ timeout: 10_000 });
 
     // Send (link only; email isn't configured in tests)
@@ -78,9 +75,9 @@ test.describe("proposal", () => {
 
     // Staff side: project created, estimate locked
     await page.reload();
-    await expect(page.getByText(/project #\d+ was created automatically/)).toBeVisible();
+    await expect(page.getByText(/job #\d+ was created/)).toBeVisible();
     await expect(page.getByText("Accepted – locked")).toBeVisible();
-    await page.getByText(/project #\d+ was created automatically/).click();
+    await page.getByText(/job #\d+ was created/).click();
     await expect(page.getByRole("heading", { name: /Proposal Test/ })).toBeVisible();
     await expect(page.getByText("Pat Customer")).toBeVisible();
   });

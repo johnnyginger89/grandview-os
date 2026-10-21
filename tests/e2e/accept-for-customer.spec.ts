@@ -32,6 +32,7 @@ test("the proposal email is written from the template and can be edited before s
 test("Mark as accepted creates the job, locks the estimate and keeps the office note internal", async ({ page, browser }) => {
   test.skip(!estimateUrl, "needs the estimate above");
   await page.goto(estimateUrl);
+  await page.getByRole("button", { name: "More ways to send" }).click();
   await page.getByRole("button", { name: "Mark as accepted" }).click();
   const dialog = page.getByRole("dialog", { name: "Mark as accepted" });
   await expect(dialog.getByLabel("Who accepted it?")).not.toHaveValue("");
@@ -48,7 +49,7 @@ test("Mark as accepted creates the job, locks the estimate and keeps the office 
   await expect(page.getByText("Need to schedule").first()).toBeVisible();
 
   await page.goto(estimateUrl);
-  await expect(page.getByRole("button", { name: "Mark as accepted" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "More ways to send" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Send proposal" })).toHaveCount(0);
   const accepted = page.locator("#proposals").getByText(/Accepted by phone by Phone Customer \[TEST DATA\]/);
   await expect(accepted).toBeVisible();

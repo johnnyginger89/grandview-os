@@ -1,0 +1,35 @@
+export interface ProposalRow {
+  id: string;
+  revision: number;
+  status: string;
+  link: string;
+  sentTo: string | null;
+  sentAt: string;
+  firstViewedAt: string | null;
+  viewCount: number;
+  acceptedAt: string | null;
+  acceptedName: string | null;
+  /** online, phone, email, in_person or paper. */
+  acceptedMethod: string | null;
+  declineReason: string | null;
+}
+
+export interface ProposalOption {
+  id: string;
+  title: string;
+  /** Formatted, before GST. */
+  price: string;
+}
+
+/** Everything the editor needs for sending and the sent list. */
+export interface ProposalProps {
+  rows: ProposalRow[];
+  defaultEmail: string;
+  /** From the "Sending a proposal" template, with this customer's details filled in. */
+  emailDraft: { subject: string; body: string };
+  acceptName: string;
+  options: ProposalOption[];
+  customerName: string;
+  followUps: { count: number; lastAt: string | null };
+  canSend: boolean;
+}

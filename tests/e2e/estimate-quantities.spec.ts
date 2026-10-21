@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { statePath } from "./helpers";
+import { addRoom, startBlankEstimate } from "./sales";
 
 /*
  * A surface added before the room size is typed used to stay at 0 sq ft for good.
@@ -13,13 +14,10 @@ test("surfaces follow the room size, even when it's typed later, and can be type
   await page.getByLabel("Customer name").fill(`Quantities ${stamp} [TEST DATA]`);
   await page.getByRole("button", { name: "Create customer" }).click();
   await page.getByRole("link", { name: "New estimate" }).click();
-  await page.getByLabel("Job title").fill("Interior repaint");
-  await page.getByRole("button", { name: "Create and start estimating" }).click();
-  await expect(page).toHaveURL(/\/estimates\/[0-9a-f-]{36}/);
+  await startBlankEstimate(page);
 
-  // Room first, surface second, size last.
-  await page.getByRole("button", { name: "Living room" }).click();
-  await page.getByLabel("Add item").first().selectOption({ label: "Walls – roll & cut" });
+  // Room and surface first, size last.
+  await addRoom(page, "Living room", { only: ["Walls – roll & cut"] });
   const qty = page.getByLabel("Quantity", { exact: true }).first();
   await expect(qty).toHaveValue("0");
   await page.getByLabel("Length (ft)").fill("15");
@@ -33,5 +31,15 @@ test("surfaces follow the room size, even when it's typed later, and can be type
   await expect(qty).toHaveValue("400");
   await page.getByLabel("Length (ft)").fill("20");
   await expect(qty).toHaveValue("400");
+
+  // And can go back to following the room size.
+  await page.getByRole("button", { name: "Use the room size again" }).click();
+  // 2 × (20 + 12) × 8 = 512.
+  await expect(qty).toHaveValue("512");
+
+  // Sums work in the quantity box.
+  await qty.fill("12*8+10*8");
+  await qty.press("Enter");
+  await expect(qty).toHaveValue("176");
   await expect(page.getByText("All changes saved")).toBeVisible({ timeout: 10_000 });
 });

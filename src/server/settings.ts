@@ -3,6 +3,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { appSettings, media } from "@/db/schema";
 import { DEFAULT_COMPANY, DEFAULT_PRICING, DEFAULT_PROPOSAL, DEFAULT_PROPOSAL_TEMPLATE } from "@/db/seed-data";
+import { DEFAULT_ESTIMATING_PRESETS, ESTIMATING_PRESETS_KEY, estimatingPresetsSchema, type EstimatingPresets } from "@/lib/estimating/presets";
 import { markRemovedOverrides, mergeWithDefaults } from "@/lib/proposal-template/merge";
 import {
   mediaRefs,
@@ -39,6 +40,20 @@ export const getCompany = () => getSetting<CompanySettings>("company", DEFAULT_C
 export const getList = (key: "lead_sources" | "lost_reasons" | "project_types") => getSetting<string[]>(key, []);
 /** Legacy proposal wording (before the presentation template). Kept read-only for the "earlier wording" panel. */
 export const getProposalSettings = () => getSetting<ProposalSettings>("proposal", DEFAULT_PROPOSAL);
+
+/** Room presets, favourite colours and sheens for the estimate editor; starter values until the owner saves their own. */
+export async function getEstimatingPresets(): Promise<EstimatingPresets> {
+  const row = await db.query.appSettings.findFirst({ where: eq(appSettings.key, ESTIMATING_PRESETS_KEY) });
+  const parsed = estimatingPresetsSchema.safeParse(row?.value);
+  if (row && !parsed.success) console.error("[estimating_presets] invalid, using the starter presets");
+  return parsed.success ? parsed.data : DEFAULT_ESTIMATING_PRESETS;
+}
+
+export async function saveEstimatingPresets(raw: unknown, userId: string): Promise<void> {
+  const value = estimatingPresetsSchema.parse(raw);
+  await setSetting(ESTIMATING_PRESETS_KEY, value, userId);
+  await audit({ actorId: userId, action: "settings.update", entityType: "settings", entityId: ESTIMATING_PRESETS_KEY, after: { rooms: value.rooms.length, favouriteColours: value.favouriteColours.length } });
+}
 
 export class SettingsError extends Error {
   readonly expose = true;

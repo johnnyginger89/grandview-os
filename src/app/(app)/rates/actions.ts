@@ -3,6 +3,8 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { safeErrorMessage } from "@/lib/action-error";
 import { assertPermission } from "@/lib/authz/guard";
+import { estimatingPresetsSchema } from "@/lib/estimating/presets";
+import { saveEstimatingPresets } from "@/server/settings";
 import { createRate, deleteFactor, rateHistory, saveFactor, saveMaterial, saveRateVersion, setRateActive, updateRateIdentity } from "@/server/rates";
 
 export type Result = { ok: true } | { ok: false; error: string };
@@ -76,6 +78,20 @@ export async function deleteFactorAction(id: string): Promise<Result> {
     const user = await assertPermission("rates.write");
     await deleteFactor(z.string().uuid().parse(id), user.id);
     revalidatePath("/rates");
+    return { ok: true };
+  } catch (e) {
+    return err(e);
+  }
+}
+
+/** Room presets, favourite colours and sheens for the estimate editor's "Add room" form. */
+export async function savePresetsAction(input: unknown): Promise<Result> {
+  try {
+    const user = await assertPermission("rates.write");
+    const presets = estimatingPresetsSchema.parse(input);
+    await saveEstimatingPresets(presets, user.id);
+    revalidatePath("/rates");
+    revalidatePath("/estimates/[id]", "page");
     return { ok: true };
   } catch (e) {
     return err(e);

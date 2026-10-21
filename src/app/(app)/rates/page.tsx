@@ -6,6 +6,8 @@ import { materials } from "@/db/schema";
 import { requirePermission } from "@/lib/authz/guard";
 import { can } from "@/lib/authz/permissions";
 import { listFactors, listRates } from "@/server/rates";
+import { getEstimatingPresets } from "@/server/settings";
+import { PresetsEditor } from "./presets-editor";
 import { SettingsTabs } from "../settings/tabs";
 import { FactorsEditor, MaterialsTable, RatesTable } from "./rates-client";
 
@@ -15,6 +17,7 @@ const TABS = [
   { key: "rates", label: "Production rates" },
   { key: "materials", label: "Materials" },
   { key: "multipliers", label: "Multipliers" },
+  { key: "rooms", label: "Room presets" },
 ];
 
 export default async function RatesPage({ searchParams }: { searchParams: Promise<{ tab?: string; archived?: string }> }) {
@@ -27,9 +30,9 @@ export default async function RatesPage({ searchParams }: { searchParams: Promis
     <>
       <PageHeader title="Settings" description="Rates: changes create a new version. Existing estimates keep the rates they were built with." />
       <SettingsTabs active="rates" role={user.role} />
-      <nav className="mb-4 flex gap-1 border-b border-border">
+      <nav className="mb-4 flex gap-1 overflow-x-auto border-b border-border">
         {TABS.map((t) => (
-          <Link key={t.key} href={`/rates?tab=${t.key}`} className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${tab === t.key ? "border-brand text-brand" : "border-transparent text-muted hover:text-text"}`}>{t.label}</Link>
+          <Link key={t.key} href={`/rates?tab=${t.key}`} className={`-mb-px whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium ${tab === t.key ? "border-brand text-brand" : "border-transparent text-muted hover:text-text"}`}>{t.label}</Link>
         ))}
       </nav>
       {tab === "rates" && (
@@ -50,6 +53,13 @@ export default async function RatesPage({ searchParams }: { searchParams: Promis
       )}
       {tab === "materials" && (
         <MaterialsTable rows={mats.map((m) => ({ ...m, finish: m.finish ?? "", supplier: m.supplier ?? "", sku: m.sku ?? "", notes: m.notes ?? "", createdAt: undefined, updatedAt: m.updatedAt.toISOString() }))} canEdit={canEdit} />
+      )}
+      {tab === "rooms" && (
+        <PresetsEditor
+          initial={await getEstimatingPresets()}
+          rates={(await listRates()).map((r) => ({ code: r.rate.code, name: r.rate.name, category: r.rate.category, unit: r.rate.unit }))}
+          canEdit={canEdit}
+        />
       )}
       {tab === "multipliers" && <FactorsEditor rows={(await listFactors()).map((f) => ({ id: f.id, kind: f.kind, label: f.label, value: f.value }))} canEdit={canEdit} />}
     </>

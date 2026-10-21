@@ -5,6 +5,7 @@ import { z } from "zod";
 import { safeErrorMessage } from "@/lib/action-error";
 import { ESTIMATE_STATUSES } from "@/db/schema";
 import { assertPermission } from "@/lib/authz/guard";
+import { searchCustomers } from "@/server/search";
 import {
   createEstimate,
   createRevision,
@@ -24,20 +25,29 @@ function err(e: unknown): { ok: false; error: string } {
   return { ok: false, error: safeErrorMessage(e) };
 }
 
+const optionalId = z.preprocess((v) => (v === "" || v == null ? null : v), uuid.nullable());
+const newEstimateSchema = z.object({
+  customerId: optionalId,
+  opportunityId: optionalId,
+  propertyId: optionalId,
+  templateId: optionalId,
+  title: z.string().trim().max(200).default(""),
+  jobType: z.string().trim().max(40).default("interior"),
+});
+
 export async function createEstimateAction(_: unknown, f: FormData): Promise<Result> {
   let id: string;
   try {
     const user = await assertPermission("estimates.write");
-    const row = await createEstimate(
-      {
-        customerId: (f.get("customerId") as string) || null,
-        opportunityId: (f.get("opportunityId") as string) || null,
-        propertyId: (f.get("propertyId") as string) || null,
-        title: String(f.get("title") ?? ""),
-        jobType: String(f.get("jobType") ?? "interior"),
-      },
-      user.id,
-    );
+    const input = newEstimateSchema.parse({
+      customerId: f.get("customerId"),
+      opportunityId: f.get("opportunityId"),
+      propertyId: f.get("propertyId"),
+      templateId: f.get("templateId"),
+      title: f.get("title") ?? undefined,
+      jobType: f.get("jobType") ?? undefined,
+    });
+    const row = await createEstimate(input, user.id);
     id = row.id;
   } catch (e) {
     return err(e);
@@ -176,4 +186,11 @@ export async function sendFollowUpAction(proposalId: string, input: unknown): Pr
   } catch (e) {
     return err(e);
   }
+}
+
+/** Customer search for "New estimate". */
+export async function findCustomersAction(query: string): Promise<{ id: string; name: string; detail: string }[]> {
+  await assertPermission("estimates.write");
+  await assertPermission("customers.read");
+  return searchCustomers(z.string().max(100).parse(query));
 }

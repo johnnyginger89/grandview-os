@@ -64,6 +64,8 @@ export interface RateSnapshot {
   category?: string | null;
   customerLabel?: string | null;
   proposalGroup?: string | null;
+  /** Display only: the paint was picked by hand on the estimate. */
+  materialOverridden?: boolean;
 }
 
 export interface LineMultipliers {

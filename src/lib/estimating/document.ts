@@ -45,6 +45,8 @@ export const rateSnapshotSchema = z.object({
   category: z.string().max(60).nullable().optional(),
   customerLabel: z.string().max(200).nullable().optional(),
   proposalGroup: z.string().max(60).nullable().optional(),
+  /** The estimator picked this paint by hand; "Use current rate" keeps it. */
+  materialOverridden: z.boolean().optional(),
 });
 
 export const docSettingsSchema = z.object({

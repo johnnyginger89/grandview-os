@@ -46,21 +46,48 @@ export async function draftThreeThousandDollarEstimate(page: Page, opts: DraftOp
   await page.getByLabel("Street address").fill("1 Example St");
   await page.getByRole("button", { name: "Create customer" }).click();
   await page.getByRole("link", { name: "New estimate" }).click();
-  await page.getByLabel("Job title").fill("Interior repaint");
-  await page.getByRole("button", { name: "Create and start estimating" }).click();
-  await page.getByRole("button", { name: "Living room" }).click();
-  await page.getByLabel("Add item").first().selectOption({ label: "Walls – roll & cut" });
-  if (opts.size) {
-    await page.getByLabel("Length (ft)").fill(opts.size.length);
-    await page.getByLabel("Width (ft)").fill(opts.size.width);
-  }
+  await startBlankEstimate(page);
+  await addRoom(page, "Living room", { size: opts.size ? `${opts.size.length} ${opts.size.width}` : undefined, only: ["Walls – roll & cut"] });
   await page.getByRole("button", { name: /Walls – roll & cut/ }).click();
   await page.getByLabel("Override price").fill("3000");
   if (opts.colour) await page.getByLabel("Colour", { exact: true }).fill(opts.colour);
   await page.getByRole("button", { name: /Walls – roll & cut/ }).click();
-  if (opts.internalNote) await page.getByLabel(/Internal notes/).fill(opts.internalNote);
+  if (opts.internalNote) await writeInternalNote(page, opts.internalNote);
   await expect(page.getByText("All changes saved")).toBeVisible({ timeout: 10_000 });
   return name;
+}
+
+/** On "New estimate" with the customer already chosen: start with an empty estimate. */
+export async function startBlankEstimate(page: Page) {
+  await page.getByRole("button", { name: "Start blank" }).click();
+  await expect(page).toHaveURL(/\/estimates\/[0-9a-f-]{36}/);
+}
+
+/**
+ * The editor's "New room" form: pick the name, type the size in one box ("15 12" or
+ * "15 12 8"), keep only the surfaces listed in `only` (by name), Add room.
+ */
+export async function addRoom(page: Page, name: string, opts: { size?: string; only?: string[] } = {}) {
+  const form = page.getByRole("region", { name: "New room" });
+  if (!(await form.isVisible())) await page.getByRole("button", { name: "Add room", exact: true }).click();
+  await form.getByRole("group", { name: "Room name" }).getByRole("button", { name, exact: true }).click();
+  if (opts.size) await form.getByLabel("Length in feet").fill(opts.size);
+  if (opts.only) {
+    const ticked = form.getByRole("group", { name: /Paint in this room/ }).locator('button[aria-pressed="true"]');
+    for (let i = (await ticked.count()) - 1; i >= 0; i--) {
+      const chip = ticked.nth(i);
+      const text = (await chip.innerText()).trim();
+      if (!opts.only.some((o) => text.startsWith(o))) await chip.click();
+    }
+  }
+  await form.getByRole("button", { name: "Add room", exact: true }).click();
+  await expect(form).toBeHidden();
+}
+
+export async function writeInternalNote(page: Page, note: string) {
+  const notes = page.getByLabel(/Internal notes/);
+  if (!(await notes.isVisible())) await page.getByRole("button", { name: /Proposal wording & notes/ }).click();
+  await notes.fill(note);
 }
 
 export async function kpiValue(page: Page, testId: string): Promise<number> {
