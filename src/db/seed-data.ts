@@ -202,6 +202,25 @@ export { DEFAULT_PROPOSAL_TEMPLATE, SUGGESTED_NOTES } from "./seed-proposal-temp
 
 export const MESSAGE_TEMPLATES = [
   {
+    key: "proposal",
+    name: "Sending a proposal",
+    channel: "email" as const,
+    subject: "Your painting proposal from {{company_name}}",
+    body: `Hi {{first_name}},
+
+Thanks for having us out. Your proposal for {{job_title}} is ready to review.
+
+You can view it, choose any optional upgrades and accept it online here:
+{{proposal_link}}
+
+{{valid_until}}
+If you have any questions, just reply to this email or call us at {{company_phone}}.
+
+Thanks,
+{{sender_name}}
+{{company_name}}`,
+  },
+  {
     key: "lead_booking_link",
     name: "New lead – book your estimate",
     channel: "email" as const,

@@ -15,7 +15,7 @@ import {
   setEstimateStatus,
   templateToDocParts,
 } from "@/server/estimates";
-import { sendProposal, withdrawProposal } from "@/server/proposals";
+import { acceptForCustomerSchema, acceptProposalForCustomer, sendProposal, withdrawProposal } from "@/server/proposals";
 
 type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string };
 const uuid = z.string().uuid();
@@ -116,12 +116,27 @@ export async function templatePartsAction(templateId: string) {
   return templateToDocParts(uuid.parse(templateId));
 }
 
-export async function sendProposalAction(id: string, input: { to: string; message: string; email: boolean }): Promise<Result<{ link: string; emailStatus: string; emailError?: string }>> {
+export async function sendProposalAction(id: string, input: { to: string; message: string; email: boolean; subject?: string; body?: string }): Promise<Result<{ link: string; emailStatus: string; emailError?: string }>> {
   try {
     const user = await assertPermission("estimates.write");
     const r = await sendProposal(uuid.parse(id), input, user);
     revalidatePath(`/estimates/${id}`);
     return { ok: true, link: r.link, emailStatus: r.emailStatus, emailError: r.emailError };
+  } catch (e) {
+    return err(e);
+  }
+}
+
+/** The customer said yes by phone, email, in person or on paper: accept for them and create the job. */
+export async function acceptForCustomerAction(estimateId: string, input: unknown): Promise<Result<{ projectId: string | null }>> {
+  try {
+    const user = await assertPermission("estimates.write");
+    const id = uuid.parse(estimateId);
+    const data = acceptForCustomerSchema.parse(input);
+    const r = await acceptProposalForCustomer(id, data, user);
+    revalidatePath(`/estimates/${id}`);
+    revalidatePath("/projects");
+    return { ok: true, projectId: r.projectId };
   } catch (e) {
     return err(e);
   }

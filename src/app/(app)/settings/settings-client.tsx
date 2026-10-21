@@ -113,7 +113,10 @@ function ListEditor({ k, title, items }: { k: "lead_sources" | "lost_reasons" | 
 export function TemplatesForm({ templates }: { templates: { id: string; name: string; subject: string; body: string }[] }) {
   return (
     <div className="max-w-3xl space-y-4">
-      <p className="text-sm text-muted">Placeholders: {"{{first_name}} {{project_types}} {{booking_url}} {{company_phone}} {{sender_name}}"}</p>
+      <p className="text-sm text-muted">
+        Words in double braces are filled in for you when the email is written: {"{{first_name}} {{customer_name}} {{sender_name}} {{company_name}} {{company_phone}}"}, plus{" "}
+        {"{{project_types}} {{booking_url}}"} for leads and {"{{job_title}} {{proposal_link}} {{valid_until}}"} for proposals.
+      </p>
       {templates.map((t) => <TemplateEditor key={t.id} t={t} />)}
     </div>
   );

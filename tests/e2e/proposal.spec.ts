@@ -36,7 +36,8 @@ test.describe("proposal", () => {
     // Send (link only; email isn't configured in tests)
     await page.getByRole("button", { name: "Send proposal" }).click();
     await page.getByText("Email it to the customer").click();
-    await page.getByLabel("Personal message (optional)").fill("Great meeting you – here's your quote.");
+    await page.getByRole("button", { name: "+ Add a note on the proposal page" }).click();
+    await page.getByLabel("Note at the top of the proposal page (optional)").fill("Great meeting you – here's your quote.");
     await page.getByRole("button", { name: "Create link" }).click();
     const link = await page.getByLabel("Proposal link").inputValue();
     expect(link).toMatch(/\/share\/p\/[A-Za-z0-9_-]{20,}/);

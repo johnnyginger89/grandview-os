@@ -5,25 +5,7 @@ import { expect, type Browser, type Page } from "@playwright/test";
  * Optionally gives the walls a colour and the estimate an internal note (to check crew views never show it).
  */
 export async function sellThreeThousandDollarJob(page: Page, browser: Browser, opts: { colour?: string; internalNote?: string } = {}) {
-  const stamp = Date.now();
-  const name = `Sale Test ${stamp} [TEST DATA]`;
-  await page.goto("/customers/new");
-  await page.getByLabel("Customer name").fill(name);
-  await page.getByLabel("Email").fill(`sale-${stamp}@example.com`);
-  await page.getByLabel("Street address").fill("1 Example St");
-  await page.getByRole("button", { name: "Create customer" }).click();
-  await page.getByRole("link", { name: "New estimate" }).click();
-  await page.getByLabel("Job title").fill("Interior repaint");
-  await page.getByRole("button", { name: "Create and start estimating" }).click();
-  await page.getByRole("button", { name: "Living room" }).click();
-  await page.getByLabel("Add item").first().selectOption({ label: "Walls – roll & cut" });
-  await page.getByRole("button", { name: /Walls – roll & cut/ }).click();
-  await page.getByLabel("Override price").fill("3000");
-  if (opts.colour) await page.getByLabel("Colour", { exact: true }).fill(opts.colour);
-  await page.getByRole("button", { name: /Walls – roll & cut/ }).click();
-  if (opts.internalNote) await page.getByLabel(/Internal notes/).fill(opts.internalNote);
-  await expect(page.getByText("All changes saved")).toBeVisible({ timeout: 10_000 });
-
+  const name = await draftThreeThousandDollarEstimate(page, opts);
   await page.getByRole("button", { name: "Send proposal" }).click();
   await page.getByText("Email it to the customer").click();
   await page.getByRole("button", { name: "Create link" }).click();
@@ -44,6 +26,29 @@ export async function sellThreeThousandDollarJob(page: Page, browser: Browser, o
   await cp.getByRole("button", { name: /^Accept – \$/ }).click();
   await expect(cp.getByText("Accepted – thank you!").first()).toBeVisible();
   await customer.close();
+  return name;
+}
+
+/** Creates a customer and a $3,000 (pre-GST) estimate and leaves the browser on the estimate. Returns the customer name. */
+export async function draftThreeThousandDollarEstimate(page: Page, opts: { colour?: string; internalNote?: string } = {}) {
+  const stamp = Date.now();
+  const name = `Sale Test ${stamp} [TEST DATA]`;
+  await page.goto("/customers/new");
+  await page.getByLabel("Customer name").fill(name);
+  await page.getByLabel("Email").fill(`sale-${stamp}@example.com`);
+  await page.getByLabel("Street address").fill("1 Example St");
+  await page.getByRole("button", { name: "Create customer" }).click();
+  await page.getByRole("link", { name: "New estimate" }).click();
+  await page.getByLabel("Job title").fill("Interior repaint");
+  await page.getByRole("button", { name: "Create and start estimating" }).click();
+  await page.getByRole("button", { name: "Living room" }).click();
+  await page.getByLabel("Add item").first().selectOption({ label: "Walls – roll & cut" });
+  await page.getByRole("button", { name: /Walls – roll & cut/ }).click();
+  await page.getByLabel("Override price").fill("3000");
+  if (opts.colour) await page.getByLabel("Colour", { exact: true }).fill(opts.colour);
+  await page.getByRole("button", { name: /Walls – roll & cut/ }).click();
+  if (opts.internalNote) await page.getByLabel(/Internal notes/).fill(opts.internalNote);
+  await expect(page.getByText("All changes saved")).toBeVisible({ timeout: 10_000 });
   return name;
 }
 

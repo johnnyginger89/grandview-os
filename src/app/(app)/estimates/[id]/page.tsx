@@ -7,8 +7,10 @@ import { requirePermission } from "@/lib/authz/guard";
 import { can } from "@/lib/authz/permissions";
 import { formatAddress } from "@/lib/utils";
 import { listRevisions, listTemplates, loadEstimate } from "@/server/estimates";
-import { listProposals, proposalUrl } from "@/server/proposals";
-import { ProposalsPanel } from "./proposals-panel";
+import { listProposals, proposalEmailDraft, proposalUrl } from "@/server/proposals";
+import { calculateDoc } from "@/lib/estimating/document";
+import { formatCAD } from "@/lib/money";
+import { ProposalsPanel, type ProposalOption } from "./proposals-panel";
 import { listFactors, listRates, toSnapshot } from "@/server/rates";
 import { getPricing, getProposalTemplate } from "@/server/settings";
 import { resolveJobType } from "@/lib/proposal-template/resolve";
@@ -27,7 +29,7 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
   if (!loaded) notFound();
   const { estimate, doc } = loaded;
 
-  const [customer, property, rates, factors, templates, revisions, pricing, proposalRows, contact, project, template] = await Promise.all([
+  const [customer, property, rates, factors, templates, revisions, pricing, proposalRows, contact, project, template, emailDraft] = await Promise.all([
     db.query.customers.findFirst({ where: eq(customers.id, estimate.customerId) }),
     estimate.propertyId ? db.query.properties.findFirst({ where: eq(properties.id, estimate.propertyId) }) : null,
     listRates(),
@@ -39,7 +41,16 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
     db.query.contacts.findFirst({ where: and(eq(contacts.customerId, estimate.customerId), eq(contacts.isPrimary, true)) }),
     db.query.projects.findFirst({ where: eq(projects.estimateId, id), columns: { id: true, number: true } }),
     getProposalTemplate(),
+    proposalEmailDraft(id, user),
   ]);
+  // Optional upgrades and their prices, for "Mark as accepted".
+  const calc = calculateDoc(doc);
+  const priceOf = new Map<string, string>([...calc.lines.map((l) => [l.id, formatCAD(l.price)] as const), ...calc.costItems.map((c) => [c.id, formatCAD(c.price)] as const)]);
+  const areaName = new Map(doc.areas.map((a) => [a.id, a.name]));
+  const options: ProposalOption[] = [
+    ...doc.lines.filter((l) => l.isOptional).map((l) => ({ id: l.id, title: [l.areaId ? areaName.get(l.areaId) : null, l.customerDescription || l.rateSnapshot.customerLabel || l.description || l.rateSnapshot.name].filter(Boolean).join(" – "), price: priceOf.get(l.id) ?? "" })),
+    ...doc.costItems.filter((c) => c.isOptional).map((c) => ({ id: c.id, title: c.customerDescription || c.description, price: priceOf.get(c.id) ?? "" })),
+  ];
   const proposalText = Object.fromEntries(
     JOB_TYPE_KEYS.map((k) => {
       const r = resolveJobType(template, k);
@@ -81,10 +92,13 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
           estimateId={id}
           canSend={can(user.role, "estimates.write") && estimate.status !== "accepted"}
           defaultEmail={contact?.email ?? customer?.email ?? ""}
+          emailDraft={emailDraft ?? { subject: "", body: "" }}
+          acceptName={(contact ? [contact.firstName, contact.lastName].filter(Boolean).join(" ") : "") || customer?.displayName || ""}
+          options={options}
           rows={proposalRows.map((p) => ({
             id: p.id, revision: p.revision, status: p.status, link: proposalUrl(p.token), sentTo: p.sentTo, sentAt: p.sentAt.toISOString(),
             firstViewedAt: p.firstViewedAt?.toISOString() ?? null, viewCount: p.viewCount, acceptedAt: p.acceptedAt?.toISOString() ?? null,
-            acceptedName: p.acceptedName, declineReason: p.declineReason,
+            acceptedName: p.acceptedName, acceptedMethod: p.acceptedMethod, declineReason: p.declineReason,
           }))}
         />
         {project && (

@@ -8,6 +8,8 @@ const money = (name: string) => numeric(name, { precision: 14, scale: 2 });
 
 export const PROPOSAL_STATUSES = ["sent", "viewed", "accepted", "declined", "superseded", "withdrawn"] as const;
 export type ProposalStatus = (typeof PROPOSAL_STATUSES)[number];
+export const PROPOSAL_ACCEPT_METHODS = ["online", "phone", "email", "in_person", "paper"] as const;
+export type ProposalAcceptMethod = (typeof PROPOSAL_ACCEPT_METHODS)[number];
 
 /** What the customer received and signed. Immutable once accepted. */
 export const proposals = pgTable(
@@ -42,6 +44,10 @@ export const proposals = pgTable(
     acceptedMessage: text("accepted_message"),
     /** Insurance documents current when the customer signed. */
     acceptedDocumentIds: uuid("accepted_document_ids").array(),
+    /** Set when the office marked it accepted for the customer (null = signed online). */
+    acceptedBy: text("accepted_by").references(() => user.id, { onDelete: "set null" }),
+    /** How it was accepted: online (e-signature), phone, email, in_person or paper. */
+    acceptedMethod: text("accepted_method").$type<ProposalAcceptMethod>(),
     declinedAt: ts("declined_at"),
     declineReason: text("decline_reason"),
   },

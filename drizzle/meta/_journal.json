@@ -57,6 +57,13 @@
       "when": 1792548341869,
       "tag": "0007_schedule_work_orders",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792615406932,
+      "tag": "0008_accept_notifications",
+      "breakpoints": true
     }
   ]
 }

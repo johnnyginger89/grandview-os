@@ -1,9 +1,11 @@
 "use client";
 import { useState, useTransition } from "react";
-import { Copy, ExternalLink, Send } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { CircleCheck, Copy, ExternalLink, Send } from "lucide-react";
+import { Dialog } from "@/components/dialog";
 import { Badge, Button, Card, CardHeader, Field, FormError, Input, Textarea, type Tone } from "@/components/ui";
 import { formatDateTime } from "@/lib/utils";
-import { sendProposalAction, withdrawProposalAction } from "../actions";
+import { acceptForCustomerAction, sendProposalAction, withdrawProposalAction } from "../actions";
 
 export interface ProposalRow {
   id: string;
@@ -16,15 +18,139 @@ export interface ProposalRow {
   viewCount: number;
   acceptedAt: string | null;
   acceptedName: string | null;
+  /** online, phone, email, in_person or paper. */
+  acceptedMethod: string | null;
   declineReason: string | null;
 }
 
-const TONE: Record<string, Tone> = { sent: "info", viewed: "brand", accepted: "success", declined: "danger", superseded: "neutral", withdrawn: "neutral" };
+export interface ProposalOption {
+  id: string;
+  title: string;
+  /** Formatted, before GST. */
+  price: string;
+}
 
-export function ProposalsPanel({ estimateId, rows, defaultEmail, canSend }: { estimateId: string; rows: ProposalRow[]; defaultEmail: string; canSend: boolean }) {
+const TONE: Record<string, Tone> = { sent: "info", viewed: "brand", accepted: "success", declined: "danger", superseded: "neutral", withdrawn: "neutral" };
+const LINK_TOKEN = "[Proposal link]";
+const METHODS = [
+  { value: "phone", label: "By phone" },
+  { value: "email", label: "By email" },
+  { value: "in_person", label: "In person" },
+  { value: "paper", label: "Signed a paper copy" },
+] as const;
+const METHOD_PHRASE: Record<string, string> = { phone: "by phone", email: "by email", in_person: "in person", paper: "on paper" };
+
+function acceptedText(p: ProposalRow) {
+  if (!p.acceptedAt) return null;
+  return p.acceptedMethod && p.acceptedMethod !== "online"
+    ? `Accepted ${METHOD_PHRASE[p.acceptedMethod] ?? ""} by ${p.acceptedName} on ${formatDateTime(p.acceptedAt)}`
+    : `Signed by ${p.acceptedName} on ${formatDateTime(p.acceptedAt)}`;
+}
+
+function AcceptDialog({ estimateId, defaultName, options, onClose }: { estimateId: string; defaultName: string; options: ProposalOption[]; onClose: () => void }) {
+  const router = useRouter();
+  const [name, setName] = useState(defaultName);
+  const [method, setMethod] = useState<(typeof METHODS)[number]["value"] | "">("");
+  const [chosen, setChosen] = useState<string[]>([]);
+  const [note, setNote] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+
+  const submit = () =>
+    start(async () => {
+      setError(null);
+      if (!method) return setError("Choose how they accepted.");
+      const r = await acceptForCustomerAction(estimateId, { name, method, selectedOptionIds: chosen, note: note || undefined });
+      if (!r.ok) return setError(r.error);
+      router.push(r.projectId ? `/projects/${r.projectId}` : `/estimates/${estimateId}`);
+    });
+
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title="Mark as accepted"
+      description="For when the customer said yes by phone, email, in person or on paper. The job is created right away and this estimate is locked, just like an online signature."
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose} disabled={pending}>Cancel</Button>
+          <Button onClick={submit} disabled={pending}>
+            <CircleCheck className="size-4" aria-hidden /> {pending ? "Saving…" : "Mark as accepted"}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <Field label="Who accepted it?">
+          <Input value={name} maxLength={120} onChange={(e) => setName(e.target.value)} data-autofocus />
+        </Field>
+        <fieldset>
+          <legend className="mb-1.5 text-sm font-medium">How did they accept?</legend>
+          <div className="grid grid-cols-2 gap-2">
+            {METHODS.map((m) => (
+              <label key={m.value} className="flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border border-border-strong px-3 text-sm has-[:checked]:border-brand has-[:checked]:bg-brand-soft">
+                <input type="radio" name="accept-method" value={m.value} checked={method === m.value} onChange={() => setMethod(m.value)} className="size-4" />
+                {m.label}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+        {options.length > 0 && (
+          <fieldset>
+            <legend className="mb-1.5 text-sm font-medium">Optional upgrades they chose</legend>
+            <ul className="divide-y divide-border rounded-lg border border-border">
+              {options.map((o) => (
+                <li key={o.id}>
+                  <label className="flex min-h-11 cursor-pointer items-center gap-3 px-3 py-2 text-sm">
+                    <input
+                      type="checkbox"
+                      className="size-4"
+                      checked={chosen.includes(o.id)}
+                      onChange={(e) => setChosen((c) => (e.target.checked ? [...c, o.id] : c.filter((x) => x !== o.id)))}
+                    />
+                    <span className="flex-1">{o.title}</span>
+                    <span className="tabular-nums text-muted">+{o.price}</span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+          </fieldset>
+        )}
+        <Field label="Note (optional)" hint="e.g. Accepted on the phone with Malcolm; wants to start after the 15th.">
+          <Textarea rows={2} maxLength={1000} value={note} onChange={(e) => setNote(e.target.value)} />
+        </Field>
+        <p className="text-xs text-muted">The estimate is accepted exactly as it is now. If you changed it after sending, the customer is held to this version.</p>
+        <FormError message={error} />
+      </div>
+    </Dialog>
+  );
+}
+
+export function ProposalsPanel({
+  estimateId,
+  rows,
+  defaultEmail,
+  emailDraft,
+  acceptName,
+  options,
+  canSend,
+}: {
+  estimateId: string;
+  rows: ProposalRow[];
+  defaultEmail: string;
+  /** From the "Sending a proposal" template, with this customer's details filled in. */
+  emailDraft: { subject: string; body: string };
+  acceptName: string;
+  options: ProposalOption[];
+  canSend: boolean;
+}) {
   const [open, setOpen] = useState(false);
+  const [accepting, setAccepting] = useState(false);
   const [to, setTo] = useState(defaultEmail);
-  const [message, setMessage] = useState("");
+  const [subject, setSubject] = useState(emailDraft.subject);
+  const [body, setBody] = useState(emailDraft.body);
+  const [note, setNote] = useState("");
+  const [showNote, setShowNote] = useState(false);
   const [email, setEmail] = useState(true);
   const [result, setResult] = useState<{ link: string; note: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -42,8 +168,21 @@ export function ProposalsPanel({ estimateId, rows, defaultEmail, canSend }: { es
       <CardHeader
         title="Customer proposal"
         description="A branded page your customer can review, pick upgrades on, and sign."
-        action={canSend && !open && <Button size="sm" onClick={() => { setOpen(true); setResult(null); }}><Send className="size-3.5" /> Send proposal</Button>}
+        action={
+          canSend &&
+          !open && (
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button size="sm" variant="secondary" onClick={() => setAccepting(true)}>
+                <CircleCheck className="size-3.5" aria-hidden /> Mark as accepted
+              </Button>
+              <Button size="sm" onClick={() => { setOpen(true); setResult(null); }}>
+                <Send className="size-3.5" aria-hidden /> Send proposal
+              </Button>
+            </div>
+          )
+        }
       />
+      {accepting && <AcceptDialog estimateId={estimateId} defaultName={acceptName} options={options} onClose={() => setAccepting(false)} />}
       {open && (
         <div className="space-y-3 border-b border-border p-4">
           {result ? (
@@ -58,17 +197,29 @@ export function ProposalsPanel({ estimateId, rows, defaultEmail, canSend }: { es
           ) : (
             <>
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={email} onChange={(e) => setEmail(e.target.checked)} /> Email it to the customer</label>
-              {email && <Field label="Customer email"><Input type="email" value={to} onChange={(e) => setTo(e.target.value)} /></Field>}
-              <Field label="Personal message (optional)" hint="Shown at the top of the proposal and in the email."><Textarea rows={3} value={message} onChange={(e) => setMessage(e.target.value)} /></Field>
+              {email && (
+                <>
+                  <Field label="Customer email"><Input type="email" value={to} onChange={(e) => setTo(e.target.value)} /></Field>
+                  <Field label="Subject"><Input value={subject} maxLength={200} onChange={(e) => setSubject(e.target.value)} /></Field>
+                  <Field label="Email" hint={`Written from your "Sending a proposal" template (Settings → Email templates). ${LINK_TOKEN} becomes the link to the proposal.`}>
+                    <Textarea rows={11} value={body} maxLength={10_000} onChange={(e) => setBody(e.target.value)} />
+                  </Field>
+                </>
+              )}
+              {showNote ? (
+                <Field label="Note at the top of the proposal page (optional)"><Textarea rows={3} value={note} maxLength={2000} onChange={(e) => setNote(e.target.value)} /></Field>
+              ) : (
+                <button type="button" className="text-sm text-brand hover:underline" onClick={() => setShowNote(true)}>+ Add a note on the proposal page</button>
+              )}
               <p className="text-xs text-muted">Sending freezes this version of the estimate as a revision. You can keep editing; a newer proposal replaces this one.</p>
               <FormError message={error} />
               <div className="flex gap-2">
                 <Button disabled={pending} onClick={() => start(async () => {
                   setError(null);
-                  const r = await sendProposalAction(estimateId, { to, message, email });
+                  const r = await sendProposalAction(estimateId, { to, message: note, email, subject, body });
                   if (!r.ok) return setError(r.error);
-                  const note = r.emailStatus === "sent" ? `Emailed to ${to}.` : r.emailStatus === "failed" ? `Proposal created, but the email couldn't be sent (${r.emailError ?? "email not set up"}). Copy the link and send it yourself.` : r.emailStatus === "logged" ? "Proposal created. Email delivery isn't set up in this environment – copy the link below." : "Proposal created. Copy the link and send it to your customer.";
-                  setResult({ link: r.link, note });
+                  const sent = r.emailStatus === "sent" ? `Emailed to ${to}.` : r.emailStatus === "failed" ? `Proposal created, but the email couldn't be sent (${r.emailError ?? "email not set up"}). Copy the link and send it yourself.` : r.emailStatus === "logged" ? "Proposal created. Email sending isn't switched on yet – copy the link below." : "Proposal created. Copy the link and send it to your customer.";
+                  setResult({ link: r.link, note: sent });
                 })}>{pending ? "Sending…" : email ? "Send proposal" : "Create link"}</Button>
                 <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
               </div>
@@ -84,10 +235,10 @@ export function ProposalsPanel({ estimateId, rows, defaultEmail, canSend }: { es
             <li key={p.id} className="space-y-1 px-4 py-3">
               <div className="flex flex-wrap items-center gap-2">
                 <Badge tone={TONE[p.status]}>{p.status}</Badge>
-                <span className="text-muted">Rev {p.revision} · sent {formatDateTime(p.sentAt)}{p.sentTo ? ` to ${p.sentTo}` : ""}</span>
+                <span className="text-muted">Rev {p.revision} · {p.sentTo ? `sent ${formatDateTime(p.sentAt)} to ${p.sentTo}` : `created ${formatDateTime(p.sentAt)}`}</span>
               </div>
               <p className="text-xs text-muted">
-                {p.acceptedAt ? `Signed by ${p.acceptedName} on ${formatDateTime(p.acceptedAt)}` : p.firstViewedAt ? `Opened ${p.viewCount}× · first ${formatDateTime(p.firstViewedAt)}` : "Not opened yet"}
+                {acceptedText(p) ?? (p.firstViewedAt ? `Opened ${p.viewCount}× · first ${formatDateTime(p.firstViewedAt)}` : "Not opened yet")}
                 {p.declineReason ? ` · Declined: "${p.declineReason}"` : ""}
               </p>
               <div className="flex flex-wrap gap-3 text-xs">
