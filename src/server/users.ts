@@ -5,6 +5,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { ROLES, session, user } from "@/db/schema";
 import { auth } from "@/lib/auth";
+import { canManageAccount } from "@/lib/authz/permissions";
 import { audit } from "./audit";
 
 export async function listUsers() {
@@ -21,7 +22,7 @@ export const newUserSchema = z.object({
 /** Create an account with a one-time temporary password the admin passes on securely. */
 export async function createUserAccount(input: z.input<typeof newUserSchema>, actorId: string, actorRole: string) {
   const v = newUserSchema.parse(input);
-  if (v.role === "owner" && actorRole !== "owner") throw new Error("Only the owner can create another owner account.");
+  if (!canManageAccount(actorRole, v.role)) throw new Error("Only the owner can create accounts that can see company financials (Owner, Operations Manager).");
   const existing = await db.query.user.findFirst({ where: eq(user.email, v.email) });
   if (existing) throw new Error("A user with that email already exists.");
   const ctx = await auth.$context;
@@ -36,8 +37,10 @@ export async function updateUserAccess(userId: string, patch: { role?: string; a
   const target = await db.query.user.findFirst({ where: eq(user.id, userId) });
   if (!target) throw new Error("User not found");
   if (userId === actorId) throw new Error("You can't change your own role or deactivate yourself.");
-  if ((target.role === "owner" || patch.role === "owner") && actorRole !== "owner") throw new Error("Only the owner can change owner accounts.");
   const role = patch.role ? z.enum(ROLES).parse(patch.role) : undefined;
+  if (!canManageAccount(actorRole, target.role) || (role && !canManageAccount(actorRole, role))) {
+    throw new Error("Only the owner can change accounts that can see company financials (Owner, Operations Manager).");
+  }
   await db.update(user).set({ ...(role ? { role } : {}), ...(patch.active !== undefined ? { active: patch.active } : {}), updatedAt: new Date() }).where(eq(user.id, userId));
   // Revoke sessions so changes take effect immediately.
   await db.delete(session).where(eq(session.userId, userId));

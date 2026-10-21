@@ -84,7 +84,7 @@ export async function addNoteAction(opportunityId: string, body: string, type: "
   try {
     const user = await assertPermission("pipeline.write");
     const text = z.string().trim().min(1).max(5000).parse(body);
-    await addNote(z.string().uuid().parse(opportunityId), text, user.id, type);
+    await addNote(z.string().uuid().parse(opportunityId), text, user.id, z.enum(["note", "call"]).parse(type));
     revalidatePath(`/leads/${opportunityId}`);
     return { ok: true };
   } catch (e) {

@@ -3,7 +3,7 @@ import { submitWith } from "@/components/submit";
 import { useActionState, useRef, useState, useTransition } from "react";
 import { Badge, Button, Card, CardHeader, Field, FormError, Input, Select, Table, Textarea, td, th } from "@/components/ui";
 import { ROLES } from "@/db/schema/auth";
-import { ROLE_LABELS } from "@/lib/authz/permissions";
+import { can, ROLE_LABELS } from "@/lib/authz/permissions";
 import { createUserAction, saveCompanyAction, saveListAction, savePricingAction, saveTemplateAction, updateUserAction } from "./actions";
 
 function Saved({ state }: { state: { ok: boolean; error?: string } | null }) {
@@ -139,7 +139,8 @@ export function UsersPanel({ users, meId, isOwner }: { users: { id: string; name
   const [state, action, pending] = useActionState(createUserAction, null);
   const [rowError, setRowError] = useState<string | null>(null);
   const [busy, start] = useTransition();
-  const roles = ROLES.filter((r) => isOwner || r !== "owner");
+  // Only the owner can hand out roles that see company financials.
+  const roles = ROLES.filter((r) => isOwner || !can(r, "financials.read"));
   return (
     <div className="space-y-4">
       <Card>

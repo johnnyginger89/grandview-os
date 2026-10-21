@@ -104,3 +104,12 @@ export function can(role: Role | string | null | undefined, permission: Permissi
 export function isFieldRole(role: Role | string | null | undefined): boolean {
   return role === "crew_leader" || role === "painter" || role === "subcontractor";
 }
+
+/**
+ * Accounts that can see company financials (owner, operations manager) may only be
+ * created, changed or deactivated by the owner, so an administrator can't give
+ * themselves money access through a second login.
+ */
+export function canManageAccount(actorRole: Role | string | null | undefined, targetRole: Role | string | null | undefined): boolean {
+  return actorRole === "owner" || !can(targetRole, "financials.read");
+}

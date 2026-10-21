@@ -75,8 +75,10 @@ export async function savePricingAction(_: unknown, f: FormData): Promise<Result
 export async function saveListAction(key: "lead_sources" | "lost_reasons" | "project_types", text: string): Promise<Result> {
   try {
     const user = await assertPermission("settings.manage");
-    const items = [...new Set(text.split("\n").map((s) => s.trim()).filter(Boolean))].slice(0, 100);
-    await setSetting(key, items, user.id);
+    // Server actions can be called directly, so the key is checked at runtime too.
+    const k = z.enum(["lead_sources", "lost_reasons", "project_types"]).parse(key);
+    const items = [...new Set(z.string().max(20_000).parse(text).split("\n").map((s) => s.trim().slice(0, 100)).filter(Boolean))].slice(0, 100);
+    await setSetting(k, items, user.id);
     revalidatePath("/settings");
     return { ok: true };
   } catch (e) {
@@ -111,7 +113,8 @@ export async function createUserAction(_: unknown, f: FormData): Promise<Result<
 export async function updateUserAction(userId: string, patch: { role?: string; active?: boolean }): Promise<Result> {
   try {
     const me = await assertPermission("users.manage");
-    await updateUserAccess(userId, patch, me.id, me.role);
+    const v = z.object({ role: z.string().max(40).optional(), active: z.boolean().optional() }).strict().parse(patch);
+    await updateUserAccess(z.string().min(1).max(100).parse(userId), v, me.id, me.role);
     revalidatePath("/settings");
     return { ok: true };
   } catch (e) {
