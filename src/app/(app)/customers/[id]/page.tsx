@@ -50,8 +50,23 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
         </div>
       )}
 
+      {customer.tags.length > 0 && <p className="mb-4 flex flex-wrap gap-1.5">{customer.tags.map((t) => <Badge key={t}>{t}</Badge>)}</p>}
+
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="space-y-4">
+          {Object.keys(customer.customFields ?? {}).length > 0 && (
+            <Card>
+              <CardHeader title="Extra details" description={customer.importSource ? `Kept from the ${customer.importSource === "markate" ? "Markate" : customer.importSource} import` : undefined} />
+              <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 px-4 py-3 text-sm">
+                {Object.entries(customer.customFields).map(([k, v]) => (
+                  <div key={k} className="contents">
+                    <dt className="text-muted">{k}</dt>
+                    <dd className="break-words">{v}</dd>
+                  </div>
+                ))}
+              </dl>
+            </Card>
+          )}
           <Card>
             <CardHeader title="Contacts" />
             <ul className="divide-y divide-border text-sm">

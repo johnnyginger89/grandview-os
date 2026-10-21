@@ -64,7 +64,8 @@ Status key: ✅ done and tested · 🟡 partly done · ⬜ not started
 ### Phase 6 – advanced
 - ⬜ Change orders · ⬜ invoices (deposit/progress/final) + QBO sync · ⬜ reporting dashboard
 - ⬜ Automations (follow-up reminders, tasks) · ⬜ purchasing · ⬜ project messaging and photos
-- ⬜ Imports: monday.com Deals/Contacts, PaintScout rates and customers (API or CSV), QBO customers – with preview, dedupe and rollback
+- ✅ Import: Markate customer export (CSV) → Settings → Import, with column matching, preview, duplicate matching by email/phone (fills in missing details only), several addresses/contacts per customer, extra columns kept as customer details, and one-click undo
+- ⬜ Imports: monday.com Deals/Contacts, PaintScout rates and customers (API or CSV), QBO customers – same preview/undo pipeline
 
 ### Deployment readiness (owner approved Vercel Pro + Supabase, Oct 2026)
 - ✅ vercel.json: Montréal region (yul1), only `main` deploys, build runs migrations + baseline seed (production builds only)

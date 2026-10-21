@@ -8,6 +8,7 @@ const TABS = [
   { key: "templates", label: "Email templates", href: "/settings?tab=templates" },
   { key: "users", label: "Users", href: "/settings?tab=users" },
   { key: "integrations", label: "Integrations", href: "/settings?tab=integrations" },
+  { key: "import", label: "Import", href: "/settings/import" },
 ];
 
 export function SettingsTabs({ active, showUsers }: { active: string; showUsers: boolean }) {
