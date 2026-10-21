@@ -3,7 +3,7 @@ import { ArrowDown, ArrowUp, Check, Copy, Plus, Trash2 } from "lucide-react";
 import { useId, useMemo, useState, useSyncExternalStore, useTransition, type FormEvent } from "react";
 import { Dialog } from "@/components/dialog";
 import { Badge, Button, buttonClass, Card, CardHeader, Field, FormError, Input, Select, Textarea, type Tone } from "@/components/ui";
-import { formatDate, formatDateTime } from "@/lib/utils";
+import { cn, formatDate, formatDateTime } from "@/lib/utils";
 import { daysLeft } from "@/lib/work-orders/links";
 import { LINK_DAY_CHOICES, MAX_CHECKLIST_ITEMS, MAX_CHECKLIST_TEXT, MAX_LINK_DAYS } from "@/lib/work-orders/schemas";
 import { SECTION_LABEL, STATUS_LABEL, type NewWorkOrderDefaults, type WorkOrderDTO, type WorkOrderFieldsDTO, type WorkOrderLinkDTO } from "@/lib/work-orders/types";
@@ -130,7 +130,7 @@ export function WorkOrdersPanel({
   };
 
   return (
-    <Card className={className} role="region" aria-label="Work orders">
+    <Card id="work-orders" className={cn("scroll-mt-[calc(var(--app-top)+1rem)]", className)} role="region" aria-label="Work orders">
       <CardHeader
         title="Work orders"
         description="What each crew needs on site: dates, address, scope, colours and instructions. Never prices or hours."

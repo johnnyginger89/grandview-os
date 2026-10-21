@@ -53,7 +53,7 @@ function withoutKey<T extends object, K extends keyof T>(o: T, key: K): Omit<T, 
 }
 
 /**
- * Leads & Pipeline: one set of rows shown as the board or the list. Search, filters
+ * Leads: one set of rows shown as the board or the list. Search, filters
  * and sort run in the browser and live in the URL; the view, columns, collapsed
  * groups and default sort are remembered in a cookie on this computer.
  */
@@ -233,7 +233,7 @@ export function LeadsWorkspace({
 
   return (
     <>
-      <PageHeader title="Leads & Pipeline" description={`${intro} Won and lost show ${WINDOW_TEXT[closed]}.`} actions={headerActions} />
+      <PageHeader title="Leads" description={`${intro} Won and lost show ${WINDOW_TEXT[closed]}.`} actions={headerActions} />
       <LeadsToolbar
         view={view}
         onView={changeView}
@@ -310,9 +310,9 @@ export function LeadsWorkspace({
       />
 
       <p aria-live="polite" className="sr-only">{announcement}</p>
-      <div role="status" className="pointer-events-none fixed right-4 bottom-4 z-50 md:bottom-20" data-testid="leads-toast">
+      <div role="status" className="pointer-events-none fixed right-4 bottom-[calc(var(--app-bottom)+1rem)] z-50 md:bottom-[calc(var(--app-bottom)+5rem)]" data-testid="leads-toast">
         {toast && (
-          <div key={toast.id} className="pointer-events-auto flex max-w-[calc(100vw-2rem)] items-center gap-3 rounded-lg bg-sidebar px-4 py-3 text-sm text-white shadow-lg">
+          <div key={toast.id} className="pointer-events-auto flex max-w-[calc(100vw-2rem)] items-center gap-3 rounded-lg bg-navy px-4 py-3 text-sm text-white shadow-lg">
             <span>{toast.message}</span>
             {toast.undo && (
               <button

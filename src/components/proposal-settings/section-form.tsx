@@ -52,7 +52,7 @@ export function useSectionValue<T>(section: SectionKey, initial: T, defaults: T)
 
 export function SaveBar({ dirty, pending, message, save, discard, reset }: { dirty: boolean; pending: boolean; message: { ok: boolean; text: string } | null; save: () => void; discard: () => void; reset: () => void }) {
   return (
-    <div className="sticky bottom-0 z-10 -mx-4 mt-6 flex flex-wrap items-center gap-3 border-t border-border bg-surface px-4 py-3">
+    <div className="sticky bottom-[var(--app-bottom)] z-10 -mx-4 mt-6 flex flex-wrap items-center gap-3 border-t border-border bg-surface px-4 py-3">
       <Button onClick={save} disabled={!dirty || pending}>{pending ? "Saving…" : "Save"}</Button>
       <Button variant="secondary" onClick={discard} disabled={!dirty || pending}>Discard</Button>
       {dirty && <span className="text-sm text-warning">Unsaved changes</span>}

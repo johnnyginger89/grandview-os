@@ -7,17 +7,19 @@
  * equivalent. Colours are referenced through these tokens only.
  */
 :root {
-  --bg: #f4f6f9; /* derived */
+  --bg: #f5f7fa; /* derived */
   --surface: #ffffff;
-  --surface-2: #edf0f5; /* derived */
-  --border: #dce1e9; /* derived */
-  --border-strong: #c3cad6; /* derived */
+  --surface-2: #eef1f5; /* derived */
+  --border: #e3e8ef; /* derived */
+  --border-strong: #cfd6e0; /* derived */
   --text: #2a363e;
   --text-muted: #56626c; /* derived */
   --text-subtle: #67727c; /* derived; use text-muted for small text on surface-2 */
+  --heading: #103362; /* navy: page and card titles */
+  --navy: #103362;
   --brand: #100599;
-  --brand-hover: #103362;
-  --brand-soft: #e9e8f8; /* derived */
+  --brand-hover: #0b0470; /* derived */
+  --brand-soft: #eceafb; /* derived */
   --brand-contrast: #ffffff;
   --danger: #b4232c;
   --danger-soft: #fbeaeb;
@@ -27,11 +29,14 @@
   --success-soft: #e4f3e9;
   --info: #00728c; /* darker teal so small text passes AA */
   --info-soft: #e0f3f7;
-  --sidebar: #103362;
-  --sidebar-text: #c3cede; /* derived */
-  --sidebar-active: #2a5490; /* derived; #100599 would be invisible on navy */
+  /* Light menu: white panel, navy-grey text, the active item tinted logo blue. */
+  --sidebar: #ffffff;
+  --sidebar-text: #3d4654; /* derived */
+  --sidebar-active: var(--brand-soft);
   --accent: #009abb;
   --ring: #009abb;
+  --elevation-card: 0 1px 2px rgb(16 51 98 / 0.06);
+  --elevation-pop: 0 12px 32px -8px rgb(16 51 98 / 0.22), 0 2px 6px rgb(16 51 98 / 0.08);
 }
 
 @theme inline {
@@ -41,6 +46,8 @@
   --color-border: var(--border);
   --color-border-strong: var(--border-strong);
   --color-text: var(--text);
+  --color-heading: var(--heading);
+  --color-navy: var(--navy);
   --color-muted: var(--text-muted);
   --color-subtle: var(--text-subtle);
   --color-brand: var(--brand);
@@ -60,6 +67,8 @@
   --color-sidebar-active: var(--sidebar-active);
   --color-ring: var(--ring);
   --color-accent: var(--accent);
+  --shadow-card: var(--elevation-card);
+  --shadow-pop: var(--elevation-pop);
   --font-sans: var(--font-roboto), "Helvetica Neue", Helvetica, Arial, sans-serif;
   --font-display: var(--font-roboto-condensed), "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -97,6 +106,15 @@ input[type="number"] {
   h1 {
     font-family: var(--font-display);
   }
+}
+
+/*
+ * Space the app's fixed bars take up, so pinned things (toasts, save bars, the
+ * "+" button) sit above them. Set by the app shell; 0 on pages without bars.
+ */
+:root {
+  --app-top: 0px;
+  --app-bottom: 0px;
 }
 
 @utility scrollbar-none {

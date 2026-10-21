@@ -41,7 +41,7 @@ test.describe("estimator", () => {
     await expectNoAccess(page, "/settings/proposals");
     await expectNoAccess(page, "/settings/proposals/preview?jobType=interior");
     await page.goto("/rates");
-    await expect(page.getByRole("heading", { name: "Rate Library" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Rates" })).toBeVisible();
     await expect(page.getByRole("button", { name: "New rate" })).toHaveCount(0);
   });
 });
