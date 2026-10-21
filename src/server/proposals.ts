@@ -1,6 +1,6 @@
 import "server-only";
 import { createHash, randomBytes } from "node:crypto";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import {
@@ -27,6 +27,7 @@ import { audit } from "./audit";
 import { createRevision, loadEstimate, saveEstimateDoc } from "./estimates";
 import { moveStage, stageByKey } from "./leads";
 import { currentDocuments, visibleDocuments } from "./media";
+import { notifyLater, notifyProposalEvent } from "./notifications";
 import { createSoldProject } from "./project-status";
 import { buildProposalView, normalizeView, type ProposalViewV2 } from "./proposal-view";
 import { getCompany, getProposalTemplate } from "./settings";
@@ -265,28 +266,13 @@ export async function sendProposal(estimateId: string, raw: z.input<typeof sendP
 
 const TOKEN_RE = /^[A-Za-z0-9_-]{20,64}$/;
 
-/** Public lookup by link token. Staff views don't count as customer views. */
-export async function getProposalForCustomer(token: string, opts: { countView: boolean }) {
+/** Public lookup by link token. Loading it doesn't count as a view (see recordProposalView). */
+export async function getProposalForCustomer(token: string) {
   if (!TOKEN_RE.test(token)) return null;
   const p = await db.query.proposals.findFirst({ where: eq(proposals.token, token) });
   if (!p) return null;
-  const estimate = await db.query.estimates.findFirst({ where: eq(estimates.id, p.estimateId), columns: { customerId: true, opportunityId: true, number: true, jobType: true } });
+  const estimate = await db.query.estimates.findFirst({ where: eq(estimates.id, p.estimateId), columns: { jobType: true } });
   const expired = !!p.expiresAt && p.expiresAt < new Date() && (p.status === "sent" || p.status === "viewed");
-  if (opts.countView && (p.status === "sent" || p.status === "viewed")) {
-    const now = new Date();
-    await db
-      .update(proposals)
-      .set({ status: "viewed", firstViewedAt: p.firstViewedAt ?? now, lastViewedAt: now, viewCount: p.viewCount + 1 })
-      .where(eq(proposals.id, p.id));
-    if (!p.firstViewedAt && estimate) {
-      await db.insert(activities).values({
-        customerId: estimate.customerId,
-        opportunityId: estimate.opportunityId,
-        type: "estimate",
-        body: `Customer opened the proposal for estimate #${estimate.number}`,
-      });
-    }
-  }
   const doc = p.snapshot as EstimateDoc;
   // Old proposals stored a v1 view; it is converted for display only (the stored view and its hash never change).
   const view: ProposalViewV2 = normalizeView(p.view, estimate?.jobType ?? "default");
@@ -306,6 +292,42 @@ export async function getProposalForCustomer(token: string, opts: { countView: b
 }
 
 export type CustomerProposal = NonNullable<Awaited<ReturnType<typeof getProposalForCustomer>>>;
+
+const REOPEN_AFTER_MS = 12 * 3_600_000;
+
+/**
+ * Counts a customer opening their proposal. The page reports it from the browser once someone
+ * is actually looking, so link previews (iMessage, WhatsApp) and email link scanners that only
+ * fetch the page never count. The office is told on the first open, and again when the customer
+ * comes back after a while.
+ */
+export async function recordProposalView(token: string): Promise<void> {
+  if (!TOKEN_RE.test(token)) return;
+  const p = await db.query.proposals.findFirst({ where: eq(proposals.token, token), columns: { id: true, estimateId: true, status: true, lastViewedAt: true } });
+  if (!p || (p.status !== "sent" && p.status !== "viewed")) return;
+  const now = new Date();
+  const open = and(eq(proposals.id, p.id), inArray(proposals.status, ["sent", "viewed"]));
+  // Two tabs opening at once must not both count as the first view.
+  const [first] = await db.update(proposals).set({ firstViewedAt: now }).where(and(open, isNull(proposals.firstViewedAt))).returning({ id: proposals.id });
+  await db
+    .update(proposals)
+    .set({ status: "viewed", lastViewedAt: now, viewCount: sql`${proposals.viewCount} + 1` })
+    .where(open);
+  if (first) {
+    const estimate = await db.query.estimates.findFirst({ where: eq(estimates.id, p.estimateId), columns: { customerId: true, opportunityId: true, number: true } });
+    if (estimate) {
+      await db.insert(activities).values({
+        customerId: estimate.customerId,
+        opportunityId: estimate.opportunityId,
+        type: "estimate",
+        body: `Customer opened the proposal for estimate #${estimate.number}`,
+      });
+    }
+    notifyLater(() => notifyProposalEvent("viewed", p.id));
+  } else if (p.lastViewedAt && now.getTime() - p.lastViewedAt.getTime() > REOPEN_AFTER_MS) {
+    notifyLater(() => notifyProposalEvent("viewed", p.id, { reopened: true }));
+  }
+}
 
 /** Insurance documents may be opened from any proposal link except a withdrawn one. Not counted as a view. */
 export async function proposalAllowsDocuments(token: string): Promise<boolean> {
@@ -519,6 +541,7 @@ async function completeAcceptance(p: typeof proposals.$inferSelect, a: Acceptanc
     const won = await stageByKey("won");
     await moveStage(estimate.opportunityId, won.id, a.markedBy?.id ?? null).catch((e) => console.error("[proposal] could not mark lead won", e));
   }
+  notifyLater(() => notifyProposalEvent("accepted", p.id, { actorId: a.markedBy?.id ?? null }));
   return { projectId: project?.id ?? null, totals };
 }
 
@@ -538,6 +561,7 @@ export async function declineProposal(token: string, reason: string | undefined)
       body: `Customer declined the proposal for estimate #${estimate.number}${clean ? `: "${clean}"` : ""}`,
     });
   }
+  notifyLater(() => notifyProposalEvent("declined", p.id));
 }
 
 export async function listProposals(estimateId: string) {

@@ -25,6 +25,7 @@ import { QuickAdd, QUICK_ADD_ITEMS, type QuickAddItem } from "@/components/quick
 import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
 import { GlobalSearch } from "./global-search";
+import { NotificationsBell } from "./notifications-bell";
 import { sectionFor, tabsFor, type IconName, type NavItem, type SectionTabs } from "./nav";
 import { Popover, popoverItem } from "./popover";
 import { Sheet } from "./sheet";
@@ -259,6 +260,7 @@ export function AppShell({
           {canSearch ? <GlobalSearch variant="bar" /> : <span className="flex-1" />}
           <div className="ml-auto flex items-center gap-3">
             <NewMenu items={newItems} />
+            <NotificationsBell />
             <AccountMenu user={user} />
           </div>
         </header>
@@ -266,6 +268,7 @@ export function AppShell({
         <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-border bg-surface px-4 lg:hidden print:hidden">
           <Brand compact />
           <div className="flex items-center gap-1">
+            <NotificationsBell />
             {canSearch && (
               <button type="button" onClick={() => setSheet("search")} aria-label="Search" className="grid size-11 place-items-center rounded-lg text-heading hover:bg-surface-2">
                 <Search className="size-6" aria-hidden />
