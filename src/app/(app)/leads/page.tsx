@@ -11,7 +11,7 @@ import { listAssignableEstimators, listPipelineRows } from "@/server/pipeline-li
 import { getList } from "@/server/settings";
 import { LeadsWorkspace } from "./leads-workspace";
 
-export const metadata = { title: "Leads & Pipeline" };
+export const metadata = { title: "Leads" };
 
 export default async function LeadsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const user = await requirePermission("pipeline.read");

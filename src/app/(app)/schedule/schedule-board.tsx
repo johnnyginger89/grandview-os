@@ -733,13 +733,13 @@ export function ScheduleBoard({
       <p aria-live="polite" className="sr-only" data-testid="schedule-live">
         {announcement}
       </p>
-      <div role="status" className="pointer-events-none fixed right-4 bottom-20 z-50 print:hidden" data-testid="schedule-toast">
+      <div role="status" className="pointer-events-none fixed right-4 bottom-[calc(var(--app-bottom)+5rem)] z-50 print:hidden" data-testid="schedule-toast">
         {toast && (
           <div
             key={toast.id}
             className={cn(
               "pointer-events-auto flex max-w-[calc(100vw-2rem)] flex-wrap items-center gap-x-3 gap-y-2 rounded-lg px-4 py-3 text-sm text-white shadow-lg sm:max-w-xl",
-              toast.tone === "error" ? "bg-danger" : "bg-sidebar",
+              toast.tone === "error" ? "bg-danger" : "bg-navy",
             )}
           >
             <span className="min-w-0 flex-1">{toast.message}</span>

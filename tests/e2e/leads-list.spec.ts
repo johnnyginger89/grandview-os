@@ -74,7 +74,7 @@ test.describe("phone home screen", () => {
     await page.goto("/");
     await expect(page.getByTestId("jobs-today")).toContainText("today");
     const menu = page.getByRole("region", { name: "Menu" });
-    for (const label of ["Leads", "Estimates", "Customers", "Projects"]) await expect(menu.getByRole("link", { name: new RegExp(label) })).toBeVisible();
+    for (const label of ["Leads", "Estimates", "Customers", "Sold jobs"]) await expect(menu.getByRole("link", { name: new RegExp(label) })).toBeVisible();
     await page.getByRole("button", { name: "Add", exact: true }).click();
     await page.getByRole("menuitem", { name: "Add lead" }).click();
     await expect(page).toHaveURL(/\/leads\/new/);

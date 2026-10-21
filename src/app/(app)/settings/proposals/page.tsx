@@ -125,7 +125,7 @@ export default async function ProposalSettingsPage({ searchParams }: { searchPar
       <div className="grid gap-6 lg:grid-cols-[13rem_1fr]">
         <div className="lg:hidden"><SectionSelect pages={PAGES.map(({ key, label }) => ({ key, label }))} active={page.key} /></div>
         <nav aria-label="Proposal settings sections" className="hidden lg:block">
-          <ul className="sticky top-4 space-y-0.5">
+          <ul className="sticky top-[calc(var(--app-top)+1rem)] space-y-0.5">
             {PAGES.map((p) => (
               <li key={p.key}>
                 <Link

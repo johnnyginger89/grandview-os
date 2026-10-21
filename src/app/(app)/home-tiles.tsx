@@ -51,9 +51,9 @@ export async function HomeTiles({ role }: { role: string }) {
         {can(role, "pipeline.read") && <Tile href="/leads" label="Leads" icon={Workflow} badge={toContact.n} />}
         {can(role, "estimates.read") && <Tile href="/estimates" label="Estimates" icon={Calculator} badge={openEstimates.n} />}
         {can(role, "customers.read") && <Tile href="/customers" label="Customers" icon={Users} />}
-        {can(role, "projects.read_all") && <Tile href="/projects" label="Projects" icon={FolderKanban} badge={activeJobs.n} />}
+        {can(role, "projects.read_all") && <Tile href="/projects" label="Sold jobs" icon={FolderKanban} badge={activeJobs.n} />}
         {can(role, "schedule.read") && <Tile href="/schedule" label="Schedule" icon={CalendarDays} badge={toSchedule.n} />}
-        {can(role, "rates.read") && <Tile href="/rates" label="Rate Library" icon={BookOpen} />}
+        {can(role, "rates.read") && <Tile href="/rates" label="Rates" icon={BookOpen} />}
         {can(role, "pipeline.read") && company.bookingUrl && <ShareBookingTile url={company.bookingUrl} companyName={company.displayName || company.name} />}
         {can(role, "settings.manage") && <Tile href="/settings" label="Settings" icon={Settings} />}
       </div>

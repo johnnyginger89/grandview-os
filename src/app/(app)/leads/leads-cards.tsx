@@ -41,7 +41,7 @@ export function LeadsCards({
         return (
           <section key={g.key} aria-label={g.stage?.name ?? "All leads"} data-testid={`cards-group-${g.key}`}>
             {g.stage && (
-              <h2 className={cn("sticky top-14 z-10 -mx-1 mb-2 flex items-center gap-2 border-l-4 bg-bg px-2 py-2", tone.bar)}>
+              <h2 className={cn("sticky top-[var(--app-top)] z-10 -mx-1 mb-2 flex items-center gap-2 border-l-4 bg-bg px-2 py-2", tone.bar)}>
                 <button
                   type="button"
                   aria-expanded={!isCollapsed}

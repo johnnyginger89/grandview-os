@@ -33,7 +33,7 @@ export function BulkBar({
       role="region"
       aria-label="Bulk actions"
       data-testid="bulk-bar"
-      className="fixed inset-x-0 bottom-0 z-40 hidden justify-center px-4 pb-4 md:flex lg:left-60"
+      className="fixed inset-x-0 bottom-[var(--app-bottom)] z-40 hidden justify-center px-4 pb-4 md:flex lg:left-60"
     >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-border-strong bg-surface px-4 py-2.5 shadow-lg">
         <span className="text-sm font-medium" data-testid="bulk-count">{count} selected</span>

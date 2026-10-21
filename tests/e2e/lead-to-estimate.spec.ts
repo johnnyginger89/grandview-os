@@ -84,8 +84,8 @@ test.describe("estimator on a phone", () => {
 test.use({ storageState: statePath("estimator") });
 test("@mobile pipeline and lead pages work on a phone", async ({ page }) => {
   await page.goto("/leads");
-  await expect(page.getByRole("heading", { name: "Leads & Pipeline" })).toBeVisible();
-  await page.getByRole("button", { name: "Open menu" }).click();
-  await expect(page.getByRole("link", { name: "Customers" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Leads" })).toBeVisible();
+  await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "More" }).click();
+  await expect(page.getByRole("dialog", { name: "More" }).getByRole("link", { name: "Customers" })).toBeVisible();
 });
 });

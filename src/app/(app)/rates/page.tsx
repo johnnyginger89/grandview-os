@@ -8,7 +8,7 @@ import { can } from "@/lib/authz/permissions";
 import { listFactors, listRates } from "@/server/rates";
 import { FactorsEditor, MaterialsTable, RatesTable } from "./rates-client";
 
-export const metadata = { title: "Rate Library" };
+export const metadata = { title: "Rates" };
 
 const TABS = [
   { key: "rates", label: "Production rates" },
@@ -24,7 +24,7 @@ export default async function RatesPage({ searchParams }: { searchParams: Promis
 
   return (
     <>
-      <PageHeader title="Rate Library" description="Changes create a new version. Existing estimates keep the rates they were built with." />
+      <PageHeader title="Rates" description="Changes create a new version. Existing estimates keep the rates they were built with." />
       <nav className="mb-4 flex gap-1 border-b border-border">
         {TABS.map((t) => (
           <Link key={t.key} href={`/rates?tab=${t.key}`} className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${tab === t.key ? "border-brand text-brand" : "border-transparent text-muted hover:text-text"}`}>{t.label}</Link>

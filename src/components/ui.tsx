@@ -6,10 +6,10 @@ type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
 type ButtonSize = "sm" | "md";
 
 const buttonBase =
-  "inline-flex items-center justify-center gap-2 rounded-md font-medium transition-colors disabled:opacity-50 disabled:pointer-events-none whitespace-nowrap";
+  "inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:pointer-events-none whitespace-nowrap";
 const buttonVariants: Record<ButtonVariant, string> = {
-  primary: "bg-brand text-brand-contrast hover:bg-brand-hover",
-  secondary: "bg-surface text-text border border-border-strong hover:bg-surface-2",
+  primary: "bg-brand text-brand-contrast shadow-card hover:bg-brand-hover",
+  secondary: "bg-surface text-text border border-border-strong shadow-card hover:bg-surface-2",
   ghost: "text-muted hover:bg-surface-2 hover:text-text",
   danger: "bg-danger text-white hover:opacity-90",
 };
@@ -41,7 +41,7 @@ export function LinkButton({
 }
 
 const fieldBase =
-  "w-full rounded-md border border-border-strong bg-surface px-3 text-sm text-text placeholder:text-subtle focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:bg-surface-2";
+  "w-full rounded-lg border border-border-strong bg-surface px-3 text-sm text-text placeholder:text-subtle focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:bg-surface-2";
 
 export function Input({ className, ...props }: ComponentProps<"input">) {
   return <input className={cn(fieldBase, "h-10", className)} {...props} />;
@@ -83,14 +83,14 @@ export function Field({ label, hint, children, className }: { label: string; hin
 }
 
 export function Card({ className, ...props }: ComponentProps<"div">) {
-  return <div className={cn("rounded-lg border border-border bg-surface", className)} {...props} />;
+  return <div className={cn("rounded-xl border border-border bg-surface shadow-card", className)} {...props} />;
 }
 
 export function CardHeader({ title, action, description }: { title: ReactNode; action?: ReactNode; description?: ReactNode }) {
   return (
-    <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3">
+    <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3.5">
       <div>
-        <h2 className="text-sm font-semibold text-text">{title}</h2>
+        <h2 className="text-[15px] font-semibold text-heading">{title}</h2>
         {description && <p className="mt-0.5 text-xs text-muted">{description}</p>}
       </div>
       {action}
@@ -116,7 +116,7 @@ export function PageHeader({ title, description, actions }: { title: ReactNode; 
   return (
     <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div className="min-w-0">
-        <h1 className="text-xl font-semibold tracking-tight text-text sm:text-2xl">{title}</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-heading sm:text-[1.75rem]">{title}</h1>
         {description && <p className="mt-1 text-sm text-muted">{description}</p>}
       </div>
       {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
@@ -126,7 +126,7 @@ export function PageHeader({ title, description, actions }: { title: ReactNode; 
 
 export function EmptyState({ title, description, action }: { title: string; description?: string; action?: ReactNode }) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border-strong bg-surface px-6 py-12 text-center">
+    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border-strong bg-surface px-6 py-12 text-center">
       <p className="text-sm font-medium text-text">{title}</p>
       {description && <p className="mt-1 max-w-sm text-sm text-muted">{description}</p>}
       {action && <div className="mt-4">{action}</div>}
@@ -156,5 +156,5 @@ export const td = "px-4 py-2.5 border-b border-border align-middle";
 
 export function FormError({ message }: { message?: string | null }) {
   if (!message) return null;
-  return <p className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger" role="alert">{message}</p>;
+  return <p className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger" role="alert">{message}</p>;
 }

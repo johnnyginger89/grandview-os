@@ -127,6 +127,10 @@ describe("projects.status has a single writer", () => {
 // ---------------------------------------------------------------------------
 
 const UNCACHED = [
+  "src/server/search.ts",
+  "src/app/api/search/",
+  "src/app/(app)/search/",
+  "src/app/(app)/layout.tsx",
   "src/server/dashboard.ts",
   "src/server/goals.ts",
   "src/server/pipeline-list.ts",

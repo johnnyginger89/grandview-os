@@ -14,7 +14,7 @@ import { documentAlerts, ensureDocumentTasks } from "@/server/media";
 import { HomeTiles } from "./home-tiles";
 import { MonthSnapshot } from "./month-snapshot";
 
-export const metadata = { title: "Dashboard" };
+export const metadata = { title: "Home" };
 
 export default async function Dashboard() {
   const user = await requireUser();
@@ -73,7 +73,7 @@ export default async function Dashboard() {
       )}
       <MonthSnapshot data={snapshot} />
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
-        <Stat label="Leads to contact" value={toContact.n} tone={toContact.n > 0 ? "danger" : undefined} hint={<Link href="/leads" className="text-brand hover:underline">Open pipeline</Link>} />
+        <Stat label="Leads to contact" value={toContact.n} tone={toContact.n > 0 ? "danger" : undefined} hint={<Link href="/leads" className="text-brand hover:underline">Open leads</Link>} />
         <Stat label="Follow-ups due" value={followUps.n} />
         <Stat label="Proposals out" value={snapshot.pipeline.proposalsOut} hint={proposalsOutValue !== undefined ? formatCAD(proposalsOutValue) : undefined} />
       </div>

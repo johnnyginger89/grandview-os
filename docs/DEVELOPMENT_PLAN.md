@@ -64,6 +64,14 @@ Status key: ✅ done and tested · 🟡 partly done · ⬜ not started
 - ⬜ Time tracking: mobile clock in/out per job, approval
 - ⬜ Job costing: estimated vs actual dashboard, sub contract costs, material purchases
 
+### UX overhaul (Oct 2026, owner's request: "one place, easy to find")
+Feature work is paused while the app is simplified, one workflow at a time, with the owner approving each step. Concept sketch: claude.ai artifact "Grandview OS – one place concept".
+- 🟡 Step 1 – look, menu and search: lighter design (white menu, softer cards, navy headings); menu cut from 10 items to Home · Jobs · Schedule · Customers · Rates (+ Settings); Leads, Estimates and Sold jobs are tabs under Jobs (Jobs reopens the last tab used); Today/Performance tabs under Home; one search box on every page (customers, addresses, phone numbers, sold jobs, estimates, leads, work orders; `/` or Ctrl+K; full results at /search; no money in results; field roles have none); "+ New" menu; phone bottom bar (Home · Jobs · Schedule · Search · More)
+- ⬜ Step 2 – one page per job (customer, quote, schedule, work order, photos, files, messages) replacing separate lead/estimate/project pages
+- ⬜ Step 3 – home screen built around "what needs me today"
+- ⬜ Step 4 – painter's phone screen
+- ⬜ Step 5 – estimating, after an interview about how PaintScout is used today
+
 ### Batch 1 (Oct 2026): sales tracking and everyday screens
 - ✅ Performance dashboard: sales (signed), produced (finished jobs), backlog, leads by source/channel, visits, proposals, close rate, sales cycle, funnel, lost reasons, per salesperson, 12-month chart, period picker with comparisons, goals with pace; money only for owner/operations, counts for other office roles
 - ✅ Settings → Goals (owner only); project Status card with finish date and status history (single status writer; sold/finished/cancelled dates)
