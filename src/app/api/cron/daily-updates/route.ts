@@ -6,8 +6,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Vercel Cron calls this at 23:00 and 00:00 UTC; only the call that lands at 4 pm in
- * Vancouver (summer or winter time) does anything, once a day. With CRON_SECRET set,
+ * Vercel Cron calls this at 23:00 UTC (4 pm in summer) and ./winter at 00:00 UTC (4 pm
+ * in winter); only the call that lands in the 4 pm hour in Vancouver does anything, once
+ * a day. On the Hobby plan a call can come up to 59 minutes late, still within that hour. With CRON_SECRET set,
  * Vercel sends it as a bearer token and nothing else gets in. Without it, only Vercel's
  * cron caller is accepted, and the worst a stranger could do is send the 4 pm reminder
  * at 4 pm.
