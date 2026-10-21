@@ -2,6 +2,7 @@ import { MapPin, Phone } from "lucide-react";
 import Image from "next/image";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import type { CompanyCamPhoto } from "@/server/integrations/companycam";
 import type { Block, WorkOrderColour, WorkOrderPaint, WorkOrderScopeItem, WorkOrderSection, WorkOrderView } from "@/server/work-order-view";
 import { PrintButton } from "./print-button";
 
@@ -112,9 +113,12 @@ export function WorkOrderDocument({
   office,
   changed = [],
   notice,
+  sitePhotos,
 }: {
   view: WorkOrderView;
   office: { name: string; phone: string | null };
+  /** The job's latest CompanyCam photos (live, not part of the issued version). */
+  sitePhotos?: { photos: CompanyCamPhoto[]; projectUrl: string | null };
   /** Sections to highlight as changed since the version the viewer saw last. */
   changed?: readonly WorkOrderSection[];
   notice?: WorkOrderNotice | null;
@@ -328,6 +332,30 @@ export function WorkOrderDocument({
             <Removed />
           )}
         </Section>
+      )}
+
+      {sitePhotos && sitePhotos.photos.length > 0 && (
+        <section aria-labelledby="wo-site-photos" className="border-b border-border px-4 py-5 sm:px-8 print:hidden">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h2 id="wo-site-photos" className="font-[family-name:var(--font-display)] text-lg font-bold uppercase tracking-wide text-brand">Site photos</h2>
+            {sitePhotos.projectUrl && (
+              <a href={sitePhotos.projectUrl} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-brand underline-offset-2 hover:underline">
+                Open in CompanyCam
+              </a>
+            )}
+          </div>
+          <ul className="grid grid-cols-3 gap-2 sm:grid-cols-4" aria-label="Site photos">
+            {sitePhotos.photos.map((p) => (
+              <li key={p.id}>
+                <a href={p.full} target="_blank" rel="noopener" className="block aspect-square overflow-hidden rounded-lg border border-border bg-surface-2">
+                  {/* eslint-disable-next-line @next/next/no-img-element -- served by our own signed image route */}
+                  <img src={p.thumb} alt={p.description ?? "Site photo"} loading="lazy" className="size-full object-cover" />
+                </a>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs text-muted">The latest photos from CompanyCam. Add yours in the CompanyCam app.</p>
+        </section>
       )}
 
       <footer className="border-t border-border bg-bg px-4 py-5 text-center sm:rounded-b-xl sm:px-8 print:bg-transparent print:px-0">

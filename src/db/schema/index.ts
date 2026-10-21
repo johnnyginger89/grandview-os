@@ -11,3 +11,4 @@ export * from "./work-orders";
 export * from "./notifications";
 export * from "./colours";
 export * from "./chat";
+export * from "./integrations";

@@ -99,19 +99,31 @@ Open `https://grandview-os.vercel.app/api/health`. You should see `{"ok":true,"d
 
 To add Malcolm and the crew, use **Settings → Users** in the app.
 
-## 6. Your own address (optional): os.grandviewpainting.ca
+## 6. Your own address: grandviewpainting.app
 
-Your domain's DNS is managed in **Wix** (that's where grandviewpainting.ca's nameservers point).
+The owner bought `grandviewpainting.app` for Grandview OS (Oct 2026). `.app` addresses only work
+over https; Vercel sets that up by itself.
 
-1. Vercel → project → **Settings → Domains** → **Add** → `os.grandviewpainting.ca`.
-   Vercel shows a **CNAME** value specific to your project. Copy it.
-2. Wix → **Domains** → grandviewpainting.ca → **Domain Actions → Manage DNS Records** →
-   **CNAME (Aliases)** → **Add record**: Host `os`, Value = the CNAME from Vercel → **Save**.
-   ⚠️ Don't change any other record: the main A record, `www` and the MX (email) records keep
-   your website and Google email working.
-3. When Vercel shows the domain as **Valid** (minutes to a few hours), update `BETTER_AUTH_URL`
-   and `APP_URL` in Vercel to `https://os.grandviewpainting.ca`, then **Deployments → ⋯ →
-   Redeploy** on the latest deployment.
+1. Vercel → project **grandview-os** → **Settings → Domains** → **Add** → `grandviewpainting.app`.
+   When Vercel offers to add `www.grandviewpainting.app` too, accept and let it redirect to
+   `grandviewpainting.app`.
+   - **Bought through Vercel:** nothing else to do; it turns **Valid** within minutes.
+   - **Bought elsewhere** (GoDaddy, Namecheap, Squarespace…): Vercel shows the records to add at
+     that company, usually an **A** record for `@` and a **CNAME** for `www`. Add exactly what
+     Vercel shows, in that company's DNS settings for grandviewpainting.app.
+2. When Vercel shows the domain as **Valid**, change these in **Settings → Environment Variables**
+   (Production):
+   - `BETTER_AUTH_URL` = `https://grandviewpainting.app`
+   - `APP_URL` = `https://grandviewpainting.app`
+   - `BETTER_AUTH_TRUSTED_ORIGINS` = `https://grandview-os.vercel.app`
+     (so the old address keeps working while everyone switches)
+3. **Deployments → ⋯ → Redeploy** on the latest deployment.
+4. Sign in at the new address. Phone notifications belong to an address: turn them on again
+   from the bell, and on iPhone add the new address to the Home Screen (remove the old icon).
+
+Links already sent (proposals, work orders, colour forms) keep working on the old address.
+New links use the new one. Webhooks (YouCanBook.me, website form) keep working on either address;
+switch them to the new one when convenient.
 
 ## 7. Connect lead intake
 
@@ -164,10 +176,11 @@ is written to logs.
 | `ENABLE_EXPERIMENTAL_COREPACK` | yes | `1`. Makes Vercel use the repo's pnpm version |
 | `RESEND_API_KEY`, `EMAIL_FROM` | for email | See step 8 |
 | `EMAIL_REPLY_TO` | no | Reply-to address for outgoing email |
-| `BETTER_AUTH_TRUSTED_ORIGINS` | no | Extra allowed addresses, comma separated, e.g. the vercel.app address after switching to the custom domain |
+| `BETTER_AUTH_TRUSTED_ORIGINS` | no | Extra allowed addresses, comma separated: `https://grandview-os.vercel.app` after switching to grandviewpainting.app |
 | `DB_POOL_MAX` | no | Database connections per server instance (default 3) |
 | `CRON_SECRET` | recommended | Any long random text (`openssl rand -hex 24`). Vercel sends it with the 4 pm daily-update reminder so nobody else can set it off |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | no | Phone notification keys; made automatically and kept in the database when not set |
+| `INTEGRATIONS_ENCRYPTION_KEY` | no | Encrypts integration tokens (CompanyCam, Gmail) in the database. Defaults to a key derived from `BETTER_AUTH_SECRET`; changing either means re-entering those tokens |
 
 The app refuses to start on the live site if a required setting is missing or too short.
 Two-factor sign-in can't be turned off there, and development test logins are blocked there.

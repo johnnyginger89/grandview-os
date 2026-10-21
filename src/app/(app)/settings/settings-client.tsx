@@ -6,6 +6,7 @@ import { ROLES } from "@/db/schema/auth";
 import { can, ROLE_LABELS } from "@/lib/authz/permissions";
 import { createUserAction, saveCompanyAction, saveListAction, savePricingAction, saveTemplateAction, updateUserAction } from "./actions";
 import { saveColourFormSettingsAction } from "./colour-form-settings-actions";
+import { connectCompanyCamAction, disconnectCompanyCamAction } from "./integration-actions";
 import { saveWorkOrderSettingsAction } from "./work-order-settings-actions";
 
 function Saved({ state }: { state: { ok: boolean; error?: string } | null }) {
@@ -278,6 +279,67 @@ export function ColourFormSettingsForm({ settings }: { settings: { changeWarning
         </div>
         <Field label="Customer links work for (days)"><Input inputMode="numeric" className="w-32" value={days} onChange={(e) => setDays(e.target.value)} /></Field>
         <div className="flex items-center gap-3"><Button disabled={pending} onClick={save}>Save</Button><Saved state={state} /></div>
+      </div>
+    </Card>
+  );
+}
+
+export function CompanyCamSettings({ status }: { status: { connected: boolean; unreadable: boolean; companyName: string | null; connectedAt: string | null; connectedByName: string | null } }) {
+  const [token, setToken] = useState("");
+  const [state, setState] = useState<{ ok: boolean; error?: string } | null>(null);
+  const [pending, start] = useTransition();
+  return (
+    <Card role="region" aria-label="CompanyCam">
+      <CardHeader
+        title="CompanyCam"
+        description="Shows the crew's CompanyCam photos on estimates, jobs and work orders, and creates CompanyCam projects from jobs."
+        action={status.connected ? <Badge tone="success">Connected</Badge> : <Badge>Not connected</Badge>}
+      />
+      <div className="space-y-3 p-4 text-sm">
+        {status.connected ? (
+          <>
+            <p>
+              Connected{status.companyName ? ` to ${status.companyName}` : ""}
+              {status.connectedByName ? ` by ${status.connectedByName}` : ""}
+              {status.connectedAt ? ` on ${new Date(status.connectedAt).toLocaleDateString("en-CA", { timeZone: "America/Vancouver", dateStyle: "medium" })}` : ""}.
+            </p>
+            <Button
+              variant="secondary"
+              disabled={pending}
+              onClick={() => {
+                if (window.confirm("Disconnect CompanyCam? Photos stop showing until it's connected again. Links between jobs and CompanyCam projects are kept.")) start(async () => setState(await disconnectCompanyCamAction()));
+              }}
+            >
+              Disconnect
+            </Button>
+          </>
+        ) : (
+          <>
+            {status.unreadable && <p className="rounded-md bg-warning-soft px-3 py-2 text-warning">The saved token can&apos;t be read any more (the server&apos;s secret changed). Paste it again.</p>}
+            <ol className="list-decimal space-y-1 pl-5 text-muted">
+              <li>
+                Create a Personal Access Token in CompanyCam, signed in as an admin (CompanyCam&apos;s guide:{" "}
+                <a href="https://developers.companycam.com/access-token-setup" target="_blank" rel="noopener noreferrer" className="text-brand hover:underline">Setting up your personal access token</a>). API access needs CompanyCam&apos;s Pro plan or higher.
+              </li>
+              <li>Paste it here. It&apos;s checked with CompanyCam, then stored encrypted. Don&apos;t send it by email or chat.</li>
+            </ol>
+            <form
+              className="flex flex-wrap gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                start(async () => {
+                  const r = await connectCompanyCamAction(token);
+                  setState(r);
+                  if (r.ok) setToken("");
+                });
+              }}
+            >
+              <Input type="password" autoComplete="off" value={token} onChange={(e) => setToken(e.target.value)} placeholder="CompanyCam access token" aria-label="CompanyCam access token" className="min-w-0 flex-1" />
+              <Button type="submit" disabled={pending || token.trim().length < 10}>{pending ? "Checking…" : "Connect"}</Button>
+            </form>
+          </>
+        )}
+        <Saved state={state} />
       </div>
     </Card>
   );

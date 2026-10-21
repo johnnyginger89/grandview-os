@@ -23,6 +23,7 @@ import {
 } from "@/lib/work-orders/schemas";
 import type { NewWorkOrderDefaults, WorkOrderDTO, WorkOrderFieldsDTO } from "@/lib/work-orders/types";
 import { audit } from "./audit";
+import { companyCamLinkFor, companyCamPhotos, companyCamStatus, type CompanyCamPhoto } from "./integrations/companycam";
 import { postSystemMessage } from "./job-chat";
 import { crewIdsForUser } from "./crews";
 import { loadEstimate } from "./estimates";
@@ -633,6 +634,8 @@ export interface CrewWorkOrder {
   view: WorkOrderView;
   /** Set when the viewer last saw an older version. */
   update: WorkOrderUpdate | null;
+  /** For live extras next to the issued version (site photos); never shown. */
+  projectId?: string;
 }
 
 /** The current version, and what changed since `seenVersion` when that is older. */
@@ -661,6 +664,7 @@ export async function getWorkOrderForToken(token: string, opts: { countOpen: boo
       revokedAt: workOrderLinks.revokedAt,
       lastOpenedVersion: workOrderLinks.lastOpenedVersion,
       workOrderId: workOrders.id,
+      projectId: workOrders.projectId,
       status: workOrders.status,
       currentVersion: workOrders.currentVersion,
       projectStatus: projects.status,
@@ -681,7 +685,7 @@ export async function getWorkOrderForToken(token: string, opts: { countOpen: boo
       .set({ openCount: sql`${workOrderLinks.openCount} + 1`, lastOpenedAt: now, lastOpenedVersion: row.currentVersion })
       .where(and(eq(workOrderLinks.id, row.linkId), isNull(workOrderLinks.revokedAt)));
   }
-  return result;
+  return { ...result, projectId: row.projectId };
 }
 
 export interface CrewWorkOrderRef {
@@ -776,7 +780,7 @@ export async function getWorkOrderForCrewMember(viewer: { id: string }, workOrde
   if (isLead === null) return null;
   const result = await currentWithUpdate(wo.id, wo.currentVersion, opts.seenVersion);
   if (!result) return null;
-  return { view: isLead ? result.view : { ...result.view, customerPhone: null }, update: result.update, isLead };
+  return { view: isLead ? result.view : { ...result.view, customerPhone: null }, update: result.update, isLead, projectId: wo.projectId };
 }
 
 export interface StaffWorkOrderView {
@@ -889,4 +893,21 @@ export async function listAllWorkOrders(opts: { status?: WorkOrderStatus } = {},
     activeLinks: Number(r.activeLinks) || 0,
     updatedAt: r.updatedAt.toISOString(),
   }));
+}
+
+/**
+ * The job's latest CompanyCam photos, shown live under the work order (not part of an
+ * issued version). Empty when CompanyCam isn't connected or linked; never throws.
+ */
+export async function sitePhotos(projectId: string | undefined, limit = 12): Promise<{ photos: CompanyCamPhoto[]; projectUrl: string | null }> {
+  const none = { photos: [], projectUrl: null };
+  if (!projectId || !UUID_RE.test(projectId)) return none;
+  try {
+    if (!(await companyCamStatus()).connected) return none;
+    const link = await companyCamLinkFor("project", projectId);
+    if (!link) return none;
+    return { photos: await companyCamPhotos(link.projectId, limit), projectUrl: link.url };
+  } catch {
+    return none;
+  }
 }

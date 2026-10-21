@@ -14,7 +14,8 @@ import { getWorkOrderSettings } from "@/server/work-orders";
 import { GoalsForm } from "./goals-form";
 import { goalsToPayload } from "./goals-shared";
 import { getColourFormSettings } from "@/server/colour-selections";
-import { ColourFormSettingsForm, CompanyForm, IntegrationsInfo, ListsForm, PricingForm, TemplatesForm, UsersPanel, WorkOrderSettingsForm } from "./settings-client";
+import { companyCamStatus } from "@/server/integrations/companycam";
+import { ColourFormSettingsForm, CompanyCamSettings, CompanyForm, IntegrationsInfo, ListsForm, PricingForm, TemplatesForm, UsersPanel, WorkOrderSettingsForm } from "./settings-client";
 import { SettingsTabs, settingsTabAllowed } from "./tabs";
 
 export const metadata = { title: "Settings" };
@@ -52,7 +53,12 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           <ColourFormSettingsForm settings={await getColourFormSettings()} />
         </>
       )}
-      {tab === "integrations" && <IntegrationsInfo appUrl={appUrl} />}
+      {tab === "integrations" && (
+        <div className="max-w-3xl space-y-4">
+          <CompanyCamSettings status={await companyCamStatus()} />
+          <IntegrationsInfo appUrl={appUrl} />
+        </div>
+      )}
     </>
   );
 }

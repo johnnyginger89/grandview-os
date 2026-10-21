@@ -6,7 +6,7 @@ import { RememberSeenVersion } from "@/components/work-order/print-button";
 import { updateNotice, WorkOrderDocument } from "@/components/work-order/work-order-document";
 import { requireUser } from "@/lib/authz/guard";
 import { can } from "@/lib/authz/permissions";
-import { getWorkOrderForCrewMember, getWorkOrderForStaff, officeContact, type CrewWorkOrder } from "@/server/work-orders";
+import { getWorkOrderForCrewMember, getWorkOrderForStaff, officeContact, sitePhotos, type CrewWorkOrder } from "@/server/work-orders";
 
 export const metadata = { title: "Work order" };
 
@@ -15,7 +15,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 /** Staff who aren't on the crew can still read the current issued version (no change tracking for them). */
 async function forStaff(id: string): Promise<CrewWorkOrder | null> {
   const s = await getWorkOrderForStaff(id);
-  return s && s.status === "issued" && s.shown.kind === "version" ? { view: s.view, update: null } : null;
+  return s && s.status === "issued" && s.shown.kind === "version" ? { view: s.view, update: null, projectId: s.projectId } : null;
 }
 
 export default async function CrewWorkOrderPage({ params }: { params: Promise<{ id: string }> }) {
@@ -30,7 +30,7 @@ export default async function CrewWorkOrderPage({ params }: { params: Promise<{ 
   const crew = await getWorkOrderForCrewMember(user, id, { seenVersion });
   const data = crew ?? (can(user.role, "projects.read_all") ? await forStaff(id) : null);
   if (!data) notFound();
-  const office = await officeContact();
+  const [office, photos] = await Promise.all([officeContact(), sitePhotos(data.projectId)]);
 
   return (
     <div className="-mx-4 -mt-6 sm:mx-0 sm:mt-0">
@@ -42,6 +42,7 @@ export default async function CrewWorkOrderPage({ params }: { params: Promise<{ 
         office={office}
         changed={data.update?.changed ?? []}
         notice={data.update ? updateNotice(data.view, data.update.fromVersion, data.update.changed.length) : null}
+        sitePhotos={photos}
       />
       {crew && <RememberSeenVersion path={path} version={data.view.version} />}
     </div>

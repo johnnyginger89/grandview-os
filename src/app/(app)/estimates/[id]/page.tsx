@@ -15,6 +15,7 @@ import { listFactors, listRates, toSnapshot } from "@/server/rates";
 import { getPricing, getProposalTemplate } from "@/server/settings";
 import { resolveJobType } from "@/lib/proposal-template/resolve";
 import { JOB_TYPE_KEYS } from "@/lib/proposal-template/schema";
+import { CompanyCamSection } from "@/components/companycam/companycam-section";
 import { EstimateEditor } from "./editor";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
@@ -106,6 +107,7 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
             Accepted – project #{project.number} was created automatically. Open project →
           </Link>
         )}
+        <CompanyCamSection entityType="estimate" entityId={id} className="lg:col-span-2" />
       </div>
     </>
   );

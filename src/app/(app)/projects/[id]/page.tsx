@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { MapPin } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { CompanyCamSection } from "@/components/companycam/companycam-section";
 import { Badge, Card, CardHeader, PageHeader, Stat } from "@/components/ui";
 import { db } from "@/db";
 import { customers, PROJECT_STATUSES, projects, properties, proposals, type ProjectStatus } from "@/db/schema";
@@ -96,6 +97,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         {can(user.role, "schedule.read") && <ProjectScheduleCard projectId={p.id} user={user} />}
         <ColoursCard projectId={p.id} className="lg:col-span-2" />
         <WorkOrdersCard projectId={p.id} canEdit={can(user.role, "projects.write")} className="lg:col-span-2" />
+        <CompanyCamSection entityType="project" entityId={p.id} className="lg:col-span-2" />
         <ChatCard projectId={p.id} />
         <Card>
           <CardHeader title="Next steps" />

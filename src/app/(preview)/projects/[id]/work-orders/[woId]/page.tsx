@@ -8,7 +8,7 @@ import { WorkOrderDocument, type WorkOrderNotice } from "@/components/work-order
 import { requirePermission } from "@/lib/authz/guard";
 import { safeErrorMessage } from "@/lib/action-error";
 import { cn, formatDate } from "@/lib/utils";
-import { getWorkOrderForStaff, officeContact, type StaffWorkOrderView } from "@/server/work-orders";
+import { getWorkOrderForStaff, officeContact, sitePhotos, type StaffWorkOrderView } from "@/server/work-orders";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Work order preview" };
@@ -54,7 +54,7 @@ export default async function StaffWorkOrderPage({
     );
   }
   if (!data || data.projectId !== id) notFound();
-  const office = await officeContact();
+  const [office, photos] = await Promise.all([officeContact(), sitePhotos(data.projectId)]);
   const base = `/projects/${id}/work-orders/${woId}`;
   const tab = (active: boolean) => cn("inline-flex min-h-9 items-center rounded-md px-3 text-sm font-medium", active ? "bg-brand text-brand-contrast" : "text-muted hover:bg-surface-2 hover:text-text");
 
@@ -78,7 +78,7 @@ export default async function StaffWorkOrderPage({
           ))}
         </div>
       </nav>
-      <WorkOrderDocument view={data.view} office={office} changed={data.changed} notice={noticeFor(data)} />
+      <WorkOrderDocument view={data.view} office={office} changed={data.changed} notice={noticeFor(data)} sitePhotos={photos} />
       {sp.print === "1" && <AutoPrint />}
     </div>
   );
