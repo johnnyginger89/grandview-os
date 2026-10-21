@@ -1,0 +1,2 @@
+ALTER TABLE "schedule_entries" DROP CONSTRAINT "sched_kind_chk";--> statement-breakpoint
+ALTER TABLE "schedule_entries" ADD CONSTRAINT "sched_kind_chk" CHECK ("schedule_entries"."kind" IN ('work','pressure_wash','colour_consult','carpentry','walk_through','touch_up','other'));

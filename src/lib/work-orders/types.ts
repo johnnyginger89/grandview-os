@@ -1,4 +1,4 @@
-/** What the staff work-orders card receives. No money and no hours anywhere. */
+/** What the staff work-orders card receives. No money anywhere. */
 import type { WorkOrderStatus } from "@/db/schema/work-orders";
 import type { WorkOrderSection } from "@/server/work-order-view";
 import type { LinkStatus } from "./links";
@@ -10,6 +10,7 @@ export const SECTION_LABEL: Record<WorkOrderSection, string> = {
   bookings: "Schedule",
   access: "Address and access",
   scope: "Scope of work",
+  paint: "Paint to order",
   preparation: "Preparation",
   excluded: "Not included",
   specialInstructions: "Special instructions",
@@ -70,6 +71,8 @@ export interface WorkOrderDTO {
   /** When the current version was issued (ISO). */
   issuedAt: string | null;
   fields: WorkOrderFieldsDTO;
+  /** Who the work order reaches: the job's bookings (only its crew's when it is for one crew), by date. */
+  assigned: { what: string; who: string | null; dates: string }[];
   versions: WorkOrderVersionDTO[];
   links: WorkOrderLinkDTO[];
   /**

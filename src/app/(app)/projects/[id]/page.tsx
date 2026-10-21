@@ -97,7 +97,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
           <CardHeader title="Next steps" />
           <ul className="list-disc space-y-1 p-4 pl-8 text-sm text-muted">
             <li>Collect the deposit and confirm the start date.</li>
-            <li>Issue a work order for the crew and share its link.</li>
+            <li>Check the work order, assign who&apos;s coming, and issue it so they can open it.</li>
             <li>Invoicing is being added next.</li>
           </ul>
         </Card>

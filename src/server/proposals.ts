@@ -29,6 +29,7 @@ import { moveStage, stageByKey } from "./leads";
 import { currentDocuments, visibleDocuments } from "./media";
 import { notifyLater, notifyProposalEvent } from "./notifications";
 import { createSoldProject } from "./project-status";
+import { createWorkOrderForSale } from "./work-orders";
 import { buildProposalView, normalizeView, type ProposalViewV2 } from "./proposal-view";
 import { getCompany, getProposalTemplate } from "./settings";
 
@@ -541,6 +542,8 @@ async function completeAcceptance(p: typeof proposals.$inferSelect, a: Acceptanc
     const won = await stageByKey("won");
     await moveStage(estimate.opportunityId, won.id, a.markedBy?.id ?? null).catch((e) => console.error("[proposal] could not mark lead won", e));
   }
+  // The crew's work order is started at the same time, from the signed estimate.
+  if (project) await createWorkOrderForSale(project.id, a.markedBy?.id ?? null);
   notifyLater(() => notifyProposalEvent("accepted", p.id, { actorId: a.markedBy?.id ?? null }));
   return { projectId: project?.id ?? null, totals };
 }

@@ -21,6 +21,36 @@ export type BookingCalendar = Pick<ScheduleSettings, "workDays" | "holidayRegion
 
 const ON_HOLD_QUESTION = "This job is on hold. Schedule it and move it to Scheduled?";
 
+export interface BookingFormSetup {
+  projectId: string;
+  onHold: boolean;
+  kinds: { value: ScheduleEntryKind; label: string }[];
+  crews: BookingCrewOption[];
+  /** Suggestion before a crew is chosen (default crew size). */
+  unassignedDays: number;
+  calendar: BookingCalendar;
+  defaultStart: IsoDate;
+  hasBookings: boolean;
+}
+
+/** Wording for the work order card, where booking someone means "assigning" them. */
+export interface BookingFormWording {
+  /** The button that opens the form, and the form's name. */
+  open: string;
+  who: string;
+  kind: string;
+  notes: string;
+  notesPlaceholder: string;
+}
+
+const SCHEDULE_WORDING = (hasBookings: boolean): BookingFormWording => ({
+  open: hasBookings ? "Add another booking" : "Schedule this job",
+  who: "Crew",
+  kind: "Booking type",
+  notes: "Notes the painters will see (optional)",
+  notesPlaceholder: "Shown on My Jobs, e.g. start with the back deck",
+});
+
 /** "Schedule this job": crew, start date and working days, with a live end date. */
 export function ScheduleBookingForm({
   projectId,
@@ -31,17 +61,9 @@ export function ScheduleBookingForm({
   calendar,
   defaultStart,
   hasBookings,
-}: {
-  projectId: string;
-  onHold: boolean;
-  kinds: { value: ScheduleEntryKind; label: string }[];
-  crews: BookingCrewOption[];
-  /** Suggestion before a crew is chosen (default crew size). */
-  unassignedDays: number;
-  calendar: BookingCalendar;
-  defaultStart: IsoDate;
-  hasBookings: boolean;
-}) {
+  wording,
+}: BookingFormSetup & { wording?: BookingFormWording }) {
+  const words = wording ?? SCHEDULE_WORDING(hasBookings);
   const [open, setOpen] = useState(false);
   const [crewId, setCrewId] = useState(crews[0]?.id ?? "");
   const [kind, setKind] = useState<ScheduleEntryKind>(kinds[0]?.value ?? "work");
@@ -120,24 +142,24 @@ export function ScheduleBookingForm({
     return (
       <div className="space-y-2">
         {feedback}
-        <Button size="sm" variant={hasBookings ? "secondary" : "primary"} onClick={() => { setOpen(true); setResult(null); }}>
-          <CalendarPlus className="size-4" aria-hidden /> {hasBookings ? "Add another booking" : "Schedule this job"}
+        <Button size="sm" variant={hasBookings || wording ? "secondary" : "primary"} onClick={() => { setOpen(true); setResult(null); }}>
+          <CalendarPlus className="size-4" aria-hidden /> {words.open}
         </Button>
       </div>
     );
   }
 
   return (
-    <form onSubmit={submit} className="space-y-3 rounded-md border border-border bg-surface-2/50 p-3" aria-label="Schedule this job">
+    <form onSubmit={submit} className="space-y-3 rounded-md border border-border bg-surface-2/50 p-3" aria-label={wording ? words.open : "Schedule this job"}>
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Crew">
+        <Field label={words.who}>
           <Select value={crewId} onChange={(e) => setCrewId(e.target.value)}>
             {crews.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             <option value="">No crew yet</option>
           </Select>
         </Field>
         {kinds.length > 1 && (
-          <Field label="Booking type">
+          <Field label={words.kind}>
             <Select value={kind} onChange={(e) => setKind(e.target.value as ScheduleEntryKind)}>
               {kinds.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}
             </Select>
@@ -164,8 +186,8 @@ export function ScheduleBookingForm({
           <Input value={phase} maxLength={80} placeholder="e.g. Building B" onChange={(e) => setPhase(e.target.value)} />
         </Field>
       </div>
-      <Field label="Notes the painters will see (optional)">
-        <Textarea rows={2} maxLength={2000} value={crewNotes} onChange={(e) => setCrewNotes(e.target.value)} placeholder="Shown on My Jobs, e.g. start with the back deck" />
+      <Field label={words.notes}>
+        <Textarea rows={2} maxLength={2000} value={crewNotes} onChange={(e) => setCrewNotes(e.target.value)} placeholder={words.notesPlaceholder} />
       </Field>
 
       <p className="text-sm" aria-live="polite">

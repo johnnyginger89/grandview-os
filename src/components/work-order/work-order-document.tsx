@@ -2,7 +2,7 @@ import { MapPin, Phone } from "lucide-react";
 import Image from "next/image";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
-import type { Block, WorkOrderScopeItem, WorkOrderSection, WorkOrderView } from "@/server/work-order-view";
+import type { Block, WorkOrderPaint, WorkOrderScopeItem, WorkOrderSection, WorkOrderView } from "@/server/work-order-view";
 import { PrintButton } from "./print-button";
 
 /*
@@ -66,11 +66,29 @@ function ItemFacts({ item }: { item: WorkOrderScopeItem }) {
     item.colour ? `Colour: ${item.colour}` : null,
     item.sheen ? `Sheen: ${item.sheen}` : null,
     item.product ? `Product: ${item.product}` : null,
+    item.hours ? `${item.hours} h` : null,
   ].filter((f): f is string => !!f);
   if (!facts.length) return null;
   return (
     <ul className="mt-1.5 flex flex-wrap gap-1.5 text-sm" aria-label="Details">
       {facts.map((f) => <li key={f} className="rounded-md bg-surface-2 px-2 py-0.5 print:bg-transparent print:px-0 print:pr-3">{f}</li>)}
+    </ul>
+  );
+}
+
+function PaintList({ rows }: { rows: WorkOrderPaint[] }) {
+  return (
+    <ul className="divide-y divide-border rounded-lg border border-border" aria-label="Paint to order">
+      {rows.map((r, i) => (
+        <li key={i} className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1 px-3 py-2.5 print:break-inside-avoid">
+          <div className="min-w-0">
+            <p className="font-medium">{r.product}</p>
+            <p className="text-sm text-muted">{[r.colour ? `Colour: ${r.colour}` : "Colour to be confirmed", r.sheen ? `Sheen: ${r.sheen}` : null].filter(Boolean).join(" · ")}</p>
+            {r.note && <p className="mt-0.5 text-sm text-warning">{r.note}</p>}
+          </div>
+          <p className="shrink-0 text-right font-semibold tabular-nums">{r.amount ?? "Ask the office"}</p>
+        </li>
+      ))}
     </ul>
   );
 }
@@ -186,11 +204,20 @@ export function WorkOrderDocument({
       </Section>
 
       <Section id="scope" title="Scope of work" changed={is("scope")}>
+        {view.labourHours && (
+          <p className="mb-4 rounded-lg bg-surface-2 px-3 py-2 text-sm print:bg-transparent print:px-0">
+            <span className="font-semibold">Estimated labour: {view.labourHours} hours</span>
+            <span className="text-muted">{view.prepHours ? ", prep included" : ""} (total for the whole crew)</span>
+          </p>
+        )}
         {view.scope.length ? (
           <div className="space-y-5">
             {view.scope.map((area, i) => (
               <div key={`${area.area}-${i}`} className="print:break-inside-avoid">
-                <h3 className="font-semibold">{area.area}</h3>
+                <h3 className="flex items-baseline justify-between gap-3 font-semibold">
+                  <span>{area.area}</span>
+                  {area.hours && <span className="shrink-0 text-sm font-medium text-muted tabular-nums">{area.hours} h</span>}
+                </h3>
                 {area.description && <p className="text-sm text-muted">{area.description}</p>}
                 <ul className="mt-2 space-y-3">
                   {area.items.map((item, j) => (
@@ -209,9 +236,23 @@ export function WorkOrderDocument({
         )}
       </Section>
 
-      {show("preparation", view.preparation.length > 0) && (
+      {show("paint", !!view.paint?.length) && (
+        <Section id="paint" title="Paint to order" changed={is("paint")}>
+          {view.paint?.length ? (
+            <>
+              <PaintList rows={view.paint} />
+              <p className="mt-2 text-xs text-muted">Worked out from the measurements, coats and each product&apos;s coverage, with a little extra for waste.</p>
+            </>
+          ) : (
+            <Removed />
+          )}
+        </Section>
+      )}
+
+      {show("preparation", view.preparation.length > 0 || !!view.prepHours) && (
         <Section id="preparation" title="Preparation" changed={is("preparation")}>
-          {view.preparation.length ? <Prose blocks={view.preparation} /> : <Removed />}
+          {view.prepHours && <p className="mb-2 text-sm font-medium">About {view.prepHours} hours of prep.</p>}
+          {view.preparation.length ? <Prose blocks={view.preparation} /> : view.prepHours ? null : <Removed />}
         </Section>
       )}
 

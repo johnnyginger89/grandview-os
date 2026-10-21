@@ -15,7 +15,7 @@ type WorkOrderView = import("@/server/work-order-view").WorkOrderView;
 
 const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const ROOM = uuid(1);
-const SENTINELS = ["987.65", "123.45", "SECRET-INTERNAL", "SECRET-AREA", "77.77", "2222.22", "6543.21", "4321.09"];
+const SENTINELS = ["987.65", "123.45", "SECRET-INTERNAL", "SECRET-AREA", "77.77", "6543.21", "4321.09"];
 
 const rate: RateSnapshot = {
   rateId: uuid(2), rateVersion: 1, name: "Walls – roll & cut", unit: "sqft", basis: "units_per_hour", productionRate: "150", additionalCoatFactor: "0.85", defaultCoats: 2,
@@ -33,13 +33,13 @@ const doc: EstimateDoc = {
     {
       id: uuid(4), areaId: ROOM, description: "Walls – roll & cut", customerDescription: null, customerDetail: null, rateSnapshot: rate, quantity: "1", quantitySource: "walls",
       coats: 2, prepFactor: "1", difficultyFactor: "1", conditionFactor: "1", accessFactor: "1", colour: "SW 7008 Alabaster", sheen: "Eggshell",
-      overrideHours: "2222.22", overridePrice: "6543.21", isOptional: false, optionSelected: false,
+      overrideHours: null, overridePrice: "6543.21", isOptional: false, optionSelected: false,
     },
   ],
   costItems: [{ id: uuid(5), kind: "subcontractor", description: "Hidden 4321.09", customerDescription: null, cost: "4321.09", markupPct: "0.2", overridePrice: null, isOptional: false, optionSelected: false }],
 };
 
-function view(extra: { specialInstructions?: string | null; phone?: boolean } = {}): WorkOrderView {
+function view(extra: { specialInstructions?: string | null; phone?: boolean; show?: { hours: boolean; paint: boolean } } = {}): WorkOrderView {
   return buildWorkOrderView({
     workOrder: {
       number: 7001, title: "Interior repaint", specialInstructions: extra.specialInstructions === undefined ? "Start upstairs.\n- Dog in the yard" : extra.specialInstructions,
@@ -56,6 +56,7 @@ function view(extra: { specialInstructions?: string | null; phone?: boolean } = 
     crew: null,
     bookings: [{ kind: "work", phaseLabel: null, startDate: "2026-10-26", endDate: "2026-10-30", workDays: 5, crewId: uuid(6), crewName: "[TEST DATA] Niko", crewNotes: null }],
     projectManager: { name: "[TEST DATA] Pat PM", phone: "604-555-0150" },
+    show: extra.show ?? { hours: true, paint: true },
   });
 }
 
@@ -72,11 +73,22 @@ describe("WorkOrderDocument", () => {
       expect(t, s).toContain(s);
   });
 
-  it("never shows money, rates, hours or internal notes", () => {
+  it("shows estimated labour hours and the paint to buy", () => {
+    const t = text(html);
+    // 352 sq ft ÷ 150 × (1 + 0.85) = 4.3 h; 352 × 2 ÷ 350 × 1.1 = 2.21 gal → 2 gal + 1 qt.
+    for (const s of ["Estimated labour: 4.3 hours", "4.3 h", "Paint to order", "Benjamin Moore Regal Select", "Colour: SW 7008 Alabaster · Sheen: Eggshell", "2 gal + 1 qt"]) expect(t, s).toContain(s);
+  });
+
+  it("never shows money, rates or internal notes", () => {
     for (const s of SENTINELS) expect(html, s).not.toContain(s);
     expect(html).not.toContain("$");
-    expect(html).not.toMatch(/\bhours?\b/i);
     expect(html).not.toMatch(/price|cost|margin/i);
+  });
+
+  it("shows no hours or paint when they're switched off", () => {
+    const off = render({ view: view({ show: { hours: false, paint: false } }), office: OFFICE });
+    expect(off).not.toMatch(/\bhours?\b|\d h\b/i);
+    expect(off).not.toContain("Paint to order");
   });
 
   it("opens maps without a referrer and only links phones that are shown", () => {

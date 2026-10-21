@@ -196,9 +196,16 @@ export function UsersPanel({ users, meId, isOwner }: { users: { id: string; name
   );
 }
 
-export function WorkOrderSettingsForm({ settings }: { settings: { defaultChecklist: string[]; defaultLinkDays: number } }) {
+export function WorkOrderSettingsForm({
+  settings,
+}: {
+  settings: { defaultChecklist: string[]; defaultLinkDays: number; createOnSale: boolean; showHours: boolean; showPaint: boolean };
+}) {
   const [checklist, setChecklist] = useState(settings.defaultChecklist.join("\n"));
   const [days, setDays] = useState(String(settings.defaultLinkDays));
+  const [createOnSale, setCreateOnSale] = useState(settings.createOnSale);
+  const [showHours, setShowHours] = useState(settings.showHours);
+  const [showPaint, setShowPaint] = useState(settings.showPaint);
   const [state, setState] = useState<{ ok: boolean; error?: string } | null>(null);
   const [pending, start] = useTransition();
   function save() {
@@ -208,12 +215,27 @@ export function WorkOrderSettingsForm({ settings }: { settings: { defaultCheckli
       return;
     }
     const items = checklist.split("\n").map((s) => s.trim()).filter(Boolean);
-    start(async () => setState(await saveWorkOrderSettingsAction({ defaultChecklist: items, defaultLinkDays: n })));
+    start(async () => setState(await saveWorkOrderSettingsAction({ defaultChecklist: items, defaultLinkDays: n, createOnSale, showHours, showPaint })));
   }
+  const toggle = (label: string, hint: string, checked: boolean, set: (v: boolean) => void) => (
+    <label className="flex items-start gap-3 text-sm">
+      <input type="checkbox" className="mt-0.5 size-4" checked={checked} onChange={(e) => set(e.target.checked)} />
+      <span>
+        <span className="font-medium">{label}</span>
+        <span className="block text-muted">{hint}</span>
+      </span>
+    </label>
+  );
   return (
     <Card className="max-w-2xl">
       <CardHeader title="Work orders" description="Starting values for new crew work orders. Each work order can still be changed before it's issued." />
       <div className="grid gap-4 p-4">
+        <fieldset className="grid gap-3">
+          <legend className="sr-only">What work orders include</legend>
+          {toggle("Create the work order when a job is sold", "A draft for everyone booked on the job, ready to check and issue.", createOnSale, setCreateOnSale)}
+          {toggle("Show labour hours", "Estimated hours per item, per room and for the whole job. Never prices.", showHours, setShowHours)}
+          {toggle("Show paint to order", "How much of each product, colour and sheen to buy, from the measurements and coverage.", showPaint, setShowPaint)}
+        </fieldset>
         <Field label="Default checklist" hint="One item per line, up to 30. Copied onto every new work order.">
           <Textarea rows={9} value={checklist} onChange={(e) => setChecklist(e.target.value)} />
         </Field>

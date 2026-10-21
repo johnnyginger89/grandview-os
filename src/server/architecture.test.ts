@@ -470,6 +470,9 @@ describe("schedule_entries has a single writer", () => {
 // ---------------------------------------------------------------------------
 // Rule (CLAUDE.md rule 2, spec-schedule §6, spec-work-orders §4): crew-facing
 // projections never name money or hour fields, so nothing can leak by accident.
+// Since Oct 2026 the owner wants crews to see estimated labour hours on work
+// orders: those come only from the signed estimate's lines through
+// src/lib/estimating/crew-quantities.ts, never from these project or booking columns.
 // ---------------------------------------------------------------------------
 
 const CREW_FACING = [

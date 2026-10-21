@@ -64,6 +64,13 @@
       "when": 1792615406932,
       "tag": "0008_accept_notifications",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792618194266,
+      "tag": "0009_booking_kinds",
+      "breakpoints": true
     }
   ]
 }

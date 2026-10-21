@@ -4,7 +4,7 @@ import { expect, type Browser, type Page } from "@playwright/test";
  * Creates a customer and a $3,000 (pre-GST) estimate, sends it, and signs it as the customer. Returns the customer name.
  * Optionally gives the walls a colour and the estimate an internal note (to check crew views never show it).
  */
-export async function sellThreeThousandDollarJob(page: Page, browser: Browser, opts: { colour?: string; internalNote?: string } = {}) {
+export async function sellThreeThousandDollarJob(page: Page, browser: Browser, opts: DraftOptions = {}) {
   const name = await draftThreeThousandDollarEstimate(page, opts);
   await page.getByRole("button", { name: "Send proposal" }).click();
   await page.getByText("Email it to the customer").click();
@@ -29,8 +29,15 @@ export async function sellThreeThousandDollarJob(page: Page, browser: Browser, o
   return name;
 }
 
+interface DraftOptions {
+  colour?: string;
+  internalNote?: string;
+  /** Room size in feet, so the walls get a measured area (and hours and paint). */
+  size?: { length: string; width: string };
+}
+
 /** Creates a customer and a $3,000 (pre-GST) estimate and leaves the browser on the estimate. Returns the customer name. */
-export async function draftThreeThousandDollarEstimate(page: Page, opts: { colour?: string; internalNote?: string } = {}) {
+export async function draftThreeThousandDollarEstimate(page: Page, opts: DraftOptions = {}) {
   const stamp = Date.now();
   const name = `Sale Test ${stamp} [TEST DATA]`;
   await page.goto("/customers/new");
@@ -43,6 +50,10 @@ export async function draftThreeThousandDollarEstimate(page: Page, opts: { colou
   await page.getByRole("button", { name: "Create and start estimating" }).click();
   await page.getByRole("button", { name: "Living room" }).click();
   await page.getByLabel("Add item").first().selectOption({ label: "Walls – roll & cut" });
+  if (opts.size) {
+    await page.getByLabel("Length (ft)").fill(opts.size.length);
+    await page.getByLabel("Width (ft)").fill(opts.size.width);
+  }
   await page.getByRole("button", { name: /Walls – roll & cut/ }).click();
   await page.getByLabel("Override price").fill("3000");
   if (opts.colour) await page.getByLabel("Colour", { exact: true }).fill(opts.colour);

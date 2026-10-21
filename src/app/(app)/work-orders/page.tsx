@@ -42,7 +42,7 @@ export default async function WorkOrdersPage({ searchParams }: { searchParams: P
       {rows.length === 0 ? (
         <EmptyState
           title={status ? "No work orders here" : "No work orders yet"}
-          description="Work orders are made on a sold job: open the job and choose New work order."
+          description="Each sold job gets a work order automatically. Open the job to check it, assign people and issue it."
         />
       ) : (
         <Card className="overflow-hidden">

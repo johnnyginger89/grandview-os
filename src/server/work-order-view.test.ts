@@ -85,6 +85,7 @@ const input = (extra: Partial<WorkOrderInput> = {}): WorkOrderInput => ({
     { kind: "work", phaseLabel: "Main floor", startDate: "2026-10-26", endDate: "2026-10-30", workDays: 5, crewId: CREW_A, crewName: "[TEST DATA] Niko", crewNotes: " Park on the street " },
   ],
   projectManager: { name: "[TEST DATA] Pat PM", phone: "604-555-0150" },
+  show: { hours: false, paint: false },
   ...extra,
 });
 
@@ -101,7 +102,7 @@ function allKeys(v: unknown, out = new Set<string>()): Set<string> {
 describe("buildWorkOrderView", () => {
   const view = buildWorkOrderView(input());
 
-  it("never contains money, rates or hours, as keys or values", () => {
+  it("never contains money, rates or (with hours switched off) hours, as keys or values", () => {
     const json = JSON.stringify(view);
     for (const s of SENTINELS) expect(json, `must not contain ${s}`).not.toContain(s);
     expect(json).not.toContain("$");
@@ -180,6 +181,67 @@ describe("buildWorkOrderView", () => {
     expect(view.equipment).toEqual([{ type: "ul", items: ["2 drop sheets per room"] }]);
     expect(view.safety).toEqual([]);
     expect(view.checklist).toEqual([{ id: "c1", text: "Take before photos" }]);
+  });
+});
+
+describe("labour hours and paint to order", () => {
+  // Distinct products and no typed-over hours, so the amounts can be checked by hand.
+  const own = (s: RateSnapshot, n: number): RateSnapshot => ({ ...s, material: s.material ? { ...s.material, productId: uuid(n) } : null });
+  const measured: EstimateDoc = {
+    ...doc,
+    lines: [
+      line(1, KITCHEN, own(WALLS, 610), { quantitySource: "walls", quantity: "1", colour: "SW 7008 Alabaster", sheen: "Eggshell", overrideHours: null }),
+      line(2, KITCHEN, own(TRIM, 611), { quantity: "70", overrideHours: null }),
+      line(3, LIVING, own(CEIL, 612), { isOptional: true, optionSelected: false, overrideHours: null }),
+      line(4, LIVING, own(DOORS, 613), { isOptional: true, optionSelected: true, quantity: "3", customerDescription: "Paint 3 doors", overrideHours: null }),
+      line(5, null, PREP, { quantity: "4", customerDetail: "Sand all glossy trim", overrideHours: null }),
+      line(6, null, REPAIR, { quantity: "2", customerDescription: "Repair rot on the back door frame", overrideHours: null }),
+    ],
+  };
+  const shown = buildWorkOrderView(input({ doc: measured, show: { hours: true, paint: true } }));
+
+  it("shows hours per item, per area, for prep and for the job, and still no money", () => {
+    const kitchen = shown.scope.find((a) => a.area === "Kitchen")!;
+    // 352 sq ft ÷ 150 × (1 + 0.85) × 1.15 prep = 4.99 h; 70 ln ft the same way = 0.99 h.
+    expect(kitchen.items.map((i) => i.hours)).toEqual(["5", "1"]);
+    expect(kitchen.hours).toBe("6");
+    // Hourly lines show their time as hours, not as a quantity.
+    expect(shown.scope.find((a) => a.area === "General")!.items[0]).toMatchObject({ quantity: null, hours: "2.3" });
+    expect(shown.prepHours).toBe("4.6");
+    expect(shown.labourHours).toBe("12.9");
+
+    const json = JSON.stringify(shown);
+    for (const s of SENTINELS) expect(json, `must not contain ${s}`).not.toContain(s);
+    expect(json).not.toContain("$");
+    const keys = [...allKeys(shown)];
+    expect(keys.filter((k) => FORBIDDEN_KEY.test(k)).sort()).toEqual(["hours", "labourHours", "prepHours"]);
+  });
+
+  it("uses the estimator's hours when they were typed over", () => {
+    const typed = buildWorkOrderView(input({ doc: { ...measured, lines: measured.lines.map((l, i) => (i === 0 ? { ...l, overrideHours: "7.25" } : l)) }, show: { hours: true, paint: false } }));
+    expect(typed.scope[0].items[0].hours).toBe("7.3");
+  });
+
+  it("lists paint to buy by product, colour and sheen", () => {
+    // Walls: 352 × 2 ÷ 350 × 1.1919 = 2.40 gal → 3 gal. Trim: 70 × 2 ÷ 350 × 1.1919 = 0.48 gal → 1 gal. Doors: 0.02 gal → 1 qt.
+    expect(shown.paint).toEqual([
+      { product: "Sherwin-Williams Duration Home Interior Matte", colour: "SW 7008 Alabaster", sheen: "Eggshell", amount: "3 gal", note: null },
+      { product: "Sherwin-Williams Emerald Urethane Trim Enamel", colour: null, sheen: null, amount: "1 gal", note: null },
+      { product: "Benjamin Moore Advance", colour: null, sheen: null, amount: "1 qt", note: null },
+    ]);
+  });
+
+  it("says when an amount leaves something out instead of guessing", () => {
+    const unmeasured = buildWorkOrderView(input({ doc: { ...measured, lines: [{ ...measured.lines[1], quantity: "0" }] }, show: { hours: false, paint: true } }));
+    expect(unmeasured.paint).toEqual([{ product: "Sherwin-Williams Emerald Urethane Trim Enamel", colour: null, sheen: null, amount: null, note: "Not worked out: 1 item that wasn't measured. Ask the office." }]);
+  });
+
+  it("leaves hours and paint out entirely when switched off, so older versions compare equal", () => {
+    const off = buildWorkOrderView(input({ doc: measured }));
+    expect(Object.keys(off)).not.toEqual(expect.arrayContaining(["labourHours"]));
+    expect("paint" in off || "prepHours" in off || "labourHours" in off).toBe(false);
+    expect(off.scope.every((a) => !("hours" in a) && a.items.every((i) => !("hours" in i)))).toBe(true);
+    expect(changedSections(off, shown)).toEqual(["scope", "paint", "preparation"]);
   });
 });
 

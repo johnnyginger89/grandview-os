@@ -68,6 +68,9 @@ export const workOrderSettingsSchema = z.object({
     .min(1, "Links have to work for at least 1 day.")
     .max(MAX_LINK_DAYS, `Links can work for at most ${MAX_LINK_DAYS} days.`)
     .default(DEFAULT_WORK_ORDER_SETTINGS.defaultLinkDays),
+  createOnSale: z.boolean().default(DEFAULT_WORK_ORDER_SETTINGS.createOnSale),
+  showHours: z.boolean().default(DEFAULT_WORK_ORDER_SETTINGS.showHours),
+  showPaint: z.boolean().default(DEFAULT_WORK_ORDER_SETTINGS.showPaint),
 });
 export type WorkOrderSettings = z.output<typeof workOrderSettingsSchema>;
 

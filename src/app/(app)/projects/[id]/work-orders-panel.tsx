@@ -7,6 +7,7 @@ import { cn, formatDate, formatDateTime } from "@/lib/utils";
 import { daysLeft } from "@/lib/work-orders/links";
 import { LINK_DAY_CHOICES, MAX_CHECKLIST_ITEMS, MAX_CHECKLIST_TEXT, MAX_LINK_DAYS } from "@/lib/work-orders/schemas";
 import { SECTION_LABEL, STATUS_LABEL, type NewWorkOrderDefaults, type WorkOrderDTO, type WorkOrderFieldsDTO, type WorkOrderLinkDTO } from "@/lib/work-orders/types";
+import { ScheduleBookingForm, type BookingFormSetup, type BookingFormWording } from "./schedule-card-booking";
 import { cancelWorkOrderAction, createShareLinkAction, createWorkOrderAction, issueWorkOrderAction, revokeShareLinkAction, updateWorkOrderAction } from "./work-order-actions";
 
 type CrewOption = { id: string; name: string };
@@ -14,6 +15,13 @@ type Flash = { ok: boolean; text: string } | null;
 type DialogState = { kind: "new" } | { kind: "edit"; wo: WorkOrderDTO } | { kind: "issue"; wo: WorkOrderDTO } | { kind: "link"; wo: WorkOrderDTO } | null;
 
 const STATUS_TONE: Record<WorkOrderDTO["status"], Tone> = { draft: "neutral", issued: "success", cancelled: "danger" };
+const ASSIGN_WORDING: BookingFormWording = {
+  open: "Assign someone",
+  who: "Who",
+  kind: "What they're doing",
+  notes: "Notes for them (optional)",
+  notesPlaceholder: "Shown with their booking, e.g. bring the colour fan deck",
+};
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const sectionList = (s: readonly (keyof typeof SECTION_LABEL)[]) => s.map((x) => SECTION_LABEL[x]).join(", ");
 const newId = () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : Math.random().toString(36).slice(2, 14));
@@ -89,6 +97,7 @@ export function WorkOrdersPanel({
   workOrders,
   defaults,
   crews,
+  assign,
   now,
   className,
 }: {
@@ -97,6 +106,8 @@ export function WorkOrdersPanel({
   workOrders: WorkOrderDTO[];
   defaults: NewWorkOrderDefaults;
   crews: CrewOption[];
+  /** The booking form, for people who may book crews (schedule.write). */
+  assign: BookingFormSetup | null;
   /** Server time (ISO), so link expiry text matches the server render. */
   now: string;
   className?: string;
@@ -133,10 +144,10 @@ export function WorkOrdersPanel({
     <Card id="work-orders" className={cn("scroll-mt-[calc(var(--app-top)+1rem)]", className)} role="region" aria-label="Work orders">
       <CardHeader
         title="Work orders"
-        description="What each crew needs on site: dates, address, scope, colours and instructions. Never prices or hours."
+        description="What the crew needs on site, made from the signed estimate when the job is sold. Crews never see prices."
         action={
           canEdit ? (
-            <Button size="sm" onClick={() => setDialog({ kind: "new" })}>
+            <Button size="sm" variant={workOrders.length ? "secondary" : "primary"} onClick={() => setDialog({ kind: "new" })}>
               <Plus className="size-4" aria-hidden /> New work order
             </Button>
           ) : undefined
@@ -149,6 +160,12 @@ export function WorkOrdersPanel({
           </p>
         )}
       </div>
+      {assign && (
+        <div className="mx-4 mt-3 space-y-2 rounded-md bg-surface-2/60 p-3 text-sm">
+          <p className="text-muted">Book the colour consultant, pressure washer, carpenter or painters on their own days. Everyone booked can open the work order once it&apos;s issued.</p>
+          <ScheduleBookingForm {...assign} wording={ASSIGN_WORDING} />
+        </div>
+      )}
       {!defaults.hasSignedEstimate && (
         <p className="mx-4 mt-3 rounded-md bg-info-soft px-3 py-2 text-sm text-info">
           This job has no signed estimate in Grandview OS, so its work orders have no scope list. Write what the crew needs in the special instructions.
@@ -156,7 +173,7 @@ export function WorkOrdersPanel({
       )}
       {workOrders.length === 0 ? (
         <p className="p-4 text-sm text-muted">
-          No work orders yet.{canEdit ? " Create one for the crew: it pulls in the signed scope, colours, the schedule and the address. Subcontractors without a login can get a share link." : ""}
+          No work orders yet.{canEdit ? " Create one for the crew: it pulls in the signed scope, colours, hours, paint, the schedule and the address. Subcontractors without a login can get a share link." : ""}
         </p>
       ) : (
         <ul>
@@ -274,6 +291,20 @@ function WorkOrderRow({
           <p className="mt-0.5 text-xs text-muted">
             {wo.currentVersion ? `Version ${wo.currentVersion}, issued ${formatDate(wo.issuedAt)}` : "Not issued yet: crews can't see it"} · {plural(activeLinks, "active link")}
           </p>
+          <div className="mt-2 text-sm" data-testid="work-order-assigned">
+            <p className="font-medium">Goes to</p>
+            {wo.assigned.length ? (
+              <ul className="mt-0.5 space-y-0.5">
+                {wo.assigned.map((a, i) => (
+                  <li key={i}>
+                    {a.what} · {a.who ?? <span className="text-warning">no one assigned yet</span>} <span className="text-muted">· {a.dates}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-muted">{wo.crewName ? `${wo.crewName} isn't booked on this job yet.` : "Nobody is booked on this job yet."}</p>
+            )}
+          </div>
         </div>
         <div className="flex flex-wrap gap-2">
           {canEdit && open && (

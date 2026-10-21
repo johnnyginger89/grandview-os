@@ -3,19 +3,18 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { Card, CardHeader, LinkButton, Table, td, th } from "@/components/ui";
 import { can } from "@/lib/authz/permissions";
-import { addDays, parseIso, todayIso, toIso, type IsoDate } from "@/lib/calendar-date";
+import { parseIso, todayIso, toIso, type IsoDate } from "@/lib/calendar-date";
 import { formatNum } from "@/lib/money";
 import { crewColorClasses } from "@/lib/schedule/colors";
 import { mondayOf } from "@/lib/schedule/dates";
-import { remainingHours, suggestedWorkingDays } from "@/lib/schedule/duration";
 import { dateRangeLabel, KIND_LABEL } from "@/lib/schedule/format";
-import { allowedKinds } from "@/lib/schedule/status-plan";
 import type { ProjectSchedulingDTO } from "@/lib/schedule/types";
-import { calendarsFor, countWorkingDays, nextWorkingDay } from "@/lib/schedule/working-days";
+import { calendarsFor, countWorkingDays } from "@/lib/schedule/working-days";
 import { cn, formatDate } from "@/lib/utils";
 import { listCrews } from "@/server/crews";
 import { getProjectSchedule } from "@/server/schedule";
-import { defaultCapacity, getHoursPerCrewDay, getScheduleSettings } from "@/server/schedule-settings";
+import { getHoursPerCrewDay, getScheduleSettings } from "@/server/schedule-settings";
+import { bookingFormProps } from "./booking-form-props";
 import { ScheduleBookingForm } from "./schedule-card-booking";
 import { ScheduleCustomerBlock } from "./schedule-card-customer";
 import { MarkInProgressButton, ReadinessChecklist, RemoveAllBookingsButton, SchedulingPrefsForm } from "./schedule-card-panels";
@@ -77,13 +76,6 @@ export async function ProjectScheduleCard({ projectId, user }: { projectId: stri
   const rows = entries.map((e) => ({ ...e, workingDays: countWorkingDays(e.startDate, e.endDate, calFor(e.crewId ? crewById.get(e.crewId) : null)) }));
   const showPhase = rows.some((e) => e.phaseLabel);
 
-  const kinds = allowedKinds(dto.projectStatus).map((k) => ({ value: k, label: KIND_LABEL[k] }));
-  const left = remainingHours(dto.hours.estimated, dto.hours.scheduled);
-  const activeCrews = crews
-    .filter((c) => c.active)
-    .map((c) => ({ id: c.id, name: c.name, worksSaturdays: c.worksSaturdays, suggestedDays: suggestedWorkingDays(left, c) }));
-  const base = scheduling.notBefore && scheduling.notBefore > addDays(today, 1) ? scheduling.notBefore : addDays(today, 1);
-  const defaultStart = nextWorkingDay(base, calendarsFor(settings, base, addDays(base, 90)).calFor(null));
 
   const first = dto.firstWorkDay;
   const calendarHref = `/schedule?from=${mondayOf(first ?? today)}`;
@@ -155,18 +147,7 @@ export async function ProjectScheduleCard({ projectId, user }: { projectId: stri
               <RemoveAllBookingsButton projectId={dto.projectId} count={rows.length} />
             </div>
           )}
-          {canEdit && (
-            <ScheduleBookingForm
-              projectId={dto.projectId}
-              onHold={dto.projectStatus === "on_hold"}
-              kinds={kinds}
-              crews={activeCrews}
-              unassignedDays={suggestedWorkingDays(left, defaultCapacity(settings, hoursPerCrewDay))}
-              calendar={{ workDays: settings.workDays, holidayRegion: settings.holidayRegion, extraClosedDays: settings.extraClosedDays }}
-              defaultStart={defaultStart}
-              hasBookings={rows.length > 0}
-            />
-          )}
+          {canEdit && <ScheduleBookingForm {...bookingFormProps(dto, crews, settings, hoursPerCrewDay, today)} />}
         </div>
 
         <div className="divide-y divide-border border-t border-border lg:col-span-2 lg:border-t-0 lg:border-l">

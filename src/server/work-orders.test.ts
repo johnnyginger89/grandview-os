@@ -342,6 +342,39 @@ describe("creating, editing and cancelling", () => {
     expect(h.audits.map((a) => a.action)).toEqual(["work_order.create", "work_order.create"]);
   });
 
+  it("starts every sold job with a draft for all crews and the default checklist", async () => {
+    sourceRows();
+    h.rows["insert:work_orders"] = [{ id: WO, number: 7001 }];
+    expect(await wo.createWorkOrderForSale(PROJECT, null)).toBe(WO);
+    expect(lastInsert("work_orders")).toMatchObject({ projectId: PROJECT, title: "[TEST DATA] Kim Lee – Interior repaint", crewId: null, createdBy: null });
+    const checklist = lastInsert("work_orders").checklist as { id: string; text: string }[];
+    expect(checklist.map((c) => c.text)).toHaveLength(7);
+    expect(checklist.every((c) => /^[A-Za-z0-9_-]{1,40}$/.test(c.id))).toBe(true);
+    expect(h.audits).toEqual([expect.objectContaining({ action: "work_order.create", entityId: WO, after: expect.objectContaining({ automatic: true }) })]);
+  });
+
+  it("leaves a sale alone when switched off, already done, cancelled, or failing", async () => {
+    sourceRows();
+    h.stored = { createOnSale: false };
+    expect(await wo.createWorkOrderForSale(PROJECT, "owner-1")).toBeNull();
+    h.stored = undefined;
+    h.rows["select:work_orders"] = [{ id: uuid(99) }];
+    expect(await wo.createWorkOrderForSale(PROJECT, "owner-1")).toBeNull();
+    h.rows["select:work_orders"] = [];
+    h.rows["select:projects"] = [project({ status: "cancelled" })];
+    expect(await wo.createWorkOrderForSale(PROJECT, "owner-1")).toBeNull();
+    expect(h.fake.find("insert", "work_orders")).toEqual([]);
+
+    h.rows["select:projects"] = [project()];
+    h.rows["insert:work_orders"] = () => {
+      throw new Error("database down");
+    };
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(await wo.createWorkOrderForSale(PROJECT, "owner-1")).toBeNull();
+    expect(log).toHaveBeenCalled();
+    log.mockRestore();
+  });
+
   it("refuses cancelled jobs and inactive crews", async () => {
     sourceRows();
     h.rows["select:projects"] = [project({ status: "cancelled" })];
@@ -476,12 +509,14 @@ describe("work_orders setting", () => {
     vi.spyOn(console, "error").mockImplementationOnce(() => {});
     expect((await wo.getWorkOrderSettings()).defaultLinkDays).toBe(60);
     h.stored = { defaultChecklist: ["Only this"], defaultLinkDays: 30 };
-    expect(await wo.getWorkOrderSettings()).toEqual({ defaultChecklist: ["Only this"], defaultLinkDays: 30 });
+    expect(await wo.getWorkOrderSettings()).toEqual({ defaultChecklist: ["Only this"], defaultLinkDays: 30, createOnSale: true, showHours: true, showPaint: true });
+    h.stored = { defaultChecklist: [], defaultLinkDays: 30, createOnSale: false, showHours: false, showPaint: true };
+    expect(await wo.getWorkOrderSettings()).toMatchObject({ createOnSale: false, showHours: false, showPaint: true });
   });
 
   it("saves validated values with an audit entry", async () => {
     await wo.saveWorkOrderSettings({ defaultChecklist: [" Walk the job "], defaultLinkDays: 90 }, ACTOR);
-    expect(h.saved).toEqual([{ defaultChecklist: ["Walk the job"], defaultLinkDays: 90 }]);
+    expect(h.saved).toEqual([{ defaultChecklist: ["Walk the job"], defaultLinkDays: 90, createOnSale: true, showHours: true, showPaint: true }]);
     expect(h.audits).toEqual([expect.objectContaining({ action: "settings.work_orders" })]);
     await expect(wo.saveWorkOrderSettings({ defaultLinkDays: 0 }, ACTOR)).rejects.toThrow();
   });

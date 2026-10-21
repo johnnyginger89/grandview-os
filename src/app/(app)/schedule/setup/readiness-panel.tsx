@@ -117,7 +117,7 @@ export function ReadinessPanel({ settings }: { settings: ScheduleSettings }) {
                 <Field label="Updates itself" className="min-w-48">
                   <Select value={c.linkedEntryKind ?? ""} onChange={(e) => update(c.uid, { linkedEntryKind: (e.target.value || null) as ScheduleEntryKind | null })}>
                     <option value="">No</option>
-                    {SCHEDULE_ENTRY_KINDS.map((k) => <option key={k} value={k}>When a {KIND_LABEL[k].toLowerCase()} is booked</option>)}
+                    {SCHEDULE_ENTRY_KINDS.map((k) => <option key={k} value={k}>When “{KIND_LABEL[k]}” is booked</option>)}
                   </Select>
                 </Field>
                 <div className="flex gap-1">
@@ -143,7 +143,7 @@ export function ReadinessPanel({ settings }: { settings: ScheduleSettings }) {
                 </div>
                 {c.linkedEntryKind && (
                   <p className="mt-1 text-xs text-subtle">
-                    Booking a {KIND_LABEL[c.linkedEntryKind].toLowerCase()} moves this from “{c.states.todo || STEP_LABEL.todo}” to “{c.states.in_progress || STEP_LABEL.in_progress}”.
+                    Booking “{KIND_LABEL[c.linkedEntryKind]}” moves this from “{c.states.todo || STEP_LABEL.todo}” to “{c.states.in_progress || STEP_LABEL.in_progress}”.
                   </p>
                 )}
               </div>

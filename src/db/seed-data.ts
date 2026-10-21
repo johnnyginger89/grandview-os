@@ -301,4 +301,9 @@ export const DEFAULT_WORK_ORDER_SETTINGS = {
     "Final walk-through with the customer",
   ],
   defaultLinkDays: 60,
+  /** Every sold job starts with a draft work order for all crews. */
+  createOnSale: true,
+  /** Crews see estimated labour hours (never prices) and how much paint to buy. */
+  showHours: true,
+  showPaint: true,
 } as const;

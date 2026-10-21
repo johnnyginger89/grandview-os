@@ -3,9 +3,10 @@ import { expectNoAccess, statePath } from "./helpers";
 import { sellThreeThousandDollarJob } from "./sales";
 
 /*
- * Crew work orders (spec-work-orders §5): create and issue, share by link with no
- * money anywhere, issue a new version with a highlighted change, revoke, and keep
- * painters out. The steps share one job, so the file runs in order.
+ * Crew work orders (spec-work-orders §5): made automatically when the job is sold,
+ * someone assigned from the card, issued, shared by link with labour hours and paint
+ * to order but no money anywhere, a new version with a highlighted change, revoke,
+ * and painters kept out. The steps share one job, so the file runs in order.
  */
 test.describe.configure({ mode: "serial" });
 
@@ -31,23 +32,34 @@ async function openAnonymously(browser: import("@playwright/test").Browser, url:
 test.describe("work orders (owner)", () => {
   test.use({ storageState: statePath("owner") });
 
-  test("create and issue a work order for a signed job", async ({ page, browser }) => {
-    const name = await sellThreeThousandDollarJob(page, browser, { colour: COLOUR, internalNote: "SECRET-INTERNAL note for the office" });
+  test("selling the job creates its work order, someone is assigned, and it's issued", async ({ page, browser }) => {
+    const name = await sellThreeThousandDollarJob(page, browser, { colour: COLOUR, internalNote: "SECRET-INTERNAL note for the office", size: { length: "15", width: "12" } });
     await page.goto("/projects");
     await page.getByRole("link", { name: new RegExp(escape(name)) }).first().click();
     await expect(page).toHaveURL(/\/projects\/[0-9a-f-]{36}$/);
     projectPath = new URL(page.url()).pathname;
 
-    await expect(card(page).getByText("No work orders yet.")).toBeVisible();
-    await card(page).getByRole("button", { name: "New work order" }).click();
-    const form = page.getByRole("dialog", { name: "New work order" });
-    await expect(form.getByLabel("Crew", { exact: true })).toHaveValue("");
-    await expect(form.getByLabel("Checklist item 1", { exact: true })).not.toHaveValue("");
-    await form.getByLabel("Special instructions").fill(`${FIRST}\n- Dog in the yard`);
-    await form.getByRole("button", { name: "Create work order" }).click();
-    await expect(card(page).getByText(/Work order created/)).toBeVisible();
+    // Already there: a draft for all crews, with the default checklist.
+    await expect(card(page).getByTestId("work-order")).toHaveCount(1);
+    await expect(row(page).getByText("All crews")).toBeVisible();
     await expect(row(page).getByText("Draft", { exact: true })).toBeVisible();
     await expect(row(page).getByText(/Not issued yet/)).toBeVisible();
+    await expect(row(page).getByTestId("work-order-assigned")).toContainText("Nobody is booked on this job yet.");
+
+    // Booking someone from the card is what assigns them.
+    await card(page).getByRole("button", { name: "Assign someone" }).click();
+    const assign = card(page).getByRole("form", { name: "Assign someone" });
+    await assign.getByLabel("What they're doing").selectOption({ label: "Colour consult" });
+    await assign.getByLabel("Working days").fill("1");
+    await assign.getByRole("button", { name: "Add to schedule" }).click();
+    await expect(row(page).getByTestId("work-order-assigned")).toContainText("Colour consult ·");
+
+    await row(page).getByRole("button", { name: "Edit" }).click();
+    const form = page.getByRole("dialog");
+    await expect(form.getByLabel("Checklist item 1", { exact: true })).not.toHaveValue("");
+    await form.getByLabel("Special instructions").fill(`${FIRST}\n- Dog in the yard`);
+    await form.getByRole("button", { name: "Save changes" }).click();
+    await expect(card(page).getByText(/Changes saved/)).toBeVisible();
 
     await row(page).getByRole("button", { name: "Issue", exact: true }).click();
     await page.getByRole("dialog").getByRole("button", { name: "Issue work order" }).click();
@@ -81,7 +93,7 @@ test.describe("work orders (owner)", () => {
     await expect(p.getByRole("link", { name: "Open in Maps" })).toBeVisible();
     await expect(p.getByText("Walls – roll & cut").first()).toBeVisible();
     await expect(p.getByText("2 coats").first()).toBeVisible();
-    await expect(p.getByText(`Colour: ${COLOUR}`)).toBeVisible();
+    await expect(p.locator('[data-section="scope"]').getByText(`Colour: ${COLOUR}`)).toBeVisible();
     await expect(p.getByRole("heading", { name: "Special instructions" })).toBeVisible();
     await expect(p.getByText(FIRST)).toBeVisible();
     await expect(p.getByText("Dog in the yard")).toBeVisible();
@@ -89,9 +101,15 @@ test.describe("work orders (owner)", () => {
     await expect(p.locator('meta[name="referrer"]')).toHaveAttribute("content", "no-referrer");
     await expect(p.locator('meta[name="robots"]')).toHaveAttribute("content", /noindex/);
 
+    // Hours and paint to buy, as the owner asked; never what anything costs.
+    await expect(p.getByText(/Estimated labour: [\d.,]+ hours/)).toBeVisible();
+    await expect(p.getByRole("heading", { name: "Paint to order" })).toBeVisible();
+    await expect(p.getByRole("list", { name: "Paint to order" })).toContainText(/\d+ (gal|qt)/);
+    await expect(p.getByRole("list", { name: "Paint to order" })).toContainText(`Colour: ${COLOUR}`);
+    await expect(p.locator('[data-section="bookings"]')).toContainText("Colour consult");
+
     const html = (await crew.res?.text()) ?? "";
-    for (const secret of ["SECRET-INTERNAL", "price", "laborCostPerHour", "billingRatePerHour", "rateSnapshot", "overrideHours"]) expect(html, secret).not.toContain(secret);
-    expect(html).not.toMatch(/\bhours\b/i);
+    for (const secret of ["SECRET-INTERNAL", "price", "laborCostPerHour", "billingRatePerHour", "rateSnapshot", "overrideHours", "pricePerGallon"]) expect(html, secret).not.toContain(secret);
     // React and Next use "$" in their own inline scripts and <!--$--> markers; the page itself must not contain one.
     expect(html.replace(/<script\b[\s\S]*?<\/script>/gi, "").replace(/<!--[\s\S]*?-->/g, "")).not.toContain("$");
     expect(await p.locator("body").innerText()).not.toContain("$");

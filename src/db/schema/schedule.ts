@@ -120,7 +120,7 @@ export const scheduleEntries = pgTable(
     index("sched_range_idx").on(t.startDate, t.endDate).where(sql`deleted_at IS NULL`),
     index("sched_updated_idx").on(t.updatedAt),
     check("sched_dates_chk", sql`${t.endDate} >= ${t.startDate} AND ${t.endDate} - ${t.startDate} <= 180`),
-    check("sched_kind_chk", sql`${t.kind} IN ('work','pressure_wash','colour_consult','walk_through','touch_up')`),
+    check("sched_kind_chk", sql`${t.kind} IN ('work','pressure_wash','colour_consult','carpentry','walk_through','touch_up','other')`),
   ],
 );
 

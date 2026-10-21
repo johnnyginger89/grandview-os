@@ -14,8 +14,10 @@ export const KIND_LABEL: Record<ScheduleEntryKind, string> = {
   work: "Painting",
   pressure_wash: "Pressure wash",
   colour_consult: "Colour consult",
+  carpentry: "Carpentry",
   walk_through: "Walk-through",
   touch_up: "Touch-up",
+  other: "Other work",
 };
 
 export function kindLabel(kind: ScheduleEntryKind): string {
@@ -28,6 +30,7 @@ export const CREW_TRADE_LABEL: Record<CrewTrade, string> = {
   pressure_washing: "Pressure washing",
   carpentry: "Carpentry",
   drywall: "Drywall",
+  colour_consulting: "Colour consulting",
   other: "Other",
 };
 

@@ -1,5 +1,5 @@
 "use client";
-import { AlertTriangle, ClipboardCheck, Clock, Droplets, GripVertical, Paintbrush, Palette, Wrench, type LucideIcon } from "lucide-react";
+import { AlertTriangle, Briefcase, ClipboardCheck, Clock, Droplets, GripVertical, Hammer, Paintbrush, Palette, Wrench, type LucideIcon } from "lucide-react";
 import type { CSSProperties, KeyboardEvent, PointerEvent } from "react";
 import type { ScheduleEntryKind } from "@/lib/schedule/constants";
 import { crewColorClasses } from "@/lib/schedule/colors";
@@ -13,8 +13,10 @@ export const KIND_ICON: Record<ScheduleEntryKind, LucideIcon> = {
   work: Paintbrush,
   pressure_wash: Droplets,
   colour_consult: Palette,
+  carpentry: Hammer,
   walk_through: ClipboardCheck,
   touch_up: Wrench,
+  other: Briefcase,
 };
 
 /** Weekends and holidays inside a bar are paled a little (those days aren't counted). */

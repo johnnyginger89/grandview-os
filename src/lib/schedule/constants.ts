@@ -6,14 +6,14 @@
 export const CREW_KINDS = ["in_house", "subcontractor"] as const;
 export type CrewKind = (typeof CREW_KINDS)[number];
 
-export const CREW_TRADES = ["painting", "pressure_washing", "carpentry", "drywall", "other"] as const;
+export const CREW_TRADES = ["painting", "pressure_washing", "carpentry", "drywall", "colour_consulting", "other"] as const;
 export type CrewTrade = (typeof CREW_TRADES)[number];
 
 /** Palette keys only (validated by zod); mapped to static Tailwind classes in ./colors.ts. */
 export const CREW_COLORS = ["emerald", "violet", "amber", "sky", "rose", "indigo", "orange", "teal", "lime", "fuchsia", "cyan", "slate"] as const;
 export type CrewColor = (typeof CREW_COLORS)[number];
 
-export const SCHEDULE_ENTRY_KINDS = ["work", "pressure_wash", "colour_consult", "walk_through", "touch_up"] as const;
+export const SCHEDULE_ENTRY_KINDS = ["work", "pressure_wash", "colour_consult", "carpentry", "walk_through", "touch_up", "other"] as const;
 export type ScheduleEntryKind = (typeof SCHEDULE_ENTRY_KINDS)[number];
 
 export const START_CONFIRMATIONS = ["none", "week_sent", "week_confirmed", "date_sent", "date_confirmed"] as const;

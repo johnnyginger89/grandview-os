@@ -2,12 +2,15 @@ import "server-only";
 /**
  * The crew-facing work order document. Pure (no database access) so the crew-safe
  * guarantee can be unit-tested: every field is copied by name from the accepted
- * estimate, the bookings and the work order. Never prices, rates, costs or hours;
- * quantities, coats, products and colours are shown because crews need them.
+ * estimate, the bookings and the work order. Never prices, rates or costs.
+ * Quantities, coats, products and colours are shown because crews need them, and
+ * labour hours and paint to buy (from crew-quantities) when the work-order settings
+ * say so: the owner wants crews to see their hours, never the money (Oct 2026).
  */
+import { crewQuantities, hoursLabel, paintToBuy, paintToBuyLabel, type PaintNeed } from "@/lib/estimating/crew-quantities";
 import { isIncluded } from "@/lib/estimating/engine";
 import { resolvedQuantity, type DocArea, type DocLine, type EstimateDoc } from "@/lib/estimating/document";
-import { d, formatNum } from "@/lib/money";
+import { d, Decimal, formatNum } from "@/lib/money";
 import { parseProse, splitLines, type Block } from "@/lib/proposal-template/prose";
 import { resolveJobType } from "@/lib/proposal-template/resolve";
 import type { ProposalTemplate } from "@/lib/proposal-template/schema";
@@ -21,7 +24,7 @@ export type { Block };
 
 export interface WorkOrderScopeItem {
   title: string;
-  /** "560" with unit "sq ft"; null for hourly lines (hours are never shown). */
+  /** "560" with unit "sq ft"; null for hourly lines (their time is in `hours`). */
   quantity: string | null;
   unit: string | null;
   coats: number | null;
@@ -29,6 +32,19 @@ export interface WorkOrderScopeItem {
   colour: string | null;
   sheen: string | null;
   detail: Block[];
+  /** Estimated labour hours, "3.5". Only when hours are shown and the item takes time. */
+  hours?: string;
+}
+
+/** One row of "Paint to order". */
+export interface WorkOrderPaint {
+  product: string;
+  colour: string | null;
+  sheen: string | null;
+  /** "3 gal", "2 gal + 1 qt"; null when nothing could be worked out. */
+  amount: string | null;
+  /** What the amount leaves out, e.g. "Doesn't include 1 item that wasn't measured". */
+  note: string | null;
 }
 
 export interface WorkOrderBooking {
@@ -63,8 +79,15 @@ export interface WorkOrderView {
   bookings: WorkOrderBooking[];
   /** The office contact for the crew. */
   projectManager: { name: string; phone: string | null } | null;
-  scope: { area: string; description: string | null; items: WorkOrderScopeItem[] }[];
+  /** `hours` = the area's items added up, when hours are shown. */
+  scope: { area: string; description: string | null; items: WorkOrderScopeItem[]; hours?: string }[];
+  /** Estimated labour for the whole job, prep included, when hours are shown. */
+  labourHours?: string;
   preparation: Block[];
+  /** Estimated prep hours, when hours are shown and there is prep. */
+  prepHours?: string;
+  /** What to buy, when paint is shown (older versions don't have it). */
+  paint?: WorkOrderPaint[];
   excluded: string[];
   specialInstructions: Block[];
   equipment: Block[];
@@ -95,6 +118,8 @@ export interface WorkOrderInput {
   customer: { name: string; phone: string | null };
   property: { street: string; unit: string | null; city: string | null; province: string | null; postalCode: string | null; accessNotes: string | null } | null;
   crew: { name: string; lead: string | null } | null;
+  /** Labour hours and paint to order are optional extras (the work-order settings). */
+  show: { hours: boolean; paint: boolean };
   /** The project's non-deleted bookings. */
   bookings: readonly {
     kind: ScheduleEntryKind;
@@ -117,7 +142,11 @@ const ul = (items: string[]): Block => ({ type: "ul", items });
 const isPrep = (l: DocLine) => (l.rateSnapshot.category ?? "").trim().toLowerCase() === "prep";
 const clean = (s: string | null | undefined) => s?.trim() || null;
 
-function scopeItem(l: DocLine, area: DocArea | undefined): WorkOrderScopeItem {
+/** Hours worth showing: more than nothing. Keys are left out otherwise, so versions without hours compare equal. */
+const shownHours = (h: Decimal | undefined) => (h && h.gt(0) ? { hours: hoursLabel(h) } : {});
+const sum = (hs: (Decimal | undefined)[]) => hs.reduce<Decimal>((s, h) => (h ? s.plus(h) : s), new Decimal(0));
+
+function scopeItem(l: DocLine, area: DocArea | undefined, hours: Map<string, Decimal> | null): WorkOrderScopeItem {
   const unit = UNIT[l.rateSnapshot.unit] ?? null;
   const q = unit ? d(resolvedQuantity(l, area)) : null;
   const shown = q !== null && q.gt(0);
@@ -130,24 +159,48 @@ function scopeItem(l: DocLine, area: DocArea | undefined): WorkOrderScopeItem {
     colour: clean(l.colour),
     sheen: clean(l.sheen),
     detail: parseProse(l.customerDetail),
+    ...(hours ? shownHours(hours.get(l.id)) : {}),
   };
 }
 
-function buildScope(doc: EstimateDoc): WorkOrderView["scope"] {
+function buildScope(doc: EstimateDoc, hours: Map<string, Decimal> | null): WorkOrderView["scope"] {
   const areas = new Map(doc.areas.map((a) => [a.id, a]));
   const name = (a: DocArea) => {
     const parent = a.parentId ? areas.get(a.parentId) : undefined;
     return parent ? `${parent.name} › ${a.name}` : a.name;
   };
   const lines = doc.lines.filter((l) => isIncluded(l) && !isPrep(l));
+  const group = (area: string, description: string | null, ls: DocLine[], a: DocArea | undefined) => ({
+    area,
+    description,
+    items: ls.map((l) => scopeItem(l, a, hours)),
+    ...(hours ? shownHours(sum(ls.map((l) => hours.get(l.id)))) : {}),
+  });
   const out: WorkOrderView["scope"] = [];
   for (const a of doc.areas) {
-    const items = lines.filter((l) => l.areaId === a.id).map((l) => scopeItem(l, a));
-    if (items.length) out.push({ area: name(a), description: clean(a.customerDescription), items });
+    const ls = lines.filter((l) => l.areaId === a.id);
+    if (ls.length) out.push(group(name(a), clean(a.customerDescription), ls, a));
   }
-  const loose = lines.filter((l) => !l.areaId || !areas.has(l.areaId)).map((l) => scopeItem(l, undefined));
-  if (loose.length) out.push({ area: "General", description: null, items: loose });
+  const loose = lines.filter((l) => !l.areaId || !areas.has(l.areaId));
+  if (loose.length) out.push(group("General", null, loose, undefined));
   return out;
+}
+
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+function paintRow(p: PaintNeed): WorkOrderPaint {
+  const left = [
+    p.noQuantity.length ? plural(p.noQuantity.length, "item that wasn't measured", "items that weren't measured") : null,
+    p.noCoverage.length ? `${plural(p.noCoverage.length, "item", "items")} with no coverage on file for this product` : null,
+  ].filter((x): x is string => !!x);
+  const amount = p.gallons.gt(0) ? paintToBuyLabel(paintToBuy(p.gallons)) : null;
+  return {
+    product: p.product,
+    colour: p.colour,
+    sheen: p.sheen,
+    amount,
+    note: left.length ? `${amount ? "Doesn't include" : "Not worked out:"} ${left.join(" and ")}. Ask the office.` : null,
+  };
 }
 
 function buildPreparation(doc: EstimateDoc, tpl: ProposalTemplate, company: WorkOrderInput["company"]): Block[] {
@@ -168,7 +221,10 @@ function buildPreparation(doc: EstimateDoc, tpl: ProposalTemplate, company: Work
 }
 
 export function buildWorkOrderView(input: WorkOrderInput): WorkOrderView {
-  const { doc, workOrder: wo } = input;
+  const { doc, workOrder: wo, show } = input;
+  const q = show.hours || show.paint ? crewQuantities(doc) : null;
+  const hours = show.hours && q ? q.lineHours : null;
+  const prepHours = hours ? sum(doc.lines.filter((l) => isIncluded(l) && isPrep(l)).map((l) => hours.get(l.id))) : null;
   const resolved = resolveJobType(input.template, doc.jobType, lineScopes(doc));
   const address = input.property?.street
     ? formatAddress({ street: input.property.street, unit: input.property.unit, city: input.property.city, province: input.property.province, postalCode: input.property.postalCode })
@@ -203,8 +259,11 @@ export function buildWorkOrderView(input: WorkOrderInput): WorkOrderView {
     crew: input.crew ? { name: input.crew.name, lead: input.crew.lead } : null,
     bookings,
     projectManager: input.projectManager ? { name: input.projectManager.name, phone: clean(input.projectManager.phone) } : null,
-    scope: buildScope(doc),
+    scope: buildScope(doc, hours),
+    ...(hours && q && q.jobHours.gt(0) ? { labourHours: hoursLabel(q.jobHours) } : {}),
     preparation: buildPreparation(doc, input.template, input.company),
+    ...(prepHours && prepHours.gt(0) ? { prepHours: hoursLabel(prepHours) } : {}),
+    ...(show.paint && q ? { paint: q.paint.map(paintRow) } : {}),
     excluded: splitLines(doc.areasExcluded ?? resolved.areasExcludedDefault),
     specialInstructions: parseProse(wo.specialInstructions),
     equipment: parseProse(wo.equipment),
@@ -213,7 +272,7 @@ export function buildWorkOrderView(input: WorkOrderInput): WorkOrderView {
   };
 }
 
-export const WORK_ORDER_SECTIONS = ["details", "bookings", "access", "scope", "preparation", "excluded", "specialInstructions", "equipment", "safety", "checklist"] as const;
+export const WORK_ORDER_SECTIONS = ["details", "bookings", "access", "scope", "paint", "preparation", "excluded", "specialInstructions", "equipment", "safety", "checklist"] as const;
 export type WorkOrderSection = (typeof WORK_ORDER_SECTIONS)[number];
 
 function sectionValue(v: WorkOrderView, s: WorkOrderSection): unknown {
@@ -222,6 +281,13 @@ function sectionValue(v: WorkOrderView, s: WorkOrderSection): unknown {
       return [v.title, v.customerName, v.customerPhone, v.crew, v.projectManager];
     case "access":
       return [v.address, v.accessNotes];
+    // Versions issued before hours and paint existed have no such keys: compare them as "none".
+    case "scope":
+      return [v.scope, v.labourHours ?? null];
+    case "preparation":
+      return [v.preparation, v.prepHours ?? null];
+    case "paint":
+      return v.paint ?? [];
     default:
       return v[s];
   }

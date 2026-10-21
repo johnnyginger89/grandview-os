@@ -6,7 +6,7 @@ import { outer } from "@/db/sql";
 import { contacts, crewMembers, crews, customers, projects, properties, proposals, scheduleEntries, user, workOrderLinks, workOrders, workOrderVersions } from "@/db/schema";
 import type { WorkOrderStatus } from "@/db/schema/work-orders";
 import type { EstimateDoc } from "@/lib/estimating/document";
-import { jobTitle } from "@/lib/schedule/format";
+import { dateRangeLabel, jobTitle, kindLabel } from "@/lib/schedule/format";
 import { calendarsFor, countWorkingDays } from "@/lib/schedule/working-days";
 import { linkExpiresAt, linkStatus } from "@/lib/work-orders/links";
 import {
@@ -218,7 +218,7 @@ async function bookingsFor(projectId: string): Promise<WorkOrderInput["bookings"
 type Sources = Omit<WorkOrderInput, "workOrder" | "version" | "issuedAt" | "crew"> & { signed: boolean };
 
 async function loadSources(p: ProjectRow): Promise<Sources> {
-  const [doc, customerRows, contactRows, property, bookings, pmRows, company, template] = await Promise.all([
+  const [doc, customerRows, contactRows, property, bookings, pmRows, company, template, settings] = await Promise.all([
     signedDoc(p),
     db.select({ name: customers.displayName, phone: customers.phone }).from(customers).where(eq(customers.id, p.customerId)).limit(1),
     db.select({ phone: contacts.phone }).from(contacts).where(and(eq(contacts.customerId, p.customerId), eq(contacts.isPrimary, true))).limit(1),
@@ -227,6 +227,7 @@ async function loadSources(p: ProjectRow): Promise<Sources> {
     p.projectManagerId ? db.select({ name: user.name, phone: user.phone }).from(user).where(eq(user.id, p.projectManagerId)).limit(1) : Promise.resolve([]),
     getCompany(),
     getProposalTemplate(),
+    getWorkOrderSettings(),
   ]);
   const customer = customerRows[0];
   if (!customer) throw new WorkOrderError("The customer for this job no longer exists.");
@@ -241,6 +242,8 @@ async function loadSources(p: ProjectRow): Promise<Sources> {
     property,
     bookings,
     projectManager: pm ? { name: pm.name, phone: pm.phone } : null,
+    // Hours and paint come from the signed estimate only; a job without one has neither.
+    show: { hours: !!doc && settings.showHours, paint: !!doc && settings.showPaint },
   };
 }
 
@@ -363,6 +366,12 @@ export async function listWorkOrders(projectId: string, now: Date = new Date()):
     propertyFor(p.propertyId),
   ]);
   const crewName = new Map(crewRows.map((c) => [c.id, c.name]));
+  const booked = await db
+    .select({ kind: scheduleEntries.kind, crewId: scheduleEntries.crewId, crewName: crews.name, startDate: scheduleEntries.startDate, endDate: scheduleEntries.endDate })
+    .from(scheduleEntries)
+    .leftJoin(crews, eq(crews.id, scheduleEntries.crewId))
+    .where(and(eq(scheduleEntries.projectId, p.id), isNull(scheduleEntries.deletedAt)))
+    .orderBy(asc(scheduleEntries.startDate), asc(scheduleEntries.id));
 
   // What would change if each issued work order were issued again now.
   const issued = rows.filter((r) => r.status === "issued" && r.currentVersion > 0);
@@ -403,6 +412,9 @@ export async function listWorkOrders(projectId: string, now: Date = new Date()):
       crewName: wo.crewId ? (crewName.get(wo.crewId) ?? "Crew removed") : null,
       issuedAt: versions.find((v) => v.version === wo.currentVersion)?.issuedAt.toISOString() ?? null,
       fields,
+      assigned: booked
+        .filter((b) => !wo.crewId || b.crewId === wo.crewId)
+        .map((b) => ({ what: kindLabel(b.kind), who: b.crewName ?? null, dates: dateRangeLabel(b.startDate, b.endDate) })),
       versions: versions.map((v) => ({ version: v.version, issuedAt: v.issuedAt.toISOString(), issuedByName: v.issuedByName ?? null, changeNote: v.changeNote })),
       links: linkRows
         .filter((l) => l.workOrderId === wo.id)
@@ -449,6 +461,34 @@ export async function createWorkOrder(raw: unknown, actor: Actor): Promise<{ id:
     await audit({ actorId: actor.id, action: "work_order.create", entityType: "work_order", entityId: row.id, after: { projectId: p.id, number: row.number, ...values } }, tx);
     return { id: row.id, projectId: p.id };
   });
+}
+
+/**
+ * The draft work order a sold job starts with (when the `createOnSale` setting is on): for
+ * every crew booked on the job, with the default checklist. Staff check it and issue it;
+ * crews only see issued versions. Never throws: a sale must not fail because of it.
+ */
+export async function createWorkOrderForSale(projectId: string, actorId: string | null): Promise<string | null> {
+  try {
+    const settings = await getWorkOrderSettings();
+    if (!settings.createOnSale) return null;
+    const p = await loadProject(projectId);
+    if (!p || p.status === "cancelled") return null;
+    const [existing] = await db.select({ id: workOrders.id }).from(workOrders).where(eq(workOrders.projectId, p.id)).limit(1);
+    if (existing) return null;
+    const values = { title: p.name, crewId: null, checklist: settings.defaultChecklist.map((text) => ({ id: randomUUID(), text })) };
+    return await db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(workOrders)
+        .values({ projectId: p.id, ...values, createdBy: actorId })
+        .returning({ id: workOrders.id, number: workOrders.number });
+      await audit({ actorId, action: "work_order.create", entityType: "work_order", entityId: row.id, after: { projectId: p.id, number: row.number, automatic: true, ...values } }, tx);
+      return row.id;
+    });
+  } catch (e) {
+    console.error("[work-orders] could not create the work order for a sale", e instanceof Error ? e.message : e);
+    return null;
+  }
 }
 
 export async function updateWorkOrder(raw: unknown, actor: Actor): Promise<{ id: string; projectId: string }> {

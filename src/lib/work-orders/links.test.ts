@@ -78,7 +78,7 @@ describe("work order inputs", () => {
 });
 
 describe("work_orders setting", () => {
-  it("defaults to the spec's checklist and 60-day links", () => {
+  it("defaults to the spec's checklist, 60-day links, and hours and paint on a work order made at the sale", () => {
     expect(defaultWorkOrderSettings()).toEqual({
       defaultChecklist: [
         "Walk the job with the crew lead before starting",
@@ -90,13 +90,18 @@ describe("work_orders setting", () => {
         "Final walk-through with the customer",
       ],
       defaultLinkDays: 60,
+      createOnSale: true,
+      showHours: true,
+      showPaint: true,
     });
     // A fresh copy each time, so editing one result can't change the defaults.
     expect(defaultWorkOrderSettings().defaultChecklist).not.toBe(DEFAULT_WORK_ORDER_SETTINGS.defaultChecklist);
   });
 
   it("keeps saved values and validates them", () => {
-    expect(workOrderSettingsSchema.parse({ defaultChecklist: [" A "], defaultLinkDays: 30 })).toEqual({ defaultChecklist: ["A"], defaultLinkDays: 30 });
+    expect(workOrderSettingsSchema.parse({ defaultChecklist: [" A "], defaultLinkDays: 30 })).toEqual({ defaultChecklist: ["A"], defaultLinkDays: 30, createOnSale: true, showHours: true, showPaint: true });
+    expect(workOrderSettingsSchema.parse({ defaultLinkDays: 30, createOnSale: false, showHours: false, showPaint: false })).toMatchObject({ createOnSale: false, showHours: false, showPaint: false });
+    expect(() => workOrderSettingsSchema.parse({ showHours: "yes" })).toThrow();
     expect(workOrderSettingsSchema.parse({ defaultLinkDays: 90 }).defaultChecklist).toHaveLength(7);
     expect(() => workOrderSettingsSchema.parse({ defaultLinkDays: 400 })).toThrow();
     expect(() => workOrderSettingsSchema.parse({ defaultChecklist: Array(31).fill("x") })).toThrow();
