@@ -86,7 +86,9 @@ Feature work is paused while the app is simplified, one workflow at a time, with
 - ✅ Settings → Goals (owner only); project Status card with finish date and status history (single status writer; sold/finished/cancelled dates)
 - ✅ Leads & Pipeline list view (monday-style): grouped by stage, inline stage and follow-up edits with undo, bulk moves, search, filters, columns; phone cards with Call/Email
 - ✅ Estimates list grouped by month with "viewed" indicator; phone home screen with tiles, "$ (N jobs today)", Share booking link and a "+" quick-add; installable on the phone home screen
-- ⬜ Next: Gmail (send, replies into the OS), Google Calendar. Job and history import comes from the owner's Markate data (monday is being replaced, not imported)
+- ✅ Gmail: the owner connects info@ once (Google sign-in, Settings → Integrations; send + read permission, refresh token stored encrypted). Every email the OS sends then goes out from that mailbox (it's in Gmail's Sent folder; replies come back to Gmail). Every 10 minutes new mail from a customer's or contact's address is copied into their file and the office is notified (only the new part of a reply is kept). Falls back to Resend/the dev log when Gmail isn't connected; a broken connection fails loudly instead.
+- ✅ Proposal follow-ups: "Follow up" on an open proposal writes the email from the "Following up on a proposal" template with the link, shown for checking before sending, and sends it as a reply in the same Gmail conversation. Home lists proposals not chased for 3+ days (with opens and whether the customer has emailed since).
+- ⬜ Next: Google Calendar. Job and history import comes from the owner's Markate data (monday is being replaced, not imported)
 
 ### Phase 6 – advanced
 - ⬜ Change orders · ⬜ invoices (deposit/progress/final) + QBO sync · ⬜ reporting dashboard

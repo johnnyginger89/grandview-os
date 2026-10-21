@@ -7,7 +7,7 @@ import { requirePermission } from "@/lib/authz/guard";
 import { can } from "@/lib/authz/permissions";
 import { formatAddress } from "@/lib/utils";
 import { listRevisions, listTemplates, loadEstimate } from "@/server/estimates";
-import { listProposals, proposalEmailDraft, proposalUrl } from "@/server/proposals";
+import { followUpHistory, listProposals, proposalEmailDraft, proposalUrl } from "@/server/proposals";
 import { calculateDoc } from "@/lib/estimating/document";
 import { formatCAD } from "@/lib/money";
 import { ProposalsPanel, type ProposalOption } from "./proposals-panel";
@@ -30,7 +30,7 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
   if (!loaded) notFound();
   const { estimate, doc } = loaded;
 
-  const [customer, property, rates, factors, templates, revisions, pricing, proposalRows, contact, project, template, emailDraft] = await Promise.all([
+  const [customer, property, rates, factors, templates, revisions, pricing, proposalRows, contact, project, template, emailDraft, followUps] = await Promise.all([
     db.query.customers.findFirst({ where: eq(customers.id, estimate.customerId) }),
     estimate.propertyId ? db.query.properties.findFirst({ where: eq(properties.id, estimate.propertyId) }) : null,
     listRates(),
@@ -43,6 +43,7 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
     db.query.projects.findFirst({ where: eq(projects.estimateId, id), columns: { id: true, number: true } }),
     getProposalTemplate(),
     proposalEmailDraft(id, user),
+    followUpHistory(id),
   ]);
   // Optional upgrades and their prices, for "Mark as accepted".
   const calc = calculateDoc(doc);
@@ -91,6 +92,8 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <ProposalsPanel
           estimateId={id}
+          customerName={customer?.displayName ?? ""}
+          followUps={followUps}
           canSend={can(user.role, "estimates.write") && estimate.status !== "accepted"}
           defaultEmail={contact?.email ?? customer?.email ?? ""}
           emailDraft={emailDraft ?? { subject: "", body: "" }}

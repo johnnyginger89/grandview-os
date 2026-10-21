@@ -221,6 +221,24 @@ Thanks,
 {{company_name}}`,
   },
   {
+    key: "proposal_follow_up",
+    name: "Following up on a proposal",
+    channel: "email" as const,
+    subject: "Following up on your painting proposal",
+    body: `Hi {{first_name}},
+
+Just checking in on the proposal we sent for {{job_title}}. Do you have any questions, or anything you'd like us to change?
+
+Here it is again if you need it:
+{{proposal_link}}
+
+We're booking a few weeks out right now, so let us know if you'd like to get on the schedule. You can reply to this email or call us at {{company_phone}}.
+
+Thanks,
+{{sender_name}}
+{{company_name}}`,
+  },
+  {
     key: "colour_form",
     name: "Choosing colours",
     channel: "email" as const,

@@ -178,7 +178,8 @@ is written to logs.
 | `EMAIL_REPLY_TO` | no | Reply-to address for outgoing email |
 | `BETTER_AUTH_TRUSTED_ORIGINS` | no | Extra allowed addresses, comma separated: `https://grandview-os.vercel.app` after switching to grandviewpainting.app |
 | `DB_POOL_MAX` | no | Database connections per server instance (default 3) |
-| `CRON_SECRET` | recommended | Any long random text (`openssl rand -hex 24`). Vercel sends it with the 4 pm daily-update reminder so nobody else can set it off |
+| `CRON_SECRET` | recommended | Any long random text (`openssl rand -hex 24`). Vercel sends it with the scheduled jobs (4 pm daily-update reminder, Gmail check every 10 minutes) so nobody else can set them off |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | for Gmail | From Google Cloud → Credentials → OAuth client ID (Web application). Authorized redirect URIs: `https://grandviewpainting.app/api/integrations/google/callback` (and `https://grandview-os.vercel.app/api/integrations/google/callback` while both addresses are in use). Then Settings → Integrations → Connect Gmail, signed in as info@ |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | no | Phone notification keys; made automatically and kept in the database when not set |
 | `INTEGRATIONS_ENCRYPTION_KEY` | no | Encrypts integration tokens (CompanyCam, Gmail) in the database. Defaults to a key derived from `BETTER_AUTH_SECRET`; changing either means re-entering those tokens |
 

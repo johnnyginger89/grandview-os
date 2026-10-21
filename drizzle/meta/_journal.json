@@ -92,6 +92,13 @@
       "when": 1792622512143,
       "tag": "0012_integration_links",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1792623527975,
+      "tag": "0013_gmail",
+      "breakpoints": true
     }
   ]
 }

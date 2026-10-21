@@ -15,7 +15,8 @@ import { GoalsForm } from "./goals-form";
 import { goalsToPayload } from "./goals-shared";
 import { getColourFormSettings } from "@/server/colour-selections";
 import { companyCamStatus } from "@/server/integrations/companycam";
-import { ColourFormSettingsForm, CompanyCamSettings, CompanyForm, IntegrationsInfo, ListsForm, PricingForm, TemplatesForm, UsersPanel, WorkOrderSettingsForm } from "./settings-client";
+import { gmailStatus } from "@/server/integrations/gmail";
+import { ColourFormSettingsForm, CompanyCamSettings, CompanyForm, GmailSettings, IntegrationsInfo, ListsForm, PricingForm, TemplatesForm, UsersPanel, WorkOrderSettingsForm } from "./settings-client";
 import { SettingsTabs, settingsTabAllowed } from "./tabs";
 
 export const metadata = { title: "Settings" };
@@ -29,9 +30,10 @@ async function GoalsTab() {
   return <GoalsForm initial={goalsToPayload(goals, today)} lostReasons={lostReasons} today={today} starterYears={starterYears} />;
 }
 
-export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
+export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ tab?: string; gmail?: string; reason?: string }> }) {
   const me = await requirePermission("settings.manage");
-  const { tab = "company" } = await searchParams;
+  const sp = await searchParams;
+  const { tab = "company" } = sp;
   if (tab === "proposals") redirect("/settings/proposals");
   if (!settingsTabAllowed(tab, me.role)) redirect("/no-access");
   const appUrl = process.env.APP_URL ?? "";
@@ -55,6 +57,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       )}
       {tab === "integrations" && (
         <div className="max-w-3xl space-y-4">
+          <GmailSettings status={await gmailStatus()} result={{ gmail: sp.gmail, reason: sp.reason }} />
           <CompanyCamSettings status={await companyCamStatus()} />
           <IntegrationsInfo appUrl={appUrl} />
         </div>

@@ -1,4 +1,5 @@
 "use client";
+import { gmailConnectMessage } from "@/lib/gmail-connect-messages";
 import { submitWith } from "@/components/submit";
 import { useActionState, useRef, useState, useTransition } from "react";
 import { Badge, Button, Card, CardHeader, Field, FormError, Input, Select, Table, Textarea, td, th } from "@/components/ui";
@@ -6,7 +7,7 @@ import { ROLES } from "@/db/schema/auth";
 import { can, ROLE_LABELS } from "@/lib/authz/permissions";
 import { createUserAction, saveCompanyAction, saveListAction, savePricingAction, saveTemplateAction, updateUserAction } from "./actions";
 import { saveColourFormSettingsAction } from "./colour-form-settings-actions";
-import { connectCompanyCamAction, disconnectCompanyCamAction } from "./integration-actions";
+import { connectCompanyCamAction, disconnectCompanyCamAction, disconnectGmailAction, syncGmailAction } from "./integration-actions";
 import { saveWorkOrderSettingsAction } from "./work-order-settings-actions";
 
 function Saved({ state }: { state: { ok: boolean; error?: string } | null }) {
@@ -279,6 +280,92 @@ export function ColourFormSettingsForm({ settings }: { settings: { changeWarning
         </div>
         <Field label="Customer links work for (days)"><Input inputMode="numeric" className="w-32" value={days} onChange={(e) => setDays(e.target.value)} /></Field>
         <div className="flex items-center gap-3"><Button disabled={pending} onClick={save}>Save</Button><Saved state={state} /></div>
+      </div>
+    </Card>
+  );
+}
+
+export function GmailSettings({
+  status,
+  result,
+}: {
+  status: { configured: boolean; connected: boolean; broken: boolean; email: string | null; connectedAt: string | null; connectedByName: string | null; lastSyncAt: string | null; redirectUri: string | null };
+  /** From Google's return trip: ?gmail=connected|denied|error&reason=… */
+  result: { gmail?: string; reason?: string };
+}) {
+  const [state, setState] = useState<{ ok: boolean; error?: string } | null>(null);
+  const [synced, setSynced] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+  const day = (iso: string | null) => (iso ? new Date(iso).toLocaleString("en-CA", { timeZone: "America/Vancouver", dateStyle: "medium", timeStyle: "short" }) : "");
+  return (
+    <Card role="region" aria-label="Gmail">
+      <CardHeader
+        title="Gmail"
+        description="Emails from Grandview OS go out from your Gmail (they're in its Sent folder), and customers' emails are copied into their file every 10 minutes."
+        action={status.connected ? <Badge tone="success">Connected</Badge> : status.broken ? <Badge tone="warning">Needs reconnecting</Badge> : <Badge>Not connected</Badge>}
+      />
+      <div className="space-y-3 p-4 text-sm">
+        {result.gmail === "connected" && <p role="status" className="rounded-md bg-success-soft px-3 py-2 text-success">Gmail is connected.</p>}
+        {result.gmail === "denied" && <p className="rounded-md bg-warning-soft px-3 py-2 text-warning">Google sign-in was cancelled, so Gmail isn&apos;t connected.</p>}
+        {result.gmail === "error" && <FormError message={gmailConnectMessage(result.reason)} />}
+        {!status.configured ? (
+          <div className="space-y-2">
+            <p className="font-medium">One-time setup in Google (about 10 minutes, signed in as info@):</p>
+            <ol className="list-decimal space-y-1 pl-5 text-muted">
+              <li>console.cloud.google.com → create a project called &ldquo;Grandview OS&rdquo;.</li>
+              <li>APIs &amp; Services → Library → turn on <b>Gmail API</b>.</li>
+              <li>OAuth consent screen → <b>Internal</b> (or External with info@ as a test user).</li>
+              <li>
+                Credentials → Create credentials → OAuth client ID → Web application. Authorized redirect URI:
+                <code className="mt-1 block break-all rounded bg-surface-2 p-2 font-mono text-xs text-text">{(status.redirectUri ?? "https://grandviewpainting.app/api/integrations/google/callback")}</code>
+              </li>
+              <li>Put the Client ID and Client secret into Vercel → Settings → Environment Variables as <code>GOOGLE_CLIENT_ID</code> and <code>GOOGLE_CLIENT_SECRET</code>, then redeploy. Don&apos;t paste them in a chat or email.</li>
+            </ol>
+          </div>
+        ) : status.connected ? (
+          <>
+            <p>
+              Sending from <b>{status.email}</b>
+              {status.connectedByName ? `, connected by ${status.connectedByName}` : ""}
+              {status.connectedAt ? ` on ${day(status.connectedAt)}` : ""}. {status.lastSyncAt ? `Last checked for customer emails ${day(status.lastSyncAt)}.` : "Not checked for customer emails yet."}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="secondary"
+                disabled={pending}
+                onClick={() =>
+                  start(async () => {
+                    const r = await syncGmailAction();
+                    if (r.ok) setSynced(r.imported ? `${r.imported} new customer ${r.imported === 1 ? "email" : "emails"} added.` : "No new customer emails.");
+                    else setState(r);
+                  })
+                }
+              >
+                {pending ? "Checking…" : "Check for customer emails now"}
+              </Button>
+              <Button
+                variant="ghost"
+                disabled={pending}
+                onClick={() => {
+                  if (window.confirm("Disconnect Gmail? Emails will stop going out from it until it's connected again.")) start(async () => setState(await disconnectGmailAction()));
+                }}
+              >
+                Disconnect
+              </Button>
+            </div>
+            {synced && <p role="status" className="text-success">{synced}</p>}
+          </>
+        ) : (
+          <>
+            {status.broken && <p className="rounded-md bg-warning-soft px-3 py-2 text-warning">Google stopped accepting the connection{status.email ? ` for ${status.email}` : ""}. Connect again; until then, emails can&apos;t go out.</p>}
+            <p className="text-muted">Sign in with the mailbox emails should come from (info@grandviewpainting.ca) and allow both Gmail permissions.</p>
+            {/* A full page visit: Google's sign-in isn't a request the app can make for you. */}
+            <a href="/api/integrations/google/start" className="inline-flex h-10 items-center rounded-lg bg-brand px-4 font-medium text-brand-contrast shadow-card hover:bg-brand-hover">
+              Connect Gmail
+            </a>
+          </>
+        )}
+        <Saved state={state} />
       </div>
     </Card>
   );

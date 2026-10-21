@@ -1,7 +1,8 @@
 /**
- * Outbound email. Uses Resend's HTTP API when RESEND_API_KEY is set; otherwise
- * (development) the message is printed to the server log and reported as
- * "logged" so nothing reaches real customers by accident.
+ * Outbound email. Goes through the connected Gmail mailbox when there is one (so it's
+ * in Gmail's Sent folder and replies come back there); else Resend's HTTP API when
+ * RESEND_API_KEY is set; otherwise (development) the message is printed to the server
+ * log and reported as "logged" so nothing reaches real customers by accident.
  */
 export interface EmailMessage {
   to: string;
@@ -9,16 +10,31 @@ export interface EmailMessage {
   text: string;
   html?: string;
   replyTo?: string;
+  /** Continue this Gmail conversation (a follow-up to a proposal email). */
+  threadId?: string | null;
 }
 
 export interface EmailResult {
   status: "sent" | "logged" | "failed";
   provider: string;
   providerMessageId?: string;
+  /** Gmail's conversation id, when sent through Gmail. */
+  threadId?: string;
   error?: string;
 }
 
 export async function sendEmail(msg: EmailMessage): Promise<EmailResult> {
+  try {
+    const { sendViaGmail } = await import("@/server/integrations/gmail");
+    const viaGmail = await sendViaGmail(msg);
+    if (viaGmail) return viaGmail;
+  } catch (e) {
+    console.error("[email] Gmail unavailable, using the fallback", e instanceof Error ? e.message : e);
+  }
+  return sendWithoutGmail(msg);
+}
+
+async function sendWithoutGmail(msg: EmailMessage): Promise<EmailResult> {
   const key = process.env.RESEND_API_KEY;
   if (!key && process.env.VERCEL_ENV === "production") {
     // Never write message bodies (which can contain reset links) to production logs.

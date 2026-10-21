@@ -1,6 +1,6 @@
 import "server-only";
 import { createHash, randomBytes } from "node:crypto";
-import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, isNull, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import {
@@ -10,6 +10,7 @@ import {
   estimateCostItems,
   estimateLines,
   estimates,
+  inboundEmails,
   messageTemplates,
   opportunities,
   outboundMessages,
@@ -257,6 +258,8 @@ export async function sendProposal(estimateId: string, raw: z.input<typeof sendP
       error: r.error,
       customerId: estimate.customerId,
       opportunityId: estimate.opportunityId,
+      estimateId,
+      threadId: r.threadId ?? null,
       templateKey: "proposal",
       sentBy: user.id,
       sentAt: r.status === "failed" ? null : new Date(),
@@ -583,4 +586,192 @@ export async function withdrawProposal(proposalId: string, userId: string) {
     .returning({ id: proposals.id });
   if (!res.length) throw new ProposalError("Only open proposals can be withdrawn.");
   await audit({ actorId: userId, action: "proposal.withdraw", entityType: "proposal", entityId: proposalId });
+}
+
+// ---------------------------------------------------------------------------
+// Following up
+// ---------------------------------------------------------------------------
+
+/** Days after the proposal (or the last follow-up) before it shows as "time to follow up". */
+export const FOLLOW_UP_AFTER_DAYS = 3;
+
+export const followUpSchema = z.object({
+  to: z.string().trim().toLowerCase().email("Enter the customer's email"),
+  subject: z.string().trim().min(1, "Add a subject").max(200),
+  body: z.string().trim().min(1, "Write the email").max(10_000),
+});
+
+async function openProposal(proposalId: string) {
+  const [p] = await db
+    .select({ id: proposals.id, token: proposals.token, status: proposals.status, sentTo: proposals.sentTo, estimateId: proposals.estimateId })
+    .from(proposals)
+    .where(eq(proposals.id, proposalId))
+    .limit(1);
+  if (!p) throw new ProposalError("Proposal not found");
+  if (p.status !== "sent" && p.status !== "viewed") throw new ProposalError("This proposal isn't waiting on the customer any more, so there's nothing to follow up.");
+  return p;
+}
+
+/** The last proposal email or follow-up for this estimate, so the follow-up lands in the same conversation. */
+async function lastProposalEmail(estimateId: string) {
+  const [m] = await db
+    .select({ subject: outboundMessages.subject, threadId: outboundMessages.threadId })
+    .from(outboundMessages)
+    .where(and(eq(outboundMessages.estimateId, estimateId), inArray(outboundMessages.templateKey, ["proposal", "proposal_follow_up"]), inArray(outboundMessages.status, ["sent", "logged"])))
+    .orderBy(desc(outboundMessages.createdAt))
+    .limit(1);
+  return m ?? null;
+}
+
+const reply = (subject: string) => (/^re:/i.test(subject) ? subject : `Re: ${subject}`);
+
+/** The follow-up email, ready to send: "Following up on a proposal" template, this customer's details and the proposal link. */
+export async function followUpDraft(proposalId: string, sender: { name: string }): Promise<{ to: string; subject: string; body: string }> {
+  const p = await openProposal(proposalId);
+  const estimate = await db.query.estimates.findFirst({ where: eq(estimates.id, p.estimateId) });
+  if (!estimate) throw new ProposalError("Estimate not found");
+  const [customer, contact, company, t, last] = await Promise.all([
+    db.query.customers.findFirst({ where: eq(customers.id, estimate.customerId) }),
+    db.query.contacts.findFirst({ where: and(eq(contacts.customerId, estimate.customerId), eq(contacts.isPrimary, true)) }),
+    getCompany(),
+    db.query.messageTemplates.findFirst({ where: eq(messageTemplates.key, "proposal_follow_up") }),
+    lastProposalEmail(p.estimateId),
+  ]);
+  const fallback = MESSAGE_TEMPLATES.find((x) => x.key === "proposal_follow_up")!;
+  const vars = {
+    first_name: contact?.firstName?.trim() || customer?.displayName.split(" ")[0] || "there",
+    customer_name: customer?.displayName ?? "",
+    job_title: estimate.title,
+    proposal_link: proposalUrl(p.token),
+    sender_name: sender.name,
+    company_name: company.displayName || company.name,
+    company_phone: company.phone ?? "",
+  };
+  const body = renderTemplate(t?.body || fallback.body, vars).replace(/\n{3,}/g, "\n\n").trim();
+  // Same subject as the proposal email, so it reads as one conversation in the customer's inbox too.
+  const subject = last?.subject ? reply(last.subject) : renderTemplate(t?.subject || fallback.subject, vars).trim();
+  return { to: p.sentTo ?? contact?.email ?? customer?.email ?? "", subject, body };
+}
+
+/** Sends the follow-up the user checked, as a reply in the proposal's email conversation. */
+export async function sendProposalFollowUp(proposalId: string, raw: z.input<typeof followUpSchema>, user: { id: string; name: string }) {
+  const input = followUpSchema.parse(raw);
+  const p = await openProposal(proposalId);
+  const estimate = await db.query.estimates.findFirst({ where: eq(estimates.id, p.estimateId), columns: { id: true, number: true, customerId: true, opportunityId: true } });
+  if (!estimate) throw new ProposalError("Estimate not found");
+  const link = proposalUrl(p.token);
+  const text = input.body.includes(link) ? input.body : `${input.body.trimEnd()}\n\nYour proposal: ${link}`;
+  const [company, last] = await Promise.all([getCompany(), lastProposalEmail(p.estimateId)]);
+  const r = await sendEmail({ to: input.to, subject: input.subject, text, replyTo: company.email || undefined, threadId: last?.threadId ?? undefined });
+  await db.insert(outboundMessages).values({
+    channel: "email",
+    toAddress: input.to,
+    subject: input.subject,
+    body: text,
+    status: r.status,
+    provider: r.provider,
+    providerMessageId: r.providerMessageId,
+    error: r.error,
+    customerId: estimate.customerId,
+    opportunityId: estimate.opportunityId,
+    estimateId: estimate.id,
+    threadId: r.threadId ?? last?.threadId ?? null,
+    templateKey: "proposal_follow_up",
+    sentBy: user.id,
+    sentAt: r.status === "failed" ? null : new Date(),
+  });
+  if (r.status !== "failed") {
+    await db.insert(activities).values({
+      customerId: estimate.customerId,
+      opportunityId: estimate.opportunityId,
+      type: "email",
+      body: `Followed up on the proposal for estimate #${estimate.number} (emailed ${input.to})`,
+      createdBy: user.id,
+    });
+    await audit({ actorId: user.id, action: "proposal.follow_up", entityType: "proposal", entityId: p.id, after: { to: input.to } });
+  }
+  return { status: r.status, error: r.error };
+}
+
+export interface FollowUpDue {
+  proposalId: string;
+  estimateId: string;
+  number: number | null;
+  title: string;
+  customerName: string;
+  sentAt: string;
+  /** The proposal email or the last follow-up, whichever was later. */
+  lastContactAt: string;
+  followUps: number;
+  viewCount: number;
+  /** When the customer last emailed us (Gmail), if after the last contact. */
+  customerEmailedAt: string | null;
+}
+
+/** Open proposals nobody has chased for a few days: the newest first-in-line, oldest contact first. */
+export async function followUpsDue(now: Date, limit = 10): Promise<FollowUpDue[]> {
+  const cutoff = new Date(now.getTime() - FOLLOW_UP_AFTER_DAYS * 86_400_000);
+  const followUps = db
+    .select({
+      estimateId: outboundMessages.estimateId,
+      n: sql<number>`count(*)::int`.as("n"),
+      last: sql<Date>`max(${outboundMessages.createdAt})`.as("last"),
+    })
+    .from(outboundMessages)
+    .where(and(eq(outboundMessages.templateKey, "proposal_follow_up"), isNotNull(outboundMessages.estimateId), inArray(outboundMessages.status, ["sent", "logged"])))
+    .groupBy(outboundMessages.estimateId)
+    .as("f");
+  const lastContact = sql<Date>`greatest(${proposals.sentAt}, coalesce(${followUps.last}, ${proposals.sentAt}))`;
+  const rows = await db
+    .select({
+      proposalId: proposals.id,
+      estimateId: proposals.estimateId,
+      number: estimates.number,
+      title: estimates.title,
+      customerId: estimates.customerId,
+      customerName: customers.displayName,
+      sentAt: proposals.sentAt,
+      lastContactAt: lastContact,
+      followUps: sql<number>`coalesce(${followUps.n}, 0)`,
+      viewCount: proposals.viewCount,
+    })
+    .from(proposals)
+    .innerJoin(estimates, eq(estimates.id, proposals.estimateId))
+    .innerJoin(customers, eq(customers.id, estimates.customerId))
+    .leftJoin(followUps, eq(followUps.estimateId, proposals.estimateId))
+    .where(and(inArray(proposals.status, ["sent", "viewed"]), isNotNull(proposals.sentTo), lte(lastContact, cutoff)))
+    .orderBy(lastContact)
+    .limit(limit);
+  if (!rows.length) return [];
+  const emailed = await db
+    .select({ customerId: inboundEmails.customerId, at: sql<Date>`max(${inboundEmails.receivedAt})` })
+    .from(inboundEmails)
+    .where(and(inArray(inboundEmails.customerId, rows.map((r) => r.customerId)), gte(inboundEmails.receivedAt, new Date(Math.min(...rows.map((r) => new Date(r.sentAt).getTime()))))))
+    .groupBy(inboundEmails.customerId);
+  const lastEmail = new Map(emailed.map((e) => [e.customerId, new Date(e.at)]));
+  return rows.map((r) => {
+    const contact = new Date(r.lastContactAt);
+    const theirs = lastEmail.get(r.customerId);
+    return {
+      proposalId: r.proposalId,
+      estimateId: r.estimateId,
+      number: r.number,
+      title: r.title,
+      customerName: r.customerName,
+      sentAt: new Date(r.sentAt).toISOString(),
+      lastContactAt: contact.toISOString(),
+      followUps: Number(r.followUps),
+      viewCount: r.viewCount,
+      customerEmailedAt: theirs && theirs > contact ? theirs.toISOString() : null,
+    };
+  });
+}
+
+/** How many times each of an estimate's proposals has been followed up, and when last. */
+export async function followUpHistory(estimateId: string): Promise<{ count: number; lastAt: string | null }> {
+  const [r] = await db
+    .select({ n: sql<number>`count(*)::int`, last: sql<Date | null>`max(${outboundMessages.createdAt})` })
+    .from(outboundMessages)
+    .where(and(eq(outboundMessages.estimateId, estimateId), eq(outboundMessages.templateKey, "proposal_follow_up"), inArray(outboundMessages.status, ["sent", "logged"])));
+  return { count: Number(r?.n ?? 0), lastAt: r?.last ? new Date(r.last).toISOString() : null };
 }

@@ -11,8 +11,10 @@ import { businessHour } from "@/lib/time";
 import { formatDateTime } from "@/lib/utils";
 import { accessFor, getMonthSnapshot } from "@/server/dashboard";
 import { documentAlerts, ensureDocumentTasks } from "@/server/media";
+import { followUpsDue } from "@/server/proposals";
 import { HomeTiles } from "./home-tiles";
 import { MonthSnapshot } from "./month-snapshot";
+import { ProposalFollowUps } from "./proposal-follow-ups";
 
 export const metadata = { title: "Home" };
 
@@ -49,6 +51,7 @@ export default async function Dashboard() {
     .orderBy(asc(opportunities.createdAt))
     .limit(8);
 
+  const chase = can(user.role, "estimates.write") ? await followUpsDue(now) : null;
   const proposalsOutValue = snapshot.pipeline.proposalsOutValue;
   const manage = can(user.role, "settings.manage");
   const docAlerts = manage ? await documentAlerts() : [];
@@ -78,7 +81,8 @@ export default async function Dashboard() {
         <Stat label="Proposals out" value={snapshot.pipeline.proposalsOut} hint={proposalsOutValue !== undefined ? formatCAD(proposalsOutValue) : undefined} />
       </div>
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+      <div className="mt-4 grid gap-4 lg:grid-cols-2 [&>*]:min-w-0">
+        {chase && <ProposalFollowUps rows={chase} now={now.toISOString()} />}
         <Card>
           <CardHeader title="Estimate visits – next 7 days" />
           <ul className="divide-y divide-border text-sm">

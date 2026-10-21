@@ -3,6 +3,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { CircleCheck, Copy, ExternalLink, Send } from "lucide-react";
 import { Dialog } from "@/components/dialog";
+import { FollowUpDialog } from "@/components/proposals/follow-up-dialog";
 import { Badge, Button, Card, CardHeader, Field, FormError, Input, Textarea, type Tone } from "@/components/ui";
 import { formatDateTime } from "@/lib/utils";
 import { acceptForCustomerAction, sendProposalAction, withdrawProposalAction } from "../actions";
@@ -134,9 +135,14 @@ export function ProposalsPanel({
   acceptName,
   options,
   canSend,
+  customerName,
+  followUps,
 }: {
   estimateId: string;
   rows: ProposalRow[];
+  customerName: string;
+  /** Follow-up emails sent for this estimate so far. */
+  followUps: { count: number; lastAt: string | null };
   defaultEmail: string;
   /** From the "Sending a proposal" template, with this customer's details filled in. */
   emailDraft: { subject: string; body: string };
@@ -156,6 +162,8 @@ export function ProposalsPanel({
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  const [followingUp, setFollowingUp] = useState<string | null>(null);
+  const [followUpNote, setFollowUpNote] = useState<string | null>(null);
 
   const copy = async (link: string) => {
     await navigator.clipboard.writeText(link);
@@ -182,6 +190,8 @@ export function ProposalsPanel({
           )
         }
       />
+      {followingUp && <FollowUpDialog proposalId={followingUp} customerName={customerName} onClose={() => setFollowingUp(null)} onSent={setFollowUpNote} />}
+      {followUpNote && <p role="status" className="border-b border-border px-4 py-2 text-sm text-success">{followUpNote}</p>}
       {accepting && <AcceptDialog estimateId={estimateId} defaultName={acceptName} options={options} onClose={() => setAccepting(false)} />}
       {open && (
         <div className="space-y-3 border-b border-border p-4">
@@ -240,10 +250,16 @@ export function ProposalsPanel({
               <p className="text-xs text-muted">
                 {acceptedText(p) ?? (p.firstViewedAt ? `Opened ${p.viewCount}× · first ${formatDateTime(p.firstViewedAt)}` : "Not opened yet")}
                 {p.declineReason ? ` · Declined: "${p.declineReason}"` : ""}
+                {(p.status === "sent" || p.status === "viewed") && followUps.count > 0 && followUps.lastAt
+                  ? ` · Followed up ${followUps.count === 1 ? "once" : `${followUps.count} times`}, last ${formatDateTime(followUps.lastAt)}`
+                  : ""}
               </p>
               <div className="flex flex-wrap gap-3 text-xs">
                 <a href={p.link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-brand hover:underline"><ExternalLink className="size-3" /> Open</a>
                 <button type="button" onClick={() => copy(p.link)} className="inline-flex items-center gap-1 text-brand hover:underline"><Copy className="size-3" /> {copied === p.link ? "Copied" : "Copy link"}</button>
+                {canSend && (p.status === "sent" || p.status === "viewed") && p.sentTo && (
+                  <button type="button" onClick={() => setFollowingUp(p.id)} className="inline-flex items-center gap-1 font-medium text-brand hover:underline"><Send className="size-3" /> Follow up</button>
+                )}
                 {canSend && (p.status === "sent" || p.status === "viewed") && (
                   <button type="button" className="text-muted hover:text-danger" onClick={() => { if (confirm("Withdraw this proposal? The customer's link will stop accepting signatures.")) start(async () => { const r = await withdrawProposalAction(estimateId, p.id); if (!r.ok) setError(r.error); }); }}>Withdraw</button>
                 )}

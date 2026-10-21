@@ -15,7 +15,7 @@ import {
   setEstimateStatus,
   templateToDocParts,
 } from "@/server/estimates";
-import { acceptForCustomerSchema, acceptProposalForCustomer, sendProposal, withdrawProposal } from "@/server/proposals";
+import { acceptForCustomerSchema, acceptProposalForCustomer, followUpDraft, followUpSchema, sendProposal, sendProposalFollowUp, withdrawProposal } from "@/server/proposals";
 
 type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string };
 const uuid = z.string().uuid();
@@ -148,6 +148,31 @@ export async function withdrawProposalAction(estimateId: string, proposalId: str
     await withdrawProposal(uuid.parse(proposalId), user.id);
     revalidatePath(`/estimates/${estimateId}`);
     return { ok: true };
+  } catch (e) {
+    return err(e);
+  }
+}
+
+/** The follow-up email for an open proposal, filled in and ready to check. */
+export async function followUpDraftAction(proposalId: string): Promise<Result<{ draft: { to: string; subject: string; body: string } }>> {
+  try {
+    const user = await assertPermission("estimates.write");
+    return { ok: true, draft: await followUpDraft(uuid.parse(proposalId), user) };
+  } catch (e) {
+    return err(e);
+  }
+}
+
+export async function sendFollowUpAction(proposalId: string, input: unknown): Promise<Result<{ status: string; emailError?: string }>> {
+  try {
+    const user = await assertPermission("estimates.write");
+    const id = uuid.parse(proposalId);
+    const data = followUpSchema.parse(input);
+    const r = await sendProposalFollowUp(id, data, user);
+    if (r.status === "failed") return { ok: false, error: `The email couldn't be sent: ${r.error ?? "email isn't set up"}.` };
+    revalidatePath("/");
+    revalidatePath("/estimates/[id]", "page");
+    return { ok: true, status: r.status };
   } catch (e) {
     return err(e);
   }

@@ -238,6 +238,10 @@ export const outboundMessages = pgTable("outbound_messages", {
   customerId: uuid("customer_id").references(() => customers.id, { onDelete: "set null" }),
   opportunityId: uuid("opportunity_id").references(() => opportunities.id, { onDelete: "set null" }),
   templateKey: text("template_key"),
+  /** The estimate a proposal email or follow-up was about. */
+  estimateId: uuid("estimate_id"),
+  /** Gmail's conversation id, when sent through the connected Gmail mailbox. */
+  threadId: text("thread_id"),
   sentBy: text("sent_by").references(() => user.id),
   createdAt: created(),
   sentAt: ts("sent_at"),
