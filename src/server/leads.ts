@@ -1,12 +1,11 @@
 import "server-only";
-import { and, asc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import {
   activities,
   contacts,
   customers,
-  inboundEvents,
   messageTemplates,
   opportunities,
   outboundMessages,
@@ -17,9 +16,11 @@ import {
 } from "@/db/schema";
 import { can } from "@/lib/authz/permissions";
 import { sendEmail } from "@/lib/email";
+import { LEAD_TEXT_MAX, leadEmail, PROJECT_TYPE_MAX, PROJECT_TYPES_MAX } from "@/lib/pipeline/lead-input";
+import { BOOKING_CANCELLED_REASON, cancellationLosesLead, lostToCancellation, normalizePhone, planContactMerge, planLeadMerge } from "@/lib/pipeline/lead-merge";
 import { stageTransitionPatch } from "@/lib/pipeline/stage-transition";
 import { parseBusinessDateTime } from "@/lib/time";
-import { formatDate, formatDateTime, fullName, renderTemplate } from "@/lib/utils";
+import { formatAddress, formatDate, formatDateTime, fullName, renderTemplate } from "@/lib/utils";
 import { audit } from "./audit";
 import { milestoneUpdates } from "./lead-milestones";
 import { getCompany } from "./settings";
@@ -27,11 +28,12 @@ import { getCompany } from "./settings";
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type Opportunity = typeof opportunities.$inferSelect;
 type Stage = typeof pipelineStages.$inferSelect;
+type Customer = typeof customers.$inferSelect;
 
 const optStr = z
   .string()
   .trim()
-  .max(2000)
+  .max(LEAD_TEXT_MAX)
   .optional()
   .nullable()
   .transform((v) => (v ? v : null));
@@ -41,11 +43,7 @@ export const leadInputSchema = z.object({
   firstName: optStr,
   lastName: optStr,
   company: optStr,
-  email: z
-    .string()
-    .trim()
-    .toLowerCase()
-    .email()
+  email: leadEmail
     .optional()
     .nullable()
     .or(z.literal("").transform(() => null)),
@@ -55,7 +53,7 @@ export const leadInputSchema = z.object({
   city: optStr,
   postalCode: optStr,
   propertyType: optStr,
-  projectTypes: z.array(z.string().trim().max(100)).max(20).default([]),
+  projectTypes: z.array(z.string().trim().max(PROJECT_TYPE_MAX)).max(PROJECT_TYPES_MAX).default([]),
   description: optStr,
   timeline: optStr,
   leadSource: optStr,
@@ -71,15 +69,12 @@ export const leadInputSchema = z.object({
   notes: optStr,
 });
 export type LeadInput = z.input<typeof leadInputSchema>;
+type Lead = z.output<typeof leadInputSchema>;
 
 export async function stageByKey(key: string, tx: Tx | typeof db = db) {
   const s = await tx.query.pipelineStages.findFirst({ where: eq(pipelineStages.key, key) });
   if (!s) throw new Error(`Pipeline stage "${key}" is missing. Run the seed.`);
   return s;
-}
-
-function normalizePhone(p: string | null) {
-  return p ? p.replace(/\D/g, "").replace(/^1(?=\d{10}$)/, "") : null;
 }
 
 /** Find an existing customer by email or phone so repeat inquiries don't create duplicates. */
@@ -104,20 +99,38 @@ function opportunityTitle(name: string, projectTypes: string[], city: string | n
   return [name, projectTypes.join(", "), city].filter(Boolean).join(" – ");
 }
 
+export type IngestOutcome = "created" | "merged" | "promoted" | "reopened" | "booking_updated";
+
 export interface IngestResult {
   opportunityId: string;
   customerId: string;
   created: boolean;
   matchedExistingCustomer: boolean;
+  /**
+   * created: a new lead · merged: added to the customer's open lead · promoted: a booking
+   * moved an early lead to Estimate Booked · reopened: booked again after a cancellation ·
+   * booking_updated: the same booking changed.
+   */
+  outcome: IngestOutcome;
+  customerName: string;
+  estimatorId: string | null;
+  stageName: string;
+  visitAt: Date | null;
 }
 
 /**
  * Create or update a lead. Used by the manual "New lead" form, website form
  * submissions and YouCanBook.me bookings.
  *
- * - Customers are matched by email, then phone.
+ * - Customers are matched by email, then phone. A matched customer's new email or
+ *   phone fills an empty field; a different one is noted on the lead's timeline.
  * - A booking for someone who already has an open lead moves that lead to
- *   "Estimate Booked" instead of creating a duplicate.
+ *   "Estimate Booked" instead of creating a duplicate; a lead lost only because its
+ *   booking was cancelled is reopened.
+ * - With `matchOpenLead` (website forms), a repeat inquiry is added to the
+ *   customer's open lead.
+ * - New details for an existing lead fill its empty fields and are added to its
+ *   description and timeline. Nothing on file is overwritten.
  */
 export async function ingestLead(
   raw: LeadInput,
@@ -127,43 +140,28 @@ export async function ingestLead(
     externalSource?: string;
     externalRef?: string | null;
     actorId?: string | null;
+    matchOpenLead?: boolean;
   },
 ): Promise<IngestResult> {
   const input = leadInputSchema.parse(raw);
   const name = fullName(input.firstName, input.lastName) || input.company || input.email || input.phone || "Unnamed lead";
+  const actorId = opts.actorId ?? null;
 
   return db.transaction(async (tx) => {
     const now = new Date();
     const stage = await stageByKey(opts.stageKey, tx);
-
-    // Same external booking seen before → update in place.
-    if (opts.externalSource && opts.externalRef) {
-      const existing = await tx.query.opportunities.findFirst({
-        where: and(eq(opportunities.externalSource, opts.externalSource), eq(opportunities.externalRef, opts.externalRef)),
-      });
-      if (existing) {
-        await tx
-          .update(opportunities)
-          .set({
-            estimateVisitAt: input.visitAt ?? existing.estimateVisitAt,
-            bookingManageUrl: input.bookingManageUrl ?? existing.bookingManageUrl,
-            updatedAt: now,
-            ...milestoneUpdates(existing, { newVisitAt: input.visitAt }, now),
+    const sameBooking =
+      opts.externalSource && opts.externalRef
+        ? await tx.query.opportunities.findFirst({
+            where: and(eq(opportunities.externalSource, opts.externalSource), eq(opportunities.externalRef, opts.externalRef)),
           })
-          .where(eq(opportunities.id, existing.id));
-        await tx.insert(activities).values({
-          customerId: existing.customerId,
-          opportunityId: existing.id,
-          type: "booking",
-          body: input.visitAt ? `Booking updated – visit ${formatDateTime(input.visitAt)}` : "Booking updated",
-          meta: { source: opts.externalSource },
-        });
-        return { opportunityId: existing.id, customerId: existing.customerId, created: false, matchedExistingCustomer: true };
-      }
-    }
+        : undefined;
 
-    let customer = await findCustomer(tx, input.email ?? null, input.phone);
+    let customer = sameBooking
+      ? await tx.query.customers.findFirst({ where: eq(customers.id, sameBooking.customerId) })
+      : await findCustomer(tx, input.email ?? null, input.phone);
     const matchedExistingCustomer = !!customer;
+    const contactNotes = customer ? await mergeContactDetails(tx, customer, input, now, actorId) : [];
     if (!customer) {
       [customer] = await tx
         .insert(customers)
@@ -173,7 +171,7 @@ export async function ingestLead(
           email: input.email ?? null,
           phone: input.phone,
           source: input.leadSource,
-          createdBy: opts.actorId ?? null,
+          createdBy: actorId,
         })
         .returning();
       await tx.insert(contacts).values({
@@ -185,67 +183,98 @@ export async function ingestLead(
         isPrimary: true,
       });
     }
+    const found = customer;
+    const property = await findOrAddProperty(tx, found.id, input);
+    const merging: MergeContext = { tx, input, property, now, actorId, channel: opts.channel, contactNotes };
+    const result = (opp: { id: string; estimatorId: string | null }, outcome: IngestOutcome, stageName: string, visitAt: Date | null): IngestResult => ({
+      opportunityId: opp.id,
+      customerId: found.id,
+      created: outcome === "created",
+      matchedExistingCustomer,
+      outcome,
+      customerName: found.displayName,
+      estimatorId: opp.estimatorId,
+      stageName,
+      visitAt,
+    });
 
-    let propertyId: string | null = null;
-    if (input.street) {
-      const existingProp = await tx.query.properties.findFirst({
-        where: and(eq(properties.customerId, customer.id), ilike(properties.street, input.street)),
-      });
-      if (existingProp) propertyId = existingProp.id;
-      else {
-        const [p] = await tx
-          .insert(properties)
-          .values({
-            customerId: customer.id,
-            street: input.street,
-            unit: input.unit,
-            city: input.city,
-            postalCode: input.postalCode,
-            propertyType: mapPropertyType(input.propertyType),
-          })
-          .returning();
-        propertyId = p.id;
-      }
+    // Same external booking seen before → update in place; booking it again after a cancellation reopens the lead.
+    if (sameBooking) {
+      const current = await tx.query.pipelineStages.findFirst({ where: eq(pipelineStages.id, sameBooking.stageId) });
+      const reopen = !!current && lostToCancellation(sameBooking, current) && stage.kind === "open";
+      const visitAt = input.visitAt ?? sameBooking.estimateVisitAt;
+      await mergeIntoLead(
+        merging,
+        sameBooking,
+        {
+          estimateVisitAt: visitAt,
+          bookingManageUrl: input.bookingManageUrl ?? sameBooking.bookingManageUrl,
+          ...(reopen ? { ...stageTransitionPatch(sameBooking, stage, now), nextFollowUpAt: null } : {}),
+          ...milestoneUpdates(sameBooking, { newVisitAt: input.visitAt, toStageKey: reopen ? stage.key : undefined }, now),
+        },
+        {
+          type: "booking",
+          body: reopen ? `Booked again – reopened and moved back to ${stage.name}` : input.visitAt ? `Booking updated – visit ${formatDateTime(input.visitAt)}` : "Booking updated",
+          meta: { source: opts.externalSource },
+        },
+      );
+      if (reopen && current) await audit({ actorId, action: "lead.stage", entityType: "opportunity", entityId: sameBooking.id, before: { stage: current.key }, after: { stage: stage.key } }, tx);
+      return result(sameBooking, reopen ? "reopened" : "booking_updated", reopen ? stage.name : (current?.name ?? stage.name), visitAt);
     }
 
-    // A booking from someone with an open, un-booked lead promotes that lead.
-    if (opts.stageKey === "estimate_booked") {
-      const early = await tx
-        .select({
-          id: opportunities.id,
-          estimateVisitAt: opportunities.estimateVisitAt,
-          visitBookedAt: opportunities.visitBookedAt,
-          visitCompletedAt: opportunities.visitCompletedAt,
-        })
+    // A booking from someone with an open, un-booked lead promotes that lead; a lead lost only
+    // because its last booking was cancelled is reopened rather than duplicated.
+    if (matchedExistingCustomer && opts.stageKey === "estimate_booked") {
+      const [early] = await tx
+        .select({ opp: opportunities, stageKey: pipelineStages.key, stageKind: pipelineStages.kind })
         .from(opportunities)
         .innerJoin(pipelineStages, eq(pipelineStages.id, opportunities.stageId))
-        .where(and(eq(opportunities.customerId, customer.id), inArray(pipelineStages.key, ["new_lead", "contacted", "follow_up"])))
+        .where(
+          and(
+            eq(opportunities.customerId, found.id),
+            or(inArray(pipelineStages.key, ["new_lead", "contacted", "follow_up"]), and(eq(pipelineStages.kind, "lost"), eq(opportunities.lostReason, BOOKING_CANCELLED_REASON))),
+          ),
+        )
+        .orderBy(sql`${pipelineStages.kind} = 'lost'`, desc(opportunities.createdAt))
         .limit(1);
-      if (early[0]) {
-        await tx
-          .update(opportunities)
-          .set({
-            stageId: stage.id,
-            stageChangedAt: now,
+      if (early) {
+        const reopen = early.stageKind === "lost";
+        await mergeIntoLead(
+          merging,
+          early.opp,
+          {
+            ...stageTransitionPatch(early.opp, stage, now),
             estimateVisitAt: input.visitAt ?? null,
             bookingRef: input.bookingRef,
             bookingManageUrl: input.bookingManageUrl,
             externalSource: opts.externalSource ?? null,
             externalRef: opts.externalRef ?? null,
-            propertyId: propertyId ?? undefined,
             nextFollowUpAt: null,
-            updatedAt: now,
-            ...milestoneUpdates(early[0], { newVisitAt: input.visitAt, toStageKey: stage.key }, now),
-          })
-          .where(eq(opportunities.id, early[0].id));
-        await tx.insert(activities).values({
-          customerId: customer.id,
-          opportunityId: early[0].id,
-          type: "booking",
-          body: "Estimate visit booked – moved to Estimate Booked",
-          meta: { source: opts.externalSource, visitAt: input.visitAt },
-        });
-        return { opportunityId: early[0].id, customerId: customer.id, created: false, matchedExistingCustomer };
+            ...milestoneUpdates(early.opp, { newVisitAt: input.visitAt, toStageKey: stage.key }, now),
+          },
+          {
+            type: "booking",
+            body: reopen ? `Booked again – reopened and moved back to ${stage.name}` : `Estimate visit booked – moved to ${stage.name}`,
+            meta: { source: opts.externalSource, visitAt: input.visitAt },
+          },
+        );
+        await audit({ actorId, action: "lead.stage", entityType: "opportunity", entityId: early.opp.id, before: { stage: early.stageKey }, after: { stage: stage.key } }, tx);
+        return result(early.opp, reopen ? "reopened" : "promoted", stage.name, input.visitAt);
+      }
+    }
+
+    // Someone who already has an open lead and asks again: add it to that lead.
+    if (matchedExistingCustomer && opts.matchOpenLead) {
+      const [open] = await tx
+        .select({ opp: opportunities, stageName: pipelineStages.name })
+        .from(opportunities)
+        .innerJoin(pipelineStages, eq(pipelineStages.id, opportunities.stageId))
+        .where(and(eq(opportunities.customerId, found.id), eq(pipelineStages.kind, "open")))
+        .orderBy(desc(opportunities.updatedAt))
+        .limit(1);
+      if (open) {
+        await mergeIntoLead(merging, open.opp, {}, { type: "system", body: `New inquiry from ${sourcePhrase(opts.channel)} – added to this lead`, meta: { source: opts.externalSource ?? opts.channel } });
+        return result(open.opp, "merged", open.stageName, open.opp.estimateVisitAt);
       }
     }
 
@@ -253,8 +282,8 @@ export async function ingestLead(
       .insert(opportunities)
       .values({
         title: opportunityTitle(name, input.projectTypes, input.city),
-        customerId: customer.id,
-        propertyId,
+        customerId: found.id,
+        propertyId: property?.id ?? null,
         stageId: stage.id,
         source: input.leadSource,
         channel: opts.channel,
@@ -268,26 +297,150 @@ export async function ingestLead(
         bookingManageUrl: input.bookingManageUrl,
         externalSource: opts.externalSource ?? null,
         externalRef: opts.externalRef ?? null,
-        createdBy: opts.actorId ?? null,
+        createdBy: actorId,
       })
       .returning();
 
-    await tx.insert(activities).values({
-      customerId: customer.id,
-      opportunityId: opp.id,
-      type: opts.stageKey === "estimate_booked" ? "booking" : "system",
-      body:
-        opts.stageKey === "estimate_booked"
-          ? `Estimate visit booked via ${opts.externalSource ?? opts.channel}`
-          : `New lead from ${channelLabel(opts.channel)}`,
-      meta: { source: opts.externalSource ?? opts.channel },
-      createdBy: opts.actorId ?? null,
-    });
-    if (input.notes) {
-      await tx.insert(activities).values({ customerId: customer.id, opportunityId: opp.id, type: "note", body: input.notes, createdBy: opts.actorId ?? null });
+    await addTimeline(
+      tx,
+      { customerId: found.id, opportunityId: opp.id, createdBy: actorId },
+      {
+        type: opts.stageKey === "estimate_booked" ? "booking" : "system",
+        body: opts.stageKey === "estimate_booked" ? `Estimate visit booked via ${channelLabel(opts.externalSource ?? opts.channel)}` : `New lead from ${channelLabel(opts.channel)}`,
+        meta: { source: opts.externalSource ?? opts.channel },
+      },
+      [input.notes, ...contactNotes],
+      now,
+    );
+    await audit({ actorId, action: "lead.create", entityType: "opportunity", entityId: opp.id, after: { channel: opts.channel } }, tx);
+    return result(opp, "created", stage.name, opp.estimateVisitAt);
+  });
+}
+
+/** "the website form", "YouCanBook.me" or "manual entry", for timeline text. */
+function sourcePhrase(channel: string) {
+  return channel === "website_form" ? "the website form" : channel === "youcanbookme" ? "YouCanBook.me" : "manual entry";
+}
+
+interface TimelineEvent {
+  type: (typeof activities.$inferInsert)["type"];
+  body: string;
+  meta?: Record<string, unknown>;
+}
+
+/** An event on the lead's timeline and, just below it, a note with any details. */
+async function addTimeline(tx: Tx, base: { customerId: string; opportunityId: string; createdBy: string | null }, event: TimelineEvent, note: (string | null)[], now: Date) {
+  // Both are written in the same instant, so the event is stamped a millisecond later to sit on top.
+  const rows: (typeof activities.$inferInsert)[] = [{ ...base, ...event, createdAt: new Date(now.getTime() + 1) }];
+  const body = note.filter((l) => l !== null).join("\n").trim();
+  if (body) rows.push({ ...base, type: "note", body, createdAt: now });
+  await tx.insert(activities).values(rows);
+}
+
+/** A matched customer's new email or phone fills an empty field. Returns what to note on the lead. */
+async function mergeContactDetails(tx: Tx, customer: Customer, input: Lead, now: Date, actorId: string | null): Promise<string[]> {
+  if (!input.email && !input.phone) return [];
+  const people = await tx
+    .select({ id: contacts.id, email: contacts.email, phone: contacts.phone, phone2: contacts.phone2, isPrimary: contacts.isPrimary })
+    .from(contacts)
+    .where(eq(contacts.customerId, customer.id));
+  const primary = people.find((p) => p.isPrimary) ?? null;
+  const plan = planContactMerge(
+    { customer, primary, emails: [customer.email, ...people.map((p) => p.email)], phones: [customer.phone, ...people.flatMap((p) => [p.phone, p.phone2])] },
+    { email: input.email ?? null, phone: input.phone },
+  );
+  const filled = Object.keys(plan.customer) as ("email" | "phone")[];
+  if (filled.length) {
+    await tx.update(customers).set({ ...plan.customer, updatedAt: now }).where(eq(customers.id, customer.id));
+    await audit({ actorId, action: "customer.update", entityType: "customer", entityId: customer.id, before: Object.fromEntries(filled.map((k) => [k, customer[k]])), after: plan.customer }, tx);
+  }
+  if (primary && Object.keys(plan.primary).length) await tx.update(contacts).set({ ...plan.primary, updatedAt: now }).where(eq(contacts.id, primary.id));
+  return plan.mentions;
+}
+
+async function findOrAddProperty(tx: Tx, customerId: string, input: Lead): Promise<{ id: string; address: string } | null> {
+  if (!input.street) return null;
+  const existing = await tx.query.properties.findFirst({ where: and(eq(properties.customerId, customerId), ilike(properties.street, input.street)) });
+  const [p] = existing
+    ? [existing]
+    : await tx
+        .insert(properties)
+        .values({ customerId, street: input.street, unit: input.unit, city: input.city, postalCode: input.postalCode, propertyType: mapPropertyType(input.propertyType) })
+        .returning();
+  return { id: p.id, address: formatAddress(p) };
+}
+
+interface MergeContext {
+  tx: Tx;
+  input: Lead;
+  property: { id: string; address: string } | null;
+  now: Date;
+  actorId: string | null;
+  channel: string;
+  contactNotes: string[];
+}
+
+/**
+ * New details for a lead that already exists, written with any booking or stage fields in
+ * `extra`: empty fields are filled, a new message is added to the description, and the
+ * event goes on the timeline with a note of everything new or different.
+ */
+async function mergeIntoLead(ctx: MergeContext, opp: Opportunity, extra: Partial<typeof opportunities.$inferInsert>, event: TimelineEvent) {
+  const { tx, input, now } = ctx;
+  const via = sourcePhrase(ctx.channel);
+  const merge = planLeadMerge(
+    { source: opp.source, projectTypes: opp.projectTypes, timeline: opp.timeline, description: opp.description, propertyId: opp.propertyId },
+    { source: input.leadSource, projectTypes: input.projectTypes, timeline: input.timeline, description: input.description, propertyId: ctx.property?.id ?? null, address: ctx.property?.address ?? null },
+    `From ${via}, ${formatDate(now)}`,
+  );
+  await tx.update(opportunities).set({ ...merge.patch, ...extra, updatedAt: now }).where(eq(opportunities.id, opp.id));
+  const others = [input.notes, ...merge.mentions, ...ctx.contactNotes].filter((l): l is string => !!l);
+  const note = merge.message || others.length ? [`New details from ${via}:`, merge.message, ...(merge.message && others.length ? [""] : []), ...others] : [];
+  await addTimeline(tx, { customerId: opp.customerId, opportunityId: opp.id, createdBy: ctx.actorId }, event, note, now);
+  if (Object.keys(merge.patch).length) {
+    await audit({ actorId: ctx.actorId, action: "lead.merge", entityType: "opportunity", entityId: opp.id, after: { channel: ctx.channel, filled: Object.keys(merge.patch) } }, tx);
+  }
+}
+
+export type CancelOutcome = "lost" | "noted" | "not_found";
+
+export interface CancelResult {
+  outcome: CancelOutcome;
+  opportunityId: string | null;
+  customerName: string | null;
+  estimatorId: string | null;
+  stageName: string | null;
+}
+
+/**
+ * A booking cancelled in YouCanBook.me. While the lead is still waiting for its estimate
+ * visit it moves to Lost; further along (estimate done, proposal out, won…) it stays where
+ * it is and the cancellation is noted on its timeline.
+ */
+export async function cancelBooking(ref: string, externalSource = "youcanbookme"): Promise<CancelResult> {
+  return db.transaction(async (tx) => {
+    const [opp] = await tx
+      .select()
+      .from(opportunities)
+      .where(and(eq(opportunities.externalSource, externalSource), eq(opportunities.externalRef, ref)))
+      .for("update");
+    if (!opp) return { outcome: "not_found", opportunityId: null, customerName: null, estimatorId: null, stageName: null };
+    const from = await tx.query.pipelineStages.findFirst({ where: eq(pipelineStages.id, opp.stageId) });
+    const customer = await tx.query.customers.findFirst({ where: eq(customers.id, opp.customerId) });
+    const base = { opportunityId: opp.id, customerName: customer?.displayName ?? null, estimatorId: opp.estimatorId };
+    if (from && cancellationLosesLead(from)) {
+      const lost = await stageByKey("lost", tx);
+      await moveStageInTx(tx, opp.id, lost.id, null, BOOKING_CANCELLED_REASON, { opp, from, to: lost });
+      return { ...base, outcome: "lost", stageName: lost.name };
     }
-    await audit({ actorId: opts.actorId ?? null, action: "lead.create", entityType: "opportunity", entityId: opp.id, after: { channel: opts.channel } }, tx);
-    return { opportunityId: opp.id, customerId: customer.id, created: true, matchedExistingCustomer };
+    await tx.insert(activities).values({
+      customerId: opp.customerId,
+      opportunityId: opp.id,
+      type: "booking",
+      body: `Booking cancelled in YouCanBook.me. The lead stays in ${from?.name ?? "its stage"}.`,
+      meta: { source: externalSource, cancelled: true },
+    });
+    return { ...base, outcome: "noted", stageName: from?.name ?? null };
   });
 }
 
@@ -522,25 +675,6 @@ export async function addNote(opportunityId: string, body: string, userId: strin
   if (type === "call") {
     await db.update(opportunities).set({ lastContactedAt: new Date() }).where(eq(opportunities.id, opportunityId));
   }
-}
-
-/** Store the raw webhook first so nothing is lost if processing fails. */
-export async function recordInbound(source: string, externalRef: string | null, payload: unknown) {
-  if (externalRef) {
-    const dup = await db.query.inboundEvents.findFirst({
-      where: and(eq(inboundEvents.source, source), eq(inboundEvents.externalRef, externalRef), eq(inboundEvents.status, "processed")),
-    });
-    if (dup) return { id: dup.id, duplicate: true, opportunityId: dup.opportunityId };
-  }
-  const [row] = await db.insert(inboundEvents).values({ source, externalRef, payload: payload as object }).returning();
-  return { id: row.id, duplicate: false, opportunityId: null };
-}
-
-export async function finishInbound(id: string, result: { opportunityId?: string; error?: string }) {
-  await db
-    .update(inboundEvents)
-    .set({ status: result.error ? "failed" : "processed", error: result.error ?? null, opportunityId: result.opportunityId ?? null, processedAt: new Date() })
-    .where(eq(inboundEvents.id, id));
 }
 
 export async function searchCustomersByText(q: string) {

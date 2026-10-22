@@ -71,6 +71,7 @@ export function LeadsWorkspace({
   includeMoney,
   nowIso,
   headerActions,
+  notice,
 }: {
   initialView: ViewMode;
   initialState: ListState;
@@ -85,6 +86,8 @@ export function LeadsWorkspace({
   includeMoney: boolean;
   nowIso: string;
   headerActions?: ReactNode;
+  /** Shown under the page title, e.g. web leads that couldn't be imported. */
+  notice?: ReactNode;
 }) {
   const router = useRouter();
   const [view, setView] = useState<ViewMode>(initialView);
@@ -234,6 +237,7 @@ export function LeadsWorkspace({
   return (
     <>
       <PageHeader title="Leads" description={`${intro} Won and lost show ${WINDOW_TEXT[closed]}.`} actions={headerActions} />
+      {notice}
       <LeadsToolbar
         view={view}
         onView={changeView}

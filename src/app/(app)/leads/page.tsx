@@ -7,9 +7,11 @@ import { pipelineStages } from "@/db/schema";
 import { requirePermission } from "@/lib/authz/guard";
 import { can } from "@/lib/authz/permissions";
 import { decodeListPrefs, LIST_PREFS_COOKIE, parseListParams, type StageInfo } from "@/lib/pipeline/list-view";
+import { countNotImported } from "@/server/inbound-events";
 import { listAssignableEstimators, listPipelineRows } from "@/server/pipeline-list";
 import { getList } from "@/server/settings";
 import { LeadsWorkspace } from "./leads-workspace";
+import { NotImportedBanner } from "./not-imported-banner";
 
 export const metadata = { title: "Leads" };
 
@@ -21,13 +23,15 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   const includeMoney = can(user.role, "estimates.read");
   const canEdit = can(user.role, "pipeline.write");
 
-  const [stageRows, { rows, truncated }, lostReasons, leadSources, estimators] = await Promise.all([
+  const [stageRows, { rows, truncated }, lostReasons, leadSources, estimators, notImported] = await Promise.all([
     db.select().from(pipelineStages).orderBy(asc(pipelineStages.position)),
     listPipelineRows({ closed: state.closed, includeMoney }),
     getList("lost_reasons"),
     getList("lead_sources"),
     // Read-only roles see names from the rows; only editors need the full list.
     canEdit ? listAssignableEstimators() : Promise.resolve([]),
+    // Only people who can manage leads can retry or dismiss these.
+    canEdit ? countNotImported() : Promise.resolve(0),
   ]);
   const stages: StageInfo[] = stageRows.map(({ id, key, name, kind, color, position, staleAfterDays }) => ({ id, key, name, kind, color, position, staleAfterDays }));
 
@@ -45,6 +49,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
       canEdit={canEdit}
       includeMoney={includeMoney}
       nowIso={new Date().toISOString()}
+      notice={<NotImportedBanner count={notImported} />}
       headerActions={
         canEdit ? (
           <LinkButton href="/leads/new">
