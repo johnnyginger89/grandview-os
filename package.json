@@ -9,6 +9,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:db": "vitest run --config vitest.db.config.mts",
     "test:e2e": "playwright test",
     "db:generate": "drizzle-kit generate && tsx scripts/migration-checksums.ts",
     "db:checksums": "tsx scripts/migration-checksums.ts",
