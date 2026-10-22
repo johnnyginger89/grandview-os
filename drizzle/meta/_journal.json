@@ -99,6 +99,13 @@
       "when": 1792623527975,
       "tag": "0013_gmail",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1792646658011,
+      "tag": "0014_final_price_before_upgrades",
+      "breakpoints": true
     }
   ]
 }

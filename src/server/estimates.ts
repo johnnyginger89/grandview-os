@@ -78,6 +78,7 @@ export async function createEstimate(
       minimumJobPrice: pricing.minimumJobPrice,
       gstRate: pricing.gstRate,
       depositPct: pricing.depositPct,
+      finalPriceBeforeUpgrades: true,
       validUntil,
       estimatorId: userId,
       createdBy: userId,
@@ -121,6 +122,7 @@ export async function loadEstimate(id: string) {
       depositPct: est.depositPct,
       discount: est.discount,
       priceOverride: est.priceOverride,
+      finalPriceBeforeUpgrades: est.finalPriceBeforeUpgrades,
     },
     areas: areas.map((a) => ({ id: a.id, parentId: a.parentId, name: a.name, kind: a.kind, length: a.length, width: a.width, height: a.height, notes: a.notes, customerDescription: a.customerDescription })),
     lines: lines.map((l) => ({
@@ -161,12 +163,14 @@ export async function loadEstimate(id: string) {
 
 /** Replace the estimate's contents with the editor document and refresh cached totals. */
 export async function saveEstimateDoc(id: string, raw: unknown) {
-  const doc = estimateDocSchema.parse(raw);
-  const result = calculateDoc(doc); // throws on invalid math (e.g. zero production rate)
+  const parsed = estimateDocSchema.parse(raw);
   return db.transaction(async (tx) => {
     const est = await tx.query.estimates.findFirst({ where: eq(estimates.id, id) });
     if (!est) throw new Error("Estimate not found");
     if (est.status === "accepted") throw new EstimateLockedError();
+    // The pricing rule belongs to the estimate, never to what the browser sends.
+    const doc = { ...parsed, settings: { ...parsed.settings, finalPriceBeforeUpgrades: est.finalPriceBeforeUpgrades } };
+    const result = calculateDoc(doc); // throws on invalid math (e.g. zero production rate)
 
     const areaIds = new Set(doc.areas.map((a) => a.id));
     for (const a of doc.areas) if (a.parentId && !areaIds.has(a.parentId)) throw new Error("Area parent missing");

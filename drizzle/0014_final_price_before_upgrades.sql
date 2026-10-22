@@ -1,0 +1,1 @@
+ALTER TABLE "estimates" ADD COLUMN "final_price_before_upgrades" boolean DEFAULT false NOT NULL;

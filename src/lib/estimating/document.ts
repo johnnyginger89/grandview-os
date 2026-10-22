@@ -60,6 +60,8 @@ export const docSettingsSchema = z.object({
   depositPct: num,
   discount: optNum,
   priceOverride: optNum,
+  /** Set once when the estimate is created; the server never takes it from the browser. */
+  finalPriceBeforeUpgrades: z.boolean().optional(),
 });
 
 export const docAreaSchema = z.object({

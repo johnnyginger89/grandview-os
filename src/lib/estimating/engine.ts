@@ -112,6 +112,12 @@ export interface EstimateSettings {
   depositPct: DecimalInput;
   discount?: DecimalInput;
   priceOverride?: DecimalInput;
+  /**
+   * The hand-set final price covers the base job, and selected upgrades add their
+   * own price on top. Estimates created before this rule leave it unset: their
+   * final price includes whatever is selected, so proposals already sent never change.
+   */
+  finalPriceBeforeUpgrades?: boolean;
 }
 
 export interface LineResult {
@@ -171,6 +177,9 @@ export interface EstimateTotals {
   deposit: Decimal;
   /** Price of optional items that are offered but not selected. */
   unselectedOptionsPrice: Decimal;
+  /** Price and cost of optional items that are selected (already in subtotal and totalCost). */
+  selectedOptionsPrice: Decimal;
+  selectedOptionsCost: Decimal;
 }
 
 export interface EstimateResult {
@@ -320,29 +329,38 @@ export function calculateEstimate(
   const zero = () => new Decimal(0);
   let hours = zero(), laborCost = zero(), materialCost = zero(), otherCost = zero();
   let subcontractorCost = zero(), equipmentCost = zero(), subtotal = zero(), unselectedOptionsPrice = zero();
+  let selectedOptionsPrice = zero(), selectedOptionsCost = zero();
 
-  for (const r of lineResults) {
+  lineResults.forEach((r, i) => {
     if (!r.included) {
       unselectedOptionsPrice = unselectedOptionsPrice.plus(r.price);
-      continue;
+      return;
+    }
+    if (lines[i].isOptional) {
+      selectedOptionsPrice = selectedOptionsPrice.plus(r.price);
+      selectedOptionsCost = selectedOptionsCost.plus(r.cost);
     }
     hours = hours.plus(r.hours);
     laborCost = laborCost.plus(r.laborCost);
     materialCost = materialCost.plus(r.materialCost);
     otherCost = otherCost.plus(r.otherCost);
     subtotal = subtotal.plus(r.price);
-  }
-  for (const r of costResults) {
+  });
+  costResults.forEach((r, i) => {
     if (!r.included) {
       unselectedOptionsPrice = unselectedOptionsPrice.plus(r.price);
-      continue;
+      return;
+    }
+    if (costItems[i].isOptional) {
+      selectedOptionsPrice = selectedOptionsPrice.plus(r.price);
+      selectedOptionsCost = selectedOptionsCost.plus(r.cost);
     }
     if (r.kind === "subcontractor") subcontractorCost = subcontractorCost.plus(r.cost);
     else if (r.kind === "equipment") equipmentCost = equipmentCost.plus(r.cost);
     else if (r.kind === "material") materialCost = materialCost.plus(r.cost);
     else otherCost = otherCost.plus(r.cost);
     subtotal = subtotal.plus(r.price);
-  }
+  });
 
   const totalCost = laborCost.plus(materialCost).plus(otherCost).plus(subcontractorCost).plus(equipmentCost);
   const minimum = d(settings.minimumJobPrice);
@@ -352,8 +370,10 @@ export function calculateEstimate(
   let overrideAdjustment = zero();
   if (hasValue(settings.priceOverride)) {
     const override = cents(settings.priceOverride);
-    overrideAdjustment = override.minus(price);
-    price = override;
+    // Otherwise an upgrade the customer ticks would be free: the hand-set price can't know about it.
+    const upgrades = settings.finalPriceBeforeUpgrades ? selectedOptionsPrice : zero();
+    overrideAdjustment = override.minus(price.minus(upgrades));
+    price = override.plus(upgrades);
   }
   if (price.lt(0)) price = zero();
 
@@ -385,6 +405,8 @@ export function calculateEstimate(
       markup: markup(price, totalCost),
       deposit: cents(total.times(d(settings.depositPct))),
       unselectedOptionsPrice,
+      selectedOptionsPrice,
+      selectedOptionsCost,
     },
   };
 }
