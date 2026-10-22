@@ -17,6 +17,16 @@ How to add an entry (for whoever makes the change, including the AI assistant):
 ### Added
 - Audit of the whole app with findings, a workflow map and a master roadmap (`docs/AUDIT-2026-10.md`, `docs/ROADMAP.md`). No app behaviour changed.
 - This change log.
+- Automatic checks before anything goes live: every change is type-checked, linted and run through the unit and browser tests on GitHub, and must add a line here. How releases work now is in `docs/DEPLOYMENT.md` ("How changes reach the live site").
+
+### Fixed
+- Upgrades are never free: when you type a final price by hand, any upgrade the customer ticks now adds its own price on top. Estimates made before this change keep the old rule, so proposals already sent don't change. The minimum job price still covers the whole job, upgrades included (your call, question 7).
+
+### Removed
+- The "Time & materials" switch on the estimate's Price tab, which didn't change anything yet.
+
+### Security
+- Database changes can no longer be edited after they're written, and ones that could break the live site or quietly change live data are refused by the tests.
 
 ## 2026.10.22 – sign-in, passwords and Gmail catch-up
 
