@@ -185,3 +185,13 @@ is written to logs.
 
 The app refuses to start on the live site if a required setting is missing or too short.
 Two-factor sign-in can't be turned off there, and development test logins are blocked there.
+
+## Locked out (owner)
+
+If the owner forgets the password and email isn't set up:
+
+1. In Vercel → Settings → Environment Variables, add `OWNER_RECOVERY_CODE` with any text of
+   32+ characters (a long sentence). Tick Production. Redeploy.
+2. Go to `https://grandviewpainting.app/recover`, enter that same text, your email and a new password.
+3. Sign in (your authenticator code is still required).
+4. Delete `OWNER_RECOVERY_CODE` in Vercel and redeploy. The page disappears again.
