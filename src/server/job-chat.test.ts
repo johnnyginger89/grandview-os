@@ -1,3 +1,5 @@
+import type { SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { FakeCall, FakeDb } from "@/test/fake-db";
 
@@ -185,6 +187,15 @@ describe("the 4 pm reminder", () => {
       { ids: ["b1", "b2"], title: "Daily update for #3019 [TEST DATA] Lee – Exterior", href: `/chat/${uuid(2)}?update=1` },
     ]);
     expect(inserts("app_settings")[0]).toMatchObject({ value: { lastDay: "2026-10-26" } });
+  });
+
+  it("skips jobs on hold, as well as finished and cancelled ones", async () => {
+    await chat.sendDailyUpdateReminders(FOUR_PM);
+    const where = new PgDialect().sqlToQuery(h.fake.find("select", "schedule_entries")[0].args.where[0] as SQL);
+    expect(where.sql).toMatch(/"projects"\."status" not in \(/);
+    expect(where.params).toEqual(expect.arrayContaining(["on_hold", "cancelled", "closed", "complete", "invoiced"]));
+    expect(where.params).not.toContain("scheduled");
+    expect(where.params).not.toContain("in_progress");
   });
 
   it("skips crews whose day off it is", async () => {

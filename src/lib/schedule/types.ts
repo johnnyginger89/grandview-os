@@ -189,6 +189,8 @@ export interface FieldJobView {
   section: "today" | "this_week" | "upcoming" | "recent";
   crewName: string;
   tentative: boolean;
+  /** The office put the job on hold: still listed, with a "don't go to site" warning. */
+  onHold: boolean;
   projectNumber: number;
   jobTitle: string;
   customerName: string;

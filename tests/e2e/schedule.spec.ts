@@ -4,8 +4,8 @@ import { sellThreeThousandDollarJob } from "./sales";
 
 /*
  * Schedule (spec-schedule §9.2, core path): set up a crew, book a signed job from the
- * project page, see it on the calendar, and check what each role can see. The steps
- * share one job, so the file runs in order.
+ * project page, see it on the calendar, check what each role can see, and put it on
+ * hold (the crew still sees it, marked). The steps share one job, so the file runs in order.
  */
 test.describe.configure({ mode: "serial" });
 
@@ -123,6 +123,30 @@ test.describe("schedule (subcontractor crew lead)", () => {
     expect(await page.locator("body").innerText()).not.toContain("$");
 
     await expectNoAccess(page, "/schedule");
+  });
+});
+
+test.describe("schedule on hold (owner)", () => {
+  test.use({ storageState: statePath("owner") });
+
+  test("the office puts the booked job on hold", async ({ page }) => {
+    test.skip(!projectPath, "needs the booking above");
+    await page.goto(projectPath);
+    await page.getByLabel("Project status").selectOption({ label: "On hold" });
+    await page.getByRole("button", { name: "Save status" }).click();
+    await expect(page.getByRole("status").filter({ hasText: "Status saved" })).toBeVisible();
+  });
+});
+
+test.describe("schedule on hold (subcontractor crew lead)", () => {
+  test.use({ storageState: statePath("subcontractor") });
+
+  test("My Jobs still lists it, clearly marked on hold", async ({ page }) => {
+    test.skip(!projectNumber, "needs the owner steps above");
+    await page.goto("/my-jobs");
+    const job = page.getByRole("article").filter({ hasText: `#${projectNumber}` });
+    await expect(job).toBeVisible();
+    await expect(job.getByText("On hold: don't go to site unless the office says so")).toBeVisible();
   });
 });
 

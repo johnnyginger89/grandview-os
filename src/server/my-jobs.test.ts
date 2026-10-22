@@ -1,3 +1,5 @@
+import type { SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { FakeDb } from "@/test/fake-db";
 
@@ -23,7 +25,7 @@ const TODAY = "2026-10-27"; // Tuesday
 
 const KEYS = [
   "accessNotes", "address", "contact", "crewName", "crewNotes", "customerName", "dayNumber", "endDate", "entryId", "jobTitle", "kind", "kindLabel",
-  "mapsUrl", "phaseLabel", "projectId", "projectNumber", "projectTypes", "section", "startDate", "tentative", "workingDays",
+  "mapsUrl", "onHold", "phaseLabel", "projectId", "projectNumber", "projectTypes", "section", "startDate", "tentative", "workingDays",
 ].sort();
 
 function row(extra: Partial<FieldJobRow> = {}): FieldJobRow {
@@ -68,6 +70,11 @@ describe("toFieldJobView", () => {
   it("has no day number on a weekend inside the booking", () => {
     expect(toFieldJobView(row({ startDate: "2026-10-30", endDate: "2026-11-03" }), { isLead: false, today: "2026-10-31", cal })).toMatchObject({ section: "today", dayNumber: null });
   });
+
+  it("flags a job on hold instead of hiding it", () => {
+    expect(toFieldJobView(row({ projectStatus: "on_hold" }), { isLead: false, today: TODAY, cal })).toMatchObject({ onHold: true, section: "today", entryId: "e-1" });
+    for (const projectStatus of ["scheduled", "in_progress", "need_to_schedule"] as const) expect(toFieldJobView(row({ projectStatus }), { isLead: false, today: TODAY, cal }).onHold).toBe(false);
+  });
 });
 
 describe("listFieldJobs", () => {
@@ -86,6 +93,15 @@ describe("listFieldJobs", () => {
     expect(jobs).toHaveLength(1);
     expect(jobs[0].contact).toBeNull();
     expect(h.fake.find("select", "customers")).toEqual([]);
+  });
+
+  it("still lists jobs on hold: only cancelled jobs are left out", async () => {
+    h.fake.queue({ "select:crew_members": [[{ crewId: "crew-1", isLead: false }]], "select:schedule_entries": [[{ ...dbRow, projectStatus: "on_hold" }]] });
+    const jobs = await listFieldJobs({ id: "u-1" }, new Date("2026-10-27T19:00:00Z"));
+    expect(jobs.map((j) => j.onHold)).toEqual([true]);
+    const where = new PgDialect().sqlToQuery(h.fake.find("select", "schedule_entries")[0].args.where[0] as SQL);
+    expect(where.params).toContain("cancelled");
+    expect(where.params).not.toContain("on_hold");
   });
 
   it("reads the primary contact's phone for the lead", async () => {

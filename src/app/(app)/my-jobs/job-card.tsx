@@ -1,4 +1,4 @@
-import { ClipboardList, KeyRound, MapPin, MessageSquareText, MessagesSquare, Palette, Phone } from "lucide-react";
+import { CirclePause, ClipboardList, KeyRound, MapPin, MessageSquareText, MessagesSquare, Palette, Phone } from "lucide-react";
 import Link from "next/link";
 import { Badge, buttonClass, Card } from "@/components/ui";
 import { dateRangeLabel, workingDaysLabel } from "@/lib/schedule/format";
@@ -35,6 +35,12 @@ export function JobCard({ job, workOrderHref }: { job: FieldJobView; workOrderHr
           </p>
           {job.dayNumber !== null && <Badge tone="brand">Day {job.dayNumber} of {job.workingDays}</Badge>}
         </div>
+
+        {job.onHold && (
+          <p className="flex items-start gap-2 rounded-md bg-warning-soft px-3 py-2 text-sm font-semibold text-warning">
+            <CirclePause className="mt-0.5 size-4 shrink-0" aria-hidden /> On hold: don&apos;t go to site unless the office says so
+          </p>
+        )}
 
         <div>
           <h3 id={headingId} className="text-base font-semibold break-words">

@@ -86,6 +86,7 @@ export function toFieldJobView(row: FieldJobRow, opts: { isLead: boolean; today:
     section,
     crewName: row.crewName,
     tentative: isTentative(row.kind, row.confirmation ?? "none"),
+    onHold: row.projectStatus === "on_hold",
     projectNumber: row.projectNumber ?? 0,
     jobTitle: jobTitle(row.projectName, row.estimateTitle),
     customerName: row.customerName,
