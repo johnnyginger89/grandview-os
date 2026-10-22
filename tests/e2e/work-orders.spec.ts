@@ -191,6 +191,8 @@ test.describe("work orders (owner)", () => {
     await expect(row(page).getByTestId("work-order-out-of-date")).toHaveCount(0);
     await card(page).getByRole("button", { name: "Assign someone" }).click();
     const assign = card(page).getByRole("form", { name: "Assign someone" });
+    // This file's crew: the first one listed may have the painter in it, who must stay off this job.
+    await assign.getByLabel("Who").selectOption({ label: CREW });
     await assign.getByLabel("What they're doing").selectOption({ label: "Pressure wash" });
     await assign.getByLabel("Working days").fill("1");
     await assign.getByRole("button", { name: "Add to schedule" }).click();
