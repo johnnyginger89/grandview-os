@@ -18,6 +18,10 @@ How to add an entry (for whoever makes the change, including the AI assistant):
 - Audit of the whole app with findings, a workflow map and a master roadmap (`docs/AUDIT-2026-10.md`, `docs/ROADMAP.md`). No app behaviour changed.
 - This change log.
 - Automatic checks before anything goes live: every change is type-checked, linted and run through the unit and browser tests on GitHub, and must add a line here. How releases work now is in `docs/DEPLOYMENT.md` ("How changes reach the live site").
+- **Fix a customer's contacts and addresses in one place.** Edit or remove a contact, pick the primary contact, and edit or remove an address (access notes and "Built before 1990" included). An address an estimate, job or lead uses can't be removed; edit it instead. The email and phone in **Edit customer** are the primary contact's, so the booking link, proposals, follow-ups, start notices and colour links all go to the corrected address.
+- **Pre-1990 safety warning for crews.** Tick "Built before 1990" on an address and the crew's work order and My Jobs card say: "Built before 1990: assume lead paint and asbestos may be present. Follow safe work practices."
+- **Project manager on each job**, picked at the top of the job page. They join the job's chat, hear about colour signings, and show on the work order as the office contact from its next version.
+- **Pages on Customers, Estimates, Jobs and Work orders** (100 at a time, "Showing 1–100 of 1,240", Next and Previous), so older records no longer drop silently off the bottom. The Customers search also finds street addresses.
 
 ### Fixed
 - **Times stay right from November 1.** British Columbia is staying on daylight time (UTC−7) all year and won't turn the clocks back on November 1, 2026. Servers or devices with out-of-date time-zone tables would have shown every time in the app an hour early from then on (crew bookings, start notices, the 4 pm reminder) and read typed times an hour off; the app now corrects for that itself.
@@ -30,12 +34,24 @@ How to add an entry (for whoever makes the change, including the AI assistant):
 - **Sign now on this device** works: it opens the customer's own proposal page with signing switched on, even though the tablet is signed in as staff. The job's history records that the customer signed in person, on whose device.
 - **Mark as accepted** ticks the same upgrades the customer's page would and shows the price before GST, GST, total and deposit, updating as upgrades are ticked. The job is sold exactly as on screen, or nothing changes.
 - A signature, a decline and the office's status changes arriving at the same moment can no longer trip over each other: an old link or a decline never undoes a sale.
+- Home's "N jobs today" counts every job with painting booked today; a job used to drop off on the morning of its last day.
+- The readiness checklist follows pressure-wash and colour-consult bookings when they're moved or removed, and a booked pressure wash shows as done after its last day.
+- Signing colours no longer says they're on the work order before they are. A work order that signed colours or a booking change has made out of date is flagged "issue a new version" on the job (nothing is issued automatically).
+- The Price tab shows clean percentages (55, not 55.00000000000001), and price settings must be sensible (percents between 0 and 100, no negative amounts).
+- Estimators see "Sold. The office takes it from here." on an accepted estimate instead of a job link they can't open; the "accepted" notice opens the job for people who can.
+- Jobs on hold: no 4 pm update reminder, and the crew's My Jobs card says "On hold: don't go to site unless the office says so."
+- The work order's share dialog says crews see estimated hours (never prices), as the work order does.
 
 ### Removed
 - The "Time & materials" switch on the estimate's Price tab, which didn't change anything yet.
 
 ### Security
 - Database changes can no longer be edited after they're written, and ones that could break the live site or quietly change live data are refused by the tests.
+- **The owner can reset a staff member's sign-in** (Settings → Users): a temporary password, or two-step sign-in again after a lost phone. Both sign them out everywhere and are recorded.
+- A password someone else set (a new login, or the owner's reset) must be replaced at the next sign-in before anything else can be used.
+- **New backup codes** on Password & security, after typing a code from your authenticator app; the old ones stop working.
+- Only the owner can connect or disconnect the company Gmail, and only a mailbox on the company email's own domain (Settings → Company), because password-reset emails go out through it.
+- The owner recovery page allows 5 wrong codes an hour, works once per code, records where each try came from, and tells the owner about every recovery.
 
 ## 2026.10.22 – sign-in, passwords and Gmail catch-up
 
