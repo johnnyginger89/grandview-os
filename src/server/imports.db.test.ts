@@ -152,9 +152,7 @@ describe("importing a Markate customer export", () => {
     expect(await db.select().from(customers).where(eq(customers.importRef, `R${tag}`))).toEqual([]);
   });
 
-  // Bug: rollbackImport (src/server/imports.ts:265-281) restores merged fields row by row in file order, so the first
-  // row's restore finds the second row's note added after its own, leaves its note behind and reports an edit nobody made.
-  it.fails("Undo restores a customer's notes when two rows of the file added notes to it", async () => {
+  it("Undo restores a customer's notes when two rows of the file added notes to it", async () => {
     const tag = uniqueTag();
     const existing = await createCustomer({ displayName: `[TEST DATA] Twice Matched ${tag}`, email: `twice-${tag}@example.com`, notes: "[TEST DATA] Original note" }, null, null, ownerId);
     const before = await detailsOf(existing.id);

@@ -221,7 +221,7 @@ export async function rollbackImport(batchId: string, userId: string) {
   const batch = await db.query.importBatches.findFirst({ where: eq(importBatches.id, batchId) });
   if (!batch) throw new ImportError("Import not found.");
   if (batch.status !== "imported") throw new ImportError("Only a completed import can be undone.");
-  const rows = await db.select().from(importRows).where(and(eq(importRows.batchId, batchId), inArray(importRows.action, ["create", "merge"])));
+  const rows = await db.select().from(importRows).where(and(eq(importRows.batchId, batchId), inArray(importRows.action, ["create", "merge"]))).orderBy(asc(importRows.rowNumber));
   const kept: { name: string; reason: string }[] = [];
   let removed = 0;
 
@@ -233,21 +233,18 @@ export async function rollbackImport(batchId: string, userId: string) {
       .returning({ id: importBatches.id });
     if (!claimed.length) throw new ImportError("This import has already been undone.");
 
+    // One query at a time: a transaction is a single connection, and pg stops allowing overlapping queries on one.
     const inUse = async (customerId: string) => {
-      const [[o], [e], [p]] = await Promise.all([
-        tx.select({ n: count() }).from(opportunities).where(eq(opportunities.customerId, customerId)),
-        tx.select({ n: count() }).from(estimates).where(eq(estimates.customerId, customerId)),
-        tx.select({ n: count() }).from(projects).where(eq(projects.customerId, customerId)),
-      ]);
+      const [o] = await tx.select({ n: count() }).from(opportunities).where(eq(opportunities.customerId, customerId));
+      const [e] = await tx.select({ n: count() }).from(estimates).where(eq(estimates.customerId, customerId));
+      const [p] = await tx.select({ n: count() }).from(projects).where(eq(projects.customerId, customerId));
       return o.n + e.n + p.n > 0;
     };
     const propertyInUse = async (ids: string[]) => {
       if (!ids.length) return new Set<string>();
-      const [o, e, p] = await Promise.all([
-        tx.select({ id: opportunities.propertyId }).from(opportunities).where(inArray(opportunities.propertyId, ids)),
-        tx.select({ id: estimates.propertyId }).from(estimates).where(inArray(estimates.propertyId, ids)),
-        tx.select({ id: projects.propertyId }).from(projects).where(inArray(projects.propertyId, ids)),
-      ]);
+      const o = await tx.select({ id: opportunities.propertyId }).from(opportunities).where(inArray(opportunities.propertyId, ids));
+      const e = await tx.select({ id: estimates.propertyId }).from(estimates).where(inArray(estimates.propertyId, ids));
+      const p = await tx.select({ id: projects.propertyId }).from(projects).where(inArray(projects.propertyId, ids));
       return new Set([...o, ...e, ...p].map((r) => r.id).filter(Boolean) as string[]);
     };
 
@@ -262,7 +259,8 @@ export async function rollbackImport(batchId: string, userId: string) {
       removed++;
     }
 
-    for (const r of rows.filter((x) => !x.customerCreated && x.customerId)) {
+    // Last row first: when two rows filled the same customer, each row's "before" is the previous row's "after".
+    for (const r of rows.filter((x) => !x.customerCreated && x.customerId).reverse()) {
       const used = await propertyInUse(r.createdPropertyIds);
       const removable = r.createdPropertyIds.filter((id) => !used.has(id));
       if (removable.length) await tx.delete(properties).where(inArray(properties.id, removable));

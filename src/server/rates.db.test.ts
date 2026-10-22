@@ -215,9 +215,7 @@ describe("renaming and archiving a production rate", () => {
 });
 
 describe("creating a production rate", () => {
-  // Bug: createRate (src/server/rates.ts:133) inserts the rate before saveRateVersion checks the numbers,
-  // so a rejected save leaves a rate with no version behind and its code can't be used again.
-  it.fails("saves nothing when a number is invalid, so the corrected rate can be saved with the same code", async () => {
+  it("saves nothing when a number is invalid, so the corrected rate can be saved with the same code", async () => {
     const { identity, values } = newRate();
     await expect(createRate(identity, { ...values, productionRate: "" }, ownerId)).rejects.toThrow("Enter a number");
     expect(await db.select({ id: productionRates.id }).from(productionRates).where(eq(productionRates.code, identity.code))).toEqual([]);
