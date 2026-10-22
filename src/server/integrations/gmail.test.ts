@@ -32,7 +32,7 @@ const { seal } = await import("@/lib/crypto/secret-box");
 const REFRESH = "1//refresh-token-[TEST DATA]";
 const CUSTOMER = "00000000-0000-4000-8000-000000000030";
 const connected = (extra: Record<string, unknown> = {}) => [
-  { value: { refreshToken: seal(REFRESH), email: "info@example.com", connectedBy: "owner-1", connectedAt: "2026-10-01T00:00:00.000Z", historyId: "100", lastSyncAt: null, broken: false, ...extra } },
+  { value: { refreshToken: seal(REFRESH), email: "info@example.com", connectedBy: "owner-1", connectedAt: "2026-10-01T00:00:00.000Z", historyId: "100", lastSyncAt: null, backfill: "done", lastResult: null, broken: false, ...extra } },
 ];
 const decode = (raw: string) => Buffer.from(raw, "base64url").toString("utf8");
 const savedSetting = () => h.fake.find("insert", "app_settings").at(-1)?.args.values?.[0] as { value: Record<string, unknown> } | undefined;
@@ -146,14 +146,14 @@ describe("syncGmail", () => {
     h.rows["select:customers"] = () => (lookups++ === 0 ? [{ id: CUSTOMER, name: "Kim Lee" }] : []);
     h.rows["insert:inbound_emails"] = [{ id: "row-1" }];
 
-    expect(await gmail.syncGmail(new Date("2026-10-21T20:00:00Z"))).toEqual({ ran: true, checked: 3, imported: 1 });
+    expect(await gmail.syncGmail(new Date("2026-10-21T20:00:00Z"))).toEqual({ ran: true, checked: 3, imported: 1, catchingUp: false });
     expect(h.requests.some((q) => q.url.includes("/messages/d"))).toBe(false);
     expect(lookups).toBe(2);
     const saved = h.fake.find("insert", "inbound_emails")[0].args.values?.[0];
     expect(saved).toMatchObject({ gmailMessageId: "a", threadId: "t-a", customerId: CUSTOMER, fromAddress: "kim@example.com", fromName: "Kim Lee", subject: "Re: Your painting proposal", bodyText: "Can we start in May?" });
     expect(h.fake.find("insert", "activities")[0].args.values?.[0]).toMatchObject({ customerId: CUSTOMER, type: "email" });
     expect(h.notices).toEqual([{ to: ["owner-1", "ops-1"], notice: expect.objectContaining({ title: "Kim Lee emailed: Re: Your painting proposal", href: `/customers/${CUSTOMER}` }) }]);
-    expect(savedSetting()?.value).toMatchObject({ historyId: "150", lastSyncAt: "2026-10-21T20:00:00.000Z" });
+    expect(savedSetting()?.value).toMatchObject({ historyId: "150", lastSyncAt: "2026-10-21T20:00:00.000Z", lastResult: { checked: 3, imported: 1, error: null } });
   });
 
   it("doesn't tell anyone twice about an email it already copied", async () => {
@@ -169,14 +169,40 @@ describe("syncGmail", () => {
   it("starts again from now when Google no longer has that much history", async () => {
     h.rows["select:app_settings"] = connected({ historyId: "1" });
     h.respond = (url) => (url.includes("/history?") ? { status: 404, body: {} } : url.endsWith("/profile") ? { status: 200, body: { emailAddress: "info@example.com", historyId: 900 } } : { status: 404, body: {} });
-    expect(await gmail.syncGmail()).toEqual({ ran: true, checked: 0, imported: 0 });
-    expect(savedSetting()?.value).toMatchObject({ historyId: "900" });
+    expect(await gmail.syncGmail()).toEqual({ ran: true, checked: 0, imported: 0, catchingUp: true });
+    expect(savedSetting()?.value).toMatchObject({ historyId: "900", backfill: null });
+  });
+
+  it("after connecting, brings in the last 60 days of customer email a page at a time, without notifying", async () => {
+    h.rows["select:app_settings"] = connected({ backfill: null });
+    const m = message("old1", '"Kim Lee" <kim@example.com>', "Painting quote?", "Can you come by next week?");
+    h.respond = (url) => {
+      if (url.includes("/history?")) return { status: 200, body: { historyId: "120" } };
+      if (url.includes("/messages?")) return { status: 200, body: { messages: [{ id: "old1" }], nextPageToken: "page-2" } };
+      return { status: 200, body: url.includes("format=full") ? m.full : m.meta };
+    };
+    h.rows["select:customers"] = [{ id: CUSTOMER, name: "Kim Lee" }];
+    h.rows["insert:inbound_emails"] = [{ id: "row-1" }];
+    expect(await gmail.syncGmail(new Date("2026-10-21T20:00:00Z"))).toEqual({ ran: true, checked: 1, imported: 1, catchingUp: true });
+    const list = h.requests.find((q) => q.url.includes("/messages?"))!;
+    expect(new URL(list.url).searchParams.get("q")).toBe("in:inbox newer_than:60d");
+    expect(h.notices).toEqual([]);
+    // On the timeline when it arrived, not when it was copied.
+    expect(h.fake.find("insert", "activities")[0].args.values?.[0]).toMatchObject({ createdAt: new Date(1792000000000) });
+    expect(savedSetting()?.value).toMatchObject({ backfill: "page-2" });
+  });
+
+  it("records a failed check so Settings can say what went wrong", async () => {
+    h.rows["select:app_settings"] = connected();
+    h.respond = () => ({ status: 403, body: { error: { message: "Insufficient Permission" } } });
+    await expect(gmail.syncGmail(new Date("2026-10-21T20:00:00Z"))).rejects.toThrow(/Insufficient Permission/);
+    expect(savedSetting()?.value).toMatchObject({ lastResult: { imported: 0, error: expect.stringMatching(/Insufficient Permission/) } });
   });
 
   it("does nothing when Gmail isn't connected or needs reconnecting", async () => {
-    expect(await gmail.syncGmail()).toEqual({ ran: false, checked: 0, imported: 0 });
+    expect(await gmail.syncGmail()).toEqual({ ran: false, checked: 0, imported: 0, catchingUp: false });
     h.rows["select:app_settings"] = connected({ broken: true });
-    expect(await gmail.syncGmail()).toEqual({ ran: false, checked: 0, imported: 0 });
+    expect(await gmail.syncGmail()).toEqual({ ran: false, checked: 0, imported: 0, catchingUp: false });
     expect(h.requests).toEqual([]);
   });
 });

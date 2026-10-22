@@ -35,6 +35,13 @@ const storedSchema = z.object({
   connectedAt: z.string(),
   historyId: z.string().nullable().default(null),
   lastSyncAt: z.string().nullable().default(null),
+  /** Bringing in the last 60 days of customer email: Gmail's next page, or "done". Null = not started. */
+  backfill: z.string().nullable().default(null),
+  /** What the last check did, shown in Settings so "is it working?" has an answer. */
+  lastResult: z
+    .object({ checked: z.number(), imported: z.number(), error: z.string().nullable().default(null) })
+    .nullable()
+    .default(null),
   /** Google refused the refresh token (revoked or expired): connect again. */
   broken: z.boolean().default(false),
 });
@@ -66,6 +73,11 @@ export interface GmailStatus {
   connectedAt: string | null;
   connectedByName: string | null;
   lastSyncAt: string | null;
+  lastResult: { checked: number; imported: number; error: string | null } | null;
+  /** Still bringing in the last 60 days of customer email. */
+  catchingUp: boolean;
+  /** Customer emails copied in so far. */
+  importedTotal: number;
   /** What to enter as the redirect URI in Google Cloud. */
   redirectUri: string | null;
 }
@@ -83,6 +95,9 @@ export async function gmailStatus(): Promise<GmailStatus> {
     connectedAt: s?.connectedAt ?? null,
     connectedByName: by?.name ?? null,
     lastSyncAt: s?.lastSyncAt ?? null,
+    lastResult: s?.lastResult ?? null,
+    catchingUp: !!s && s.backfill !== "done",
+    importedTotal: s ? Number((await db.select({ n: sql<number>`count(*)::int` }).from(inboundEmails))[0]?.n ?? 0) : 0,
     redirectUri: c?.redirectUri ?? null,
   };
 }
@@ -127,7 +142,7 @@ export async function completeGmailConnection(code: string, actor: { id: string 
     throw new GmailError(GMAIL_CONNECT_MESSAGES.scopes);
   const profile = z.object({ emailAddress: z.string(), historyId: z.coerce.string() }).parse(await gmailFetch("/profile", {}, t.data.access_token));
   cache = { token: t.data.access_token, expires: Date.now() + (t.data.expires_in ?? 3000) * 1000 };
-  await save({ refreshToken: seal(t.data.refresh_token), email: profile.emailAddress.toLowerCase(), connectedBy: actor.id, connectedAt: new Date().toISOString(), historyId: profile.historyId, lastSyncAt: null, broken: false });
+  await save({ refreshToken: seal(t.data.refresh_token), email: profile.emailAddress.toLowerCase(), connectedBy: actor.id, connectedAt: new Date().toISOString(), historyId: profile.historyId, lastSyncAt: null, backfill: null, lastResult: null, broken: false });
   await audit({ actorId: actor.id, action: "integration.gmail.connect", entityType: "settings", entityId: SETTING, after: { email: profile.emailAddress } });
   return profile.emailAddress;
 }
@@ -297,78 +312,130 @@ const historySchema = z.object({
   history: z.array(z.object({ messagesAdded: z.array(z.object({ message: z.object({ id: z.string(), threadId: z.string().optional(), labelIds: z.array(z.string()).optional() }) })).optional() })).optional(),
 });
 
+const metaSchema = z.object({
+  id: z.string(),
+  threadId: z.string().optional(),
+  internalDate: z.coerce.number().optional(),
+  labelIds: z.array(z.string()).optional(),
+  payload: z.object({ headers: z.array(z.object({ name: z.string(), value: z.string() })).optional() }).optional(),
+});
+
 /**
- * New mail since the last check: anything from a customer's (or a customer contact's)
- * address is copied into their file and the office is told. Runs every few minutes.
+ * Copies one Gmail message into the customer's file if it's from a customer (or a
+ * customer contact). Returns true when it was new. `notify` is off for older mail
+ * brought in when Gmail is first connected.
  */
-export async function syncGmail(now: Date = new Date()): Promise<{ ran: boolean; checked: number; imported: number }> {
-  const s = await stored();
-  if (!s || s.broken) return { ran: false, checked: 0, imported: 0 };
-  const token = await accessToken(s);
-  if (!s.historyId) {
-    const p = z.object({ historyId: z.coerce.string() }).parse(await gmailFetch("/profile", {}, token));
-    await save({ ...s, historyId: p.historyId, lastSyncAt: now.toISOString() });
-    return { ran: true, checked: 0, imported: 0 };
-  }
-
-  const ids = new Map<string, string | undefined>();
-  let historyId = s.historyId;
-  let pageToken: string | undefined;
-  try {
-    for (let page = 0; page < 5; page++) {
-      const q = new URLSearchParams({ startHistoryId: s.historyId, historyTypes: "messageAdded", labelId: "INBOX", maxResults: "100", ...(pageToken ? { pageToken } : {}) });
-      const h = historySchema.parse(await gmailFetch(`/history?${q}`, {}, token));
-      if (h.historyId) historyId = h.historyId;
-      for (const r of h.history ?? [])
-        for (const a of r.messagesAdded ?? []) if (!a.message.labelIds?.some((l) => l === "SENT" || l === "DRAFT")) ids.set(a.message.id, a.message.threadId);
-      if (!h.nextPageToken) break;
-      pageToken = h.nextPageToken;
-    }
-  } catch (e) {
-    // Google keeps about a week of history; after a long gap, start again from now.
-    if (!(e instanceof GmailNotFound)) throw e;
-    const p = z.object({ historyId: z.coerce.string() }).parse(await gmailFetch("/profile", {}, token));
-    await save({ ...s, historyId: p.historyId, lastSyncAt: now.toISOString() });
-    return { ran: true, checked: 0, imported: 0 };
-  }
-
-  let imported = 0;
-  for (const [id] of [...ids].slice(0, 100)) {
-    const meta = z
-      .object({ id: z.string(), threadId: z.string().optional(), internalDate: z.coerce.number().optional(), payload: z.object({ headers: z.array(z.object({ name: z.string(), value: z.string() })).optional() }).optional() })
-      .parse(await gmailFetch(`/messages/${encodeURIComponent(id)}?format=metadata&metadataHeaders=From&metadataHeaders=Subject`, {}, token));
-    const from = parseFrom(headerOf(meta.payload?.headers, "From"));
-    if (!from || from.address === s.email) continue;
-    const customer = await customerByEmail(from.address);
-    if (!customer) continue;
-    const full = z
-      .object({ snippet: z.string().optional(), payload: z.unknown() })
-      .parse(await gmailFetch(`/messages/${encodeURIComponent(id)}?format=full`, {}, token));
-    const text = plainText(full.payload as GmailPart) ?? full.snippet ?? "";
-    const body = newPartOf(text).slice(0, 20_000) || (full.snippet ?? "");
-    const subject = headerOf(meta.payload?.headers, "Subject").slice(0, 300) || "(no subject)";
-    const receivedAt = meta.internalDate ? new Date(meta.internalDate) : now;
-    const [row] = await db
-      .insert(inboundEmails)
-      .values({ gmailMessageId: meta.id, threadId: meta.threadId ?? null, customerId: customer.id, fromAddress: from.address, fromName: from.name, subject, bodyText: body, receivedAt })
-      .onConflictDoNothing({ target: inboundEmails.gmailMessageId })
-      .returning({ id: inboundEmails.id });
-    if (!row) continue;
-    imported++;
-    await db.insert(activities).values({
-      customerId: customer.id,
-      type: "email",
-      body: `Email from ${from.name ?? from.address}: ${subject}${body ? `\n${body.slice(0, 600)}${body.length > 600 ? "…" : ""}` : ""}`,
-      meta: { inbound: true, gmailMessageId: meta.id, threadId: meta.threadId ?? null },
-    });
+async function importMessage(id: string, token: string, mailbox: string, now: Date, opts: { notify: boolean }): Promise<boolean> {
+  const meta = metaSchema.parse(await gmailFetch(`/messages/${encodeURIComponent(id)}?format=metadata&metadataHeaders=From&metadataHeaders=Subject`, {}, token));
+  if (meta.labelIds?.some((l) => l === "SENT" || l === "DRAFT")) return false;
+  const from = parseFrom(headerOf(meta.payload?.headers, "From"));
+  if (!from || from.address === mailbox) return false;
+  const customer = await customerByEmail(from.address);
+  if (!customer) return false;
+  const [seen] = await db.select({ id: inboundEmails.id }).from(inboundEmails).where(eq(inboundEmails.gmailMessageId, meta.id)).limit(1);
+  if (seen) return false;
+  const full = z.object({ snippet: z.string().optional(), payload: z.unknown() }).parse(await gmailFetch(`/messages/${encodeURIComponent(id)}?format=full`, {}, token));
+  const text = plainText(full.payload as GmailPart) ?? full.snippet ?? "";
+  const body = newPartOf(text).slice(0, 20_000) || (full.snippet ?? "");
+  const subject = headerOf(meta.payload?.headers, "Subject").slice(0, 300) || "(no subject)";
+  const receivedAt = meta.internalDate ? new Date(meta.internalDate) : now;
+  const [row] = await db
+    .insert(inboundEmails)
+    .values({ gmailMessageId: meta.id, threadId: meta.threadId ?? null, customerId: customer.id, fromAddress: from.address, fromName: from.name, subject, bodyText: body, receivedAt })
+    .onConflictDoNothing({ target: inboundEmails.gmailMessageId })
+    .returning({ id: inboundEmails.id });
+  if (!row) return false;
+  await db.insert(activities).values({
+    customerId: customer.id,
+    type: "email",
+    body: `Email from ${from.name ?? from.address}: ${subject}${body ? `\n${body.slice(0, 600)}${body.length > 600 ? "…" : ""}` : ""}`,
+    meta: { inbound: true, gmailMessageId: meta.id, threadId: meta.threadId ?? null },
+    // On the timeline when it arrived, not when it was copied in.
+    createdAt: receivedAt,
+  });
+  if (opts.notify) {
     const recipients = await officeRecipients();
     await notify(
       recipients.map((u) => u.id),
       { kind: "email.inbound", title: `${customer.name} emailed: ${subject}`, body: body.replace(/\s+/g, " ").slice(0, 140) || null, href: `/customers/${customer.id}`, entityType: "customer", entityId: customer.id },
     );
   }
-  await save({ ...s, historyId, lastSyncAt: now.toISOString() });
-  return { ran: true, checked: ids.size, imported };
+  return true;
+}
+
+/** Older messages looked at per check while catching up on the last 60 days. */
+const BACKFILL_PER_RUN = 100;
+
+/**
+ * Every 10 minutes: new mail since the last check that's from a customer's (or a customer
+ * contact's) address is copied into their file and the office is told. Right after Gmail is
+ * connected it also works back through the last 60 days of the inbox, a batch per check,
+ * without notifications.
+ */
+export async function syncGmail(now: Date = new Date()): Promise<{ ran: boolean; checked: number; imported: number; catchingUp: boolean }> {
+  const s = await stored();
+  if (!s || s.broken) return { ran: false, checked: 0, imported: 0, catchingUp: false };
+  try {
+    return await runSync(s, now);
+  } catch (e) {
+    const error = e instanceof GmailError ? e.message : "Gmail couldn't be checked. It will try again in 10 minutes.";
+    const latest = (await stored()) ?? s;
+    await save({ ...latest, lastSyncAt: now.toISOString(), lastResult: { checked: 0, imported: 0, error } });
+    throw e;
+  }
+}
+
+async function runSync(s: Stored, now: Date) {
+  const token = await accessToken(s);
+  let historyId = s.historyId;
+  let checked = 0;
+  let imported = 0;
+
+  if (!historyId) {
+    historyId = z.object({ historyId: z.coerce.string() }).parse(await gmailFetch("/profile", {}, token)).historyId;
+  } else {
+    const ids: string[] = [];
+    let pageToken: string | undefined;
+    try {
+      for (let page = 0; page < 10; page++) {
+        const q = new URLSearchParams({ startHistoryId: historyId, historyTypes: "messageAdded", labelId: "INBOX", maxResults: "100", ...(pageToken ? { pageToken } : {}) });
+        const h = historySchema.parse(await gmailFetch(`/history?${q}`, {}, token));
+        for (const r of h.history ?? [])
+          for (const a of r.messagesAdded ?? []) if (!a.message.labelIds?.some((l) => l === "SENT" || l === "DRAFT") && !ids.includes(a.message.id)) ids.push(a.message.id);
+        if (h.historyId) historyId = h.historyId;
+        if (!h.nextPageToken) break;
+        pageToken = h.nextPageToken;
+      }
+    } catch (e) {
+      // Google keeps about a week of history; after a long gap, start again from now (and catch up again).
+      if (!(e instanceof GmailNotFound)) throw e;
+      historyId = z.object({ historyId: z.coerce.string() }).parse(await gmailFetch("/profile", {}, token)).historyId;
+      await save({ ...s, historyId, backfill: null, lastSyncAt: now.toISOString(), lastResult: { checked: 0, imported: 0, error: null } });
+      return { ran: true, checked: 0, imported: 0, catchingUp: true };
+    }
+    for (const id of ids) {
+      checked++;
+      if (await importMessage(id, token, s.email, now, { notify: true })) imported++;
+    }
+  }
+
+  // Catching up: the last 60 days of the inbox, a page per check, oldest mail not notified.
+  let backfill = s.backfill;
+  if (backfill !== "done") {
+    const q = new URLSearchParams({ q: "in:inbox newer_than:60d", maxResults: String(BACKFILL_PER_RUN), ...(backfill ? { pageToken: backfill } : {}) });
+    const list = z
+      .object({ messages: z.array(z.object({ id: z.string() })).optional(), nextPageToken: z.string().optional() })
+      .parse(await gmailFetch(`/messages?${q}`, {}, token));
+    for (const m of list.messages ?? []) {
+      checked++;
+      if (await importMessage(m.id, token, s.email, now, { notify: false })) imported++;
+    }
+    backfill = list.nextPageToken ?? "done";
+  }
+
+  const latest = (await stored()) ?? s;
+  await save({ ...latest, historyId, backfill, lastSyncAt: now.toISOString(), lastResult: { checked, imported, error: null } });
+  return { ran: true, checked, imported, catchingUp: backfill !== "done" };
 }
 
 /** Is Gmail the way email goes out right now? (For the composer's "Sends from …" line.) */

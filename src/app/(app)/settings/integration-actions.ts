@@ -48,12 +48,12 @@ export async function disconnectGmailAction(): Promise<Result> {
 }
 
 /** Checks Gmail for new customer emails now, instead of waiting for the next 10-minute check. */
-export async function syncGmailAction(): Promise<{ ok: true; imported: number } | { ok: false; error: string }> {
+export async function syncGmailAction(): Promise<{ ok: true; imported: number; catchingUp: boolean } | { ok: false; error: string }> {
   try {
     await assertPermission("settings.manage");
     const r = await syncGmail(new Date());
     revalidatePath("/settings");
-    return { ok: true, imported: r.imported };
+    return { ok: true, imported: r.imported, catchingUp: r.catchingUp };
   } catch (e) {
     return fail(e);
   }

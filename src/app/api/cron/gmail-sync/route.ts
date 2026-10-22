@@ -4,6 +4,8 @@ import { syncGmail } from "@/server/integrations/gmail";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// Catching up on 60 days of mail can take a while.
+export const maxDuration = 300;
 
 /** Every 10 minutes (Vercel Cron): copy new customer emails from Gmail into their files. */
 export async function GET(req: NextRequest) {

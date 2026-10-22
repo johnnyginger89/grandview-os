@@ -289,7 +289,7 @@ export function GmailSettings({
   status,
   result,
 }: {
-  status: { configured: boolean; connected: boolean; broken: boolean; email: string | null; connectedAt: string | null; connectedByName: string | null; lastSyncAt: string | null; redirectUri: string | null };
+  status: { configured: boolean; connected: boolean; broken: boolean; email: string | null; connectedAt: string | null; connectedByName: string | null; lastSyncAt: string | null; lastResult: { checked: number; imported: number; error: string | null } | null; catchingUp: boolean; importedTotal: number; redirectUri: string | null };
   /** From Google's return trip: ?gmail=connected|denied|error&reason=… */
   result: { gmail?: string; reason?: string };
 }) {
@@ -327,8 +327,19 @@ export function GmailSettings({
             <p>
               Sending from <b>{status.email}</b>
               {status.connectedByName ? `, connected by ${status.connectedByName}` : ""}
-              {status.connectedAt ? ` on ${day(status.connectedAt)}` : ""}. {status.lastSyncAt ? `Last checked for customer emails ${day(status.lastSyncAt)}.` : "Not checked for customer emails yet."}
+              {status.connectedAt ? ` on ${day(status.connectedAt)}` : ""}.
             </p>
+            <ul className="space-y-1 text-muted">
+              <li>
+                {status.lastSyncAt
+                  ? `Last checked ${day(status.lastSyncAt)}${status.lastResult && !status.lastResult.error ? `: looked at ${status.lastResult.checked} ${status.lastResult.checked === 1 ? "email" : "emails"}, ${status.lastResult.imported} from customers.` : "."}`
+                  : "Not checked yet. It checks every 10 minutes, or press the button below."}
+              </li>
+              <li>{status.importedTotal} customer {status.importedTotal === 1 ? "email" : "emails"} copied into customer files so far.</li>
+              {status.catchingUp && <li>Still bringing in the last 60 days of customer emails, about 100 emails per check.</li>}
+              <li>Only emails from an address saved on a customer or one of their contacts are copied in; everything else stays in Gmail only.</li>
+            </ul>
+            {status.lastResult?.error && <p className="rounded-md bg-warning-soft px-3 py-2 text-warning">The last check didn&apos;t work: {status.lastResult.error}</p>}
             <div className="flex flex-wrap gap-2">
               <Button
                 variant="secondary"
@@ -336,7 +347,7 @@ export function GmailSettings({
                 onClick={() =>
                   start(async () => {
                     const r = await syncGmailAction();
-                    if (r.ok) setSynced(r.imported ? `${r.imported} new customer ${r.imported === 1 ? "email" : "emails"} added.` : "No new customer emails.");
+                    if (r.ok) setSynced(`${r.imported ? `${r.imported} customer ${r.imported === 1 ? "email" : "emails"} added.` : "No new customer emails."}${r.catchingUp ? " Still catching up on older ones – press again or wait for the next check." : ""}`);
                     else setState(r);
                   })
                 }
