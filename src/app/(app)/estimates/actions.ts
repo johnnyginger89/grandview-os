@@ -16,6 +16,7 @@ import {
   restoreRevision,
   saveAsTemplate,
   saveEstimateDoc,
+  setEstimateProperty,
   setEstimateStatus,
   templateToDocParts,
 } from "@/server/estimates";
@@ -109,6 +110,18 @@ export async function restoreRevisionAction(id: string, revision: number): Promi
   }
 }
 
+/** The job address, from the customer's addresses. It's on the proposal, so it moves the version like an edit. */
+export async function setPropertyAction(id: string, propertyId: string, expectedUpdatedAt: string): Promise<Result<{ updatedAt: string }>> {
+  try {
+    const user = await assertPermission("estimates.write");
+    const r = await setEstimateProperty(uuid.parse(id), uuid.parse(propertyId), user.id, version.parse(expectedUpdatedAt));
+    revalidatePath(`/estimates/${id}`);
+    return { ok: true, updatedAt: r.updatedAt };
+  } catch (e) {
+    return err(e);
+  }
+}
+
 export async function setStatusAction(id: string, status: string, expectedUpdatedAt: string): Promise<Result<{ updatedAt: string }>> {
   try {
     const user = await assertPermission("estimates.write");
@@ -149,7 +162,7 @@ export async function templatePartsAction(templateId: string) {
 
 export async function sendProposalAction(
   id: string,
-  input: { to: string; message: string; email: boolean; subject?: string; body?: string; expectedUpdatedAt?: string },
+  input: { to: string; message: string; email: boolean; subject?: string; body?: string; expectedUpdatedAt?: string; allowUnpriced?: boolean },
 ): Promise<Result<{ link: string; emailStatus: string; emailError?: string; updatedAt: string }>> {
   try {
     const user = await assertPermission("estimates.write");

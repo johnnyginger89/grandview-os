@@ -87,7 +87,7 @@ const DOC: EstimateDoc = {
   costItems: [],
 };
 const ESTIMATE = {
-  id: EST, number: 5001, title: DOC.title, customerId: CUSTOMER, propertyId: null, opportunityId: null, status: "sent", jobType: "interior", contractType: "fixed_price",
+  id: EST, number: 5001, title: DOC.title, customerId: CUSTOMER, propertyId: uuid(40), opportunityId: null, status: "sent", jobType: "interior", contractType: "fixed_price",
   revision: 1, ...SETTINGS, internalNotes: DOC.internalNotes, customerNotes: null, poNumber: null, areasExcluded: null, preparationOverride: null,
   validUntil: new Date("2026-10-30T07:00:00.000Z"), sentAt: V0, acceptedAt: null, updatedAt: V0,
 };
@@ -99,9 +99,9 @@ const writes = () => h.fake.calls.filter((c) => c.op !== "select");
 const isClaim = (c: FakeCall) => c.op === "update" && c.table === "proposals" && setOf(c).status === "accepted";
 
 /** Answers like the database would for one estimate with one proposal whose status the test controls. */
-function database(state: { proposal: string; estimate: string; updatedAt?: Date }) {
+function database(state: { proposal: string; estimate: string; updatedAt?: Date; propertyId?: string | null }) {
   h.fake.otherwise((c) => {
-    if (c.op === "select" && c.table === "estimates") return [{ ...ESTIMATE, status: state.estimate, updatedAt: state.updatedAt ?? V0 }];
+    if (c.op === "select" && c.table === "estimates") return [{ ...ESTIMATE, status: state.estimate, updatedAt: state.updatedAt ?? V0, ...("propertyId" in state ? { propertyId: state.propertyId } : {}) }];
     if (c.op === "select" && c.table === "estimate_revisions") return [{ latest: 1 }];
     if (c.op === "insert" && c.table === "proposals") return [{ id: uuid(8), status: "sent", ...(c.args.values[0] as object) }];
     if (c.op === "update" && c.table === "proposals") {
@@ -281,6 +281,25 @@ describe("sending", () => {
     const sent = h.fake.find("update", "estimates").map(setOf).find((s) => s.status === "sent");
     // Valid for 30 days from the day it's sent, to the end of Nov 20 in Vancouver (UTC−7 from November 2026).
     expect(sent).toEqual({ status: "sent", sentAt: NOW, validUntil: new Date("2026-11-21T06:59:59.999Z"), updatedAt: NOW });
+  });
+
+  it("needs the job address before anything is frozen", async () => {
+    database({ proposal: "sent", estimate: "draft", propertyId: null });
+    await expect(sendProposal(EST, { email: false, to: "", message: "" }, OWNER)).rejects.toThrow("Pick the job address at the top of the estimate first.");
+    await expect(acceptProposalForCustomer(EST, { name: "Phone Customer [TEST DATA]", method: "phone" }, OWNER)).rejects.toThrow("Pick the job address");
+    expect(writes()).toEqual([]);
+  });
+
+  it("sends a surface priced at $0 only when the sender confirms it's meant", async () => {
+    database({ proposal: "sent", estimate: "draft" });
+    // Trim was added but never measured: no quantity and no price of its own.
+    h.many = { ...h.many, estimateLines: [...DOC.lines, line(uuid(9), "Trim – brush", "0", { quantity: "0", overridePrice: null })] };
+    await expect(sendProposal(EST, { email: false, to: "", message: "" }, OWNER)).rejects.toThrow(
+      "A surface has no price yet (Living room – Trim – brush), so the customer would see the work promised for $0. Measure it, or confirm it's meant.",
+    );
+    expect(writes()).toEqual([]);
+    await sendProposal(EST, { email: false, to: "", message: "", allowUnpriced: true }, OWNER);
+    expect(h.fake.find("insert", "proposals")).toHaveLength(1);
   });
 });
 

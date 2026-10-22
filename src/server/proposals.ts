@@ -21,6 +21,7 @@ import { endOfBusinessDay } from "@/lib/calendar-date";
 import { customerReach, followUpAddress } from "@/lib/customer-reach";
 import { sendEmail } from "@/lib/email";
 import { calculateDoc, estimateDocSchema, type EstimateDoc } from "@/lib/estimating/document";
+import { unpricedSummary, unpricedSurfaces } from "@/lib/estimating/unpriced";
 import { toDb } from "@/lib/money";
 import { formatAddress, formatDate, renderTemplate } from "@/lib/utils";
 import { audit } from "./audit";
@@ -100,6 +101,8 @@ export const sendProposalSchema = z.object({
   body: z.string().trim().max(10_000).optional(),
   /** The estimate's version on the sender's screen: what they see is what gets sent. */
   expectedUpdatedAt: z.string().datetime({ offset: true }).nullish(),
+  /** The sender saw the surfaces with no price yet and sends anyway. */
+  allowUnpriced: z.boolean().optional(),
 });
 
 /** Stands in for the link in the email editor; the link itself only exists once the proposal is created. */
@@ -236,6 +239,8 @@ interface FreezeOptions {
   /** When it's sent, and the end of its last valid day (Settings → Pricing, read before the transaction). */
   now: Date;
   validUntil: Date;
+  /** Surfaces priced at $0 were seen and are meant (see unpricedSurfaces). */
+  allowUnpriced: boolean;
 }
 
 /**
@@ -251,6 +256,13 @@ async function freezeInTx(tx: Tx, estimateId: string, ctx: ViewContext, opts: Fr
   assertCurrentVersion(current, opts.expectedUpdatedAt);
   const { estimate, doc } = (await loadEstimate(estimateId, tx))!;
   if (!doc.lines.length && !doc.costItems.length) throw new ProposalError("Add at least one item before sending a proposal.");
+  // It goes on the proposal, the contract and the crew's work order.
+  if (!current.propertyId) throw new ProposalError("Pick the job address at the top of the estimate first.");
+  const unpriced = unpricedSurfaces(doc, calculateDoc(doc));
+  if (unpriced.length && !opts.allowUnpriced) {
+    const which = unpriced.length === 1 ? "A surface has" : `${unpriced.length} surfaces have`;
+    throw new ProposalError(`${which} no price yet (${unpricedSummary(unpriced)}), so the customer would see the work promised for $0. Measure ${unpriced.length === 1 ? "it" : "them"}, or confirm it's meant.`);
+  }
   const revision = await insertRevision(tx, estimateId, doc, opts.reason, user.id);
   const view = viewFrom(ctx, estimate, doc, { revision, message: opts.message, validUntil: opts.validUntil, issuedAt: opts.now });
   const token = randomBytes(24).toString("base64url");
@@ -293,6 +305,7 @@ export async function sendProposal(estimateId: string, raw: z.input<typeof sendP
         expectedUpdatedAt: input.expectedUpdatedAt ?? null,
         now,
         validUntil,
+        allowUnpriced: input.allowUnpriced ?? false,
       },
       user,
     ),
@@ -478,6 +491,8 @@ export const acceptForCustomerSchema = z.object({
   note: z.string().trim().max(1000, "Please keep the note under 1,000 characters").optional(),
   /** The estimate's version on the office's screen: what they checked is what gets accepted. */
   expectedUpdatedAt: z.string().datetime({ offset: true }).nullish(),
+  /** The office saw the surfaces with no price yet and accepts anyway. */
+  allowUnpriced: z.boolean().optional(),
 });
 
 /**
@@ -509,7 +524,7 @@ export async function acceptProposalForCustomer(estimateId: string, raw: unknown
       tx,
       estimateId,
       view,
-      { message: null, to: null, reason: "Accepted by the customer", activity: null, expectedUpdatedAt: input.expectedUpdatedAt ?? null, now, validUntil },
+      { message: null, to: null, reason: "Accepted by the customer", activity: null, expectedUpdatedAt: input.expectedUpdatedAt ?? null, now, validUntil, allowUnpriced: input.allowUnpriced ?? false },
       user,
     );
     return { proposalId: proposal.id, done: await acceptInTx(tx, proposal, a, ctx) };

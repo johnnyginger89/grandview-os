@@ -9,7 +9,8 @@ import { cn, formatDateTime } from "@/lib/utils";
 import type { AcceptancePreview, ProposalTotals } from "@/server/proposals";
 import { acceptForCustomerAction, acceptPreviewAction, acceptTotalsAction } from "../actions";
 import type { WithSaved } from "./autosave";
-import type { ProposalRow } from "./proposal-types";
+import { BeforeSend, readyToSend } from "./before-send";
+import type { ProposalProps, ProposalRow } from "./proposal-types";
 
 const METHODS = [
   { value: "phone", label: "By phone" },
@@ -31,7 +32,21 @@ export function acceptedText(p: ProposalRow) {
  * start ticked the way the customer's proposal would have them, and the total is worked out the
  * same way as on their page.
  */
-export function AcceptDialog({ estimateId, defaultName, unlinkedLead = false, withSaved, onClose }: { estimateId: string; defaultName: string; unlinkedLead?: boolean; withSaved: WithSaved; onClose: () => void }) {
+export function AcceptDialog({
+  estimateId,
+  defaultName,
+  unlinkedLead = false,
+  checks = { addressMissing: false, unpriced: [] },
+  withSaved,
+  onClose,
+}: {
+  estimateId: string;
+  defaultName: string;
+  unlinkedLead?: boolean;
+  checks?: Pick<ProposalProps, "addressMissing" | "unpriced">;
+  withSaved: WithSaved;
+  onClose: () => void;
+}) {
   const router = useRouter();
   const [name, setName] = useState(defaultName);
   const [method, setMethod] = useState<(typeof METHODS)[number]["value"] | "">("");
@@ -40,6 +55,7 @@ export function AcceptDialog({ estimateId, defaultName, unlinkedLead = false, wi
   const [totals, setTotals] = useState<ProposalTotals | null>(null);
   const [updating, setUpdating] = useState(false);
   const [note, setNote] = useState("");
+  const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const request = useRef(0);
@@ -82,7 +98,7 @@ export function AcceptDialog({ estimateId, defaultName, unlinkedLead = false, wi
     start(async () => {
       setError(null);
       if (!method) return setError("Choose how they accepted.");
-      const r = await withSaved((version) => acceptForCustomerAction(estimateId, { name, method, selectedOptionIds: chosen, note: note || undefined, expectedUpdatedAt: version }));
+      const r = await withSaved((version) => acceptForCustomerAction(estimateId, { name, method, selectedOptionIds: chosen, note: note || undefined, expectedUpdatedAt: version, allowUnpriced: confirmed }));
       if (!r.ok) return setError(r.error);
       router.push(r.projectId ? `/projects/${r.projectId}` : `/estimates/${estimateId}`);
     });
@@ -96,13 +112,14 @@ export function AcceptDialog({ estimateId, defaultName, unlinkedLead = false, wi
       footer={
         <>
           <Button variant="ghost" onClick={onClose} disabled={pending}>Cancel</Button>
-          <Button onClick={submit} disabled={pending || !preview || updating}>
+          <Button onClick={submit} disabled={pending || !preview || updating || !readyToSend(checks, confirmed)}>
             <CircleCheck className="size-4" aria-hidden /> {pending ? "Saving…" : "Mark as accepted"}
           </Button>
         </>
       }
     >
       <div className="space-y-4">
+        <BeforeSend proposals={checks} confirmed={confirmed} onConfirm={setConfirmed} verb="accept" />
         {unlinkedLead && (
           <p role="note" className="rounded-md bg-warning-soft px-3 py-2 text-sm text-warning">
             This estimate isn&apos;t linked to a lead, so no lead will be marked won. Cancel and use <strong>Link to lead</strong> at the top of the estimate first.

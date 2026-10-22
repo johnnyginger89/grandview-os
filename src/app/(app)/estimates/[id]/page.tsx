@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/db";
@@ -30,9 +30,10 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
   const now = new Date();
 
   const canEdit = can(user.role, "estimates.write");
-  const [customer, property, rates, factors, templates, revisions, pricing, proposalRows, contact, project, template, emailDraft, followUps, presets, recent, materials, lead, leadChoices] = await Promise.all([
+  const [customer, places, rates, factors, templates, revisions, pricing, proposalRows, contact, project, template, emailDraft, followUps, presets, recent, materials, lead, leadChoices] = await Promise.all([
     db.query.customers.findFirst({ where: eq(customers.id, estimate.customerId) }),
-    estimate.propertyId ? db.query.properties.findFirst({ where: eq(properties.id, estimate.propertyId) }) : null,
+    // The customer's addresses, for the job address in the header.
+    db.query.properties.findMany({ where: eq(properties.customerId, estimate.customerId), orderBy: asc(properties.createdAt) }),
     listRates(),
     listFactors(),
     listTemplates(),
@@ -73,7 +74,8 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
           revision: estimate.revision,
           customerId: estimate.customerId,
           customerName: customer?.displayName ?? "",
-          address: property ? formatAddress(property) : null,
+          propertyId: estimate.propertyId,
+          addresses: places.map((p) => ({ id: p.id, label: formatAddress(p) || p.street })),
           opportunityId: estimate.opportunityId,
           updatedAt: estimate.updatedAt.toISOString(),
           // Only people who can open the job page get a link to it.
@@ -100,6 +102,9 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
         proposals={{
           canSend: canEdit && estimate.status !== "accepted",
           unlinkedLead: !estimate.opportunityId && leadChoices.length > 0,
+          addressMissing: !estimate.propertyId,
+          // Filled in by the editor from what's on screen.
+          unpriced: [],
           customerName: customer?.displayName ?? "",
           followUps,
           defaultEmail: contact?.email ?? customer?.email ?? "",

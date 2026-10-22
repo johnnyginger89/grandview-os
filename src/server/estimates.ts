@@ -321,6 +321,26 @@ export async function restoreRevision(id: string, revision: number, userId: stri
   return saveEstimateDoc(id, rev.snapshot);
 }
 
+/**
+ * The job address: one of the customer's addresses. It's on the proposal, the contract and the
+ * crew's work order, so it's a change like any other (version checked and moved on).
+ */
+export async function setEstimateProperty(id: string, propertyId: string, userId: string, expectedUpdatedAt?: string | null): Promise<{ updatedAt: string }> {
+  return db.transaction(async (tx) => {
+    const est = await lockEstimate(tx, id);
+    if (!est) throw new Error("Estimate not found");
+    if (est.status === "accepted") throw new EstimateLockedError();
+    assertCurrentVersion(est, expectedUpdatedAt);
+    const [place] = await tx.select({ customerId: properties.customerId }).from(properties).where(eq(properties.id, propertyId)).limit(1);
+    if (!place || place.customerId !== est.customerId) throw new Error("That address isn't on this customer's file. Refresh the page and pick again.");
+    if (est.propertyId === propertyId) return { updatedAt: est.updatedAt.toISOString() };
+    const now = nextVersion(est);
+    await tx.update(estimates).set({ propertyId, updatedAt: now }).where(eq(estimates.id, id));
+    await audit({ actorId: userId, action: "estimate.property", entityType: "estimate", entityId: id, before: { propertyId: est.propertyId }, after: { propertyId } }, tx);
+    return { updatedAt: now.toISOString() };
+  });
+}
+
 const ALLOWED: Record<EstimateStatus, EstimateStatus[]> = {
   draft: ["sent", "archived"],
   sent: ["draft", "declined", "expired", "archived"],
