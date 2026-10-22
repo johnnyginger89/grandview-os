@@ -4,6 +4,7 @@ import { useState, useTransition, type FormEvent } from "react";
 import { Button, Card, CardHeader, Field, FormError, Input, Select } from "@/components/ui";
 import { READINESS_STATES, SCHEDULE_ENTRY_KINDS, type ReadinessState, type ScheduleEntryKind } from "@/lib/schedule/constants";
 import { KIND_LABEL } from "@/lib/schedule/format";
+import { DONE_WHEN_BOOKING_PASSES } from "@/lib/schedule/readiness";
 import type { ReadinessCheck, ScheduleSettings } from "@/lib/schedule/settings-schema";
 import { saveScheduleSettingsAction, type SetupResult } from "./actions";
 
@@ -143,7 +144,9 @@ export function ReadinessPanel({ settings }: { settings: ScheduleSettings }) {
                 </div>
                 {c.linkedEntryKind && (
                   <p className="mt-1 text-xs text-subtle">
-                    Booking “{KIND_LABEL[c.linkedEntryKind]}” moves this from “{c.states.todo || STEP_LABEL.todo}” to “{c.states.in_progress || STEP_LABEL.in_progress}”.
+                    Booking “{KIND_LABEL[c.linkedEntryKind]}” moves this from “{c.states.todo || STEP_LABEL.todo}” to “{c.states.in_progress || STEP_LABEL.in_progress}” with the booked date, and
+                    removing the booking moves it back.
+                    {DONE_WHEN_BOOKING_PASSES.includes(c.linkedEntryKind) && ` Once the booked day has passed, it shows “${c.states.done || STEP_LABEL.done}”.`}
                   </p>
                 )}
               </div>

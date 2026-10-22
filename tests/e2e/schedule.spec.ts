@@ -4,8 +4,9 @@ import { sellThreeThousandDollarJob } from "./sales";
 
 /*
  * Schedule (spec-schedule §9.2, core path): set up a crew, book a signed job from the
- * project page, see it on the calendar, check what each role can see, and put it on
- * hold (the crew still sees it, marked). The steps share one job, so the file runs in order.
+ * project page, see it on the calendar, keep the pressure-washing check in step with its
+ * booking, check what each role can see, and put the job on hold (the crew still sees
+ * it, marked). The steps share one job, so the file runs in order.
  */
 test.describe.configure({ mode: "serial" });
 
@@ -24,6 +25,15 @@ function futureMonday(): string {
   const d = new Date(today.getTime() + 21 * 86_400_000);
   d.setUTCDate(d.getUTCDate() + ((8 - d.getUTCDay()) % 7));
   return d.toISOString().slice(0, 10);
+}
+
+const shiftDay = (day: string, n: number) => new Date(Date.parse(`${day}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+
+/** A weekday at least a week ago (a holiday moves a booking forward a day or two, still in the past). */
+function pastWeekday(): string {
+  let day = shiftDay(futureMonday(), -35);
+  while ([0, 6].includes(new Date(`${day}T00:00:00Z`).getUTCDay())) day = shiftDay(day, -1);
+  return day;
 }
 
 test.describe("schedule (owner)", () => {
@@ -83,6 +93,46 @@ test.describe("schedule (owner)", () => {
     const monthBar = month.getByRole("button", { name: new RegExp(`Job #${projectNumber}\\b`) }).first();
     await expect(monthBar).toBeVisible();
     expect(await monthBar.evaluate((el) => getComputedStyle(el).borderStyle)).not.toContain("dashed");
+  });
+
+  test("the pressure-washing check follows its booking", async ({ page }) => {
+    test.skip(!projectPath, "needs the booking above");
+    await page.goto(projectPath);
+    const check = page.getByRole("list", { name: "Readiness checks" }).getByLabel("Pressure washing");
+    await expect(check).toHaveValue("todo");
+
+    // Booked without a crew, so it doesn't show on anyone's My Jobs.
+    async function bookPressureWash(day: string) {
+      await page.getByRole("button", { name: "Add another booking" }).click();
+      const form = page.getByRole("form", { name: "Schedule this job" });
+      await form.getByLabel("Crew").selectOption({ label: "No crew yet" });
+      await form.getByLabel("Booking type").selectOption({ label: "Pressure wash" });
+      await form.getByLabel("Start date").fill(day);
+      await form.getByLabel("Working days").fill("1");
+      await form.getByRole("button", { name: "Add to schedule" }).click();
+      await expect(form).toBeHidden();
+      await page.reload();
+    }
+
+    // The Friday before the painting: booked, with its date ("Fri, Nov 13" in the bookings, "Nov 13, 2026" here).
+    await bookPressureWash(shiftDay(startDate, -3));
+    await expect(check).toHaveValue("in_progress");
+    const booking = page.getByRole("table", { name: "Bookings" }).getByRole("row").filter({ hasText: "Pressure wash" }).getByRole("link");
+    await expect(page.getByRole("list", { name: "Readiness checks" })).toContainText((await booking.innerText()).replace(/^\w+, /, ""));
+
+    // Taken off the calendar: back to "To book".
+    await booking.click();
+    const drawer = page.getByTestId("entry-drawer");
+    await expect(drawer).toBeVisible();
+    page.once("dialog", (d) => d.accept());
+    await drawer.getByRole("button", { name: "Remove from schedule" }).click();
+    await expect(drawer).toBeHidden();
+    await page.goto(projectPath);
+    await expect(check).toHaveValue("todo");
+
+    // Once its day has passed, a pressure wash counts as done.
+    await bookPressureWash(pastWeekday());
+    await expect(check).toHaveValue("done");
   });
 
   test("issue a work order for the crew", async ({ page }) => {

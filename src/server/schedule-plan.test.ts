@@ -26,7 +26,7 @@ vi.mock("./schedule-settings", async () => {
   };
 });
 
-const { createEntry, deleteEntry, splitEntry, updateEntry, ScheduleError } = await import("./schedule");
+const { createEntry, deleteEntry, removeProjectEntries, splitEntry, updateEntry, ScheduleError } = await import("./schedule");
 const { safeErrorMessage } = await import("@/lib/action-error");
 const { planSplit } = await import("@/lib/schedule/split");
 const { calendarsFor } = await import("@/lib/schedule/working-days");
@@ -147,6 +147,91 @@ describe("deleteEntry", () => {
     expect(h.fake.find("update", "projects")[0].args.set[0]).toMatchObject({ startDate: null, endDate: null });
     expect(h.statusChanges[0].slice(0, 3)).toEqual([P, "need_to_schedule", { actorId: "user-pm", note: "Removed from the calendar" }]);
     expect(h.fake.find("insert", "activities")[0].args.values[0]).toMatchObject({ body: "Removed from the schedule: no crew, Mon, Oct 26 – Fri, Oct 30" });
+  });
+});
+
+describe("readiness checks tied to bookings follow every change", () => {
+  const PW = { kind: "pressure_wash", startDate: "2026-10-27", endDate: "2026-10-27" };
+  const AGG = { first: null, last: null, n: 0 };
+  const booked = (dueDate: string, state = "in_progress") => [{ projectId: P, checkKey: "pressure_wash", state, dueDate }];
+  const readinessWrites = () =>
+    h.fake.find("insert", "project_readiness").map((c) => {
+      const v = c.args.values[0] as Record<string, unknown>;
+      return { checkKey: v.checkKey, state: v.state, dueDate: v.dueDate };
+    });
+
+  it("booking a pressure wash marks it booked for that day", async () => {
+    h.fake.queue({
+      "select:projects": [[project("need_to_schedule")]],
+      "insert:schedule_entries": [[{ id: E }]],
+      "select:schedule_entries": [[{ kind: "pressure_wash", startDate: "2026-10-27" }], [AGG], [entryRow(PW)]],
+    });
+    await createEntry({ projectId: P, crewId: null, ...PW }, ACTOR);
+    expect(readinessWrites()).toEqual([{ checkKey: "pressure_wash", state: "in_progress", dueDate: "2026-10-27" }]);
+  });
+
+  it("moving it moves the date", async () => {
+    h.fake.queue({
+      "select:schedule_entries": [[rawEntry(PW)], [AGG], [{ kind: "pressure_wash", startDate: "2026-10-29" }], [entryRow({ ...PW, version: 2, startDate: "2026-10-29", endDate: "2026-10-29" })]],
+      "select:projects": [[project("need_to_schedule")]],
+      "update:schedule_entries": [[{ id: E }]],
+      "select:project_readiness": [booked("2026-10-27")],
+    });
+    await updateEntry({ id: E, version: 1, startDate: "2026-10-29", endDate: "2026-10-29" }, ACTOR);
+    expect(readinessWrites()).toEqual([{ checkKey: "pressure_wash", state: "in_progress", dueDate: "2026-10-29" }]);
+  });
+
+  it("removing the last one, or turning it into painting, puts the check back to the start", async () => {
+    h.fake.queue({
+      "select:schedule_entries": [[rawEntry(PW)], [AGG], []],
+      "select:projects": [[project("need_to_schedule")]],
+      "update:schedule_entries": [[{ id: E }]],
+      "select:project_readiness": [booked("2026-10-27")],
+    });
+    await deleteEntry({ id: E, version: 1 }, ACTOR);
+    expect(readinessWrites()).toEqual([{ checkKey: "pressure_wash", state: "todo", dueDate: null }]);
+
+    h.fake.reset();
+    h.fake.queue({
+      "select:schedule_entries": [[rawEntry(PW)], [{ first: "2026-10-27", last: "2026-10-27", n: 1 }], [], [entryRow({ ...PW, kind: "work", version: 2 })]],
+      "select:projects": [[project("need_to_schedule")]],
+      "update:schedule_entries": [[{ id: E }]],
+      "select:project_readiness": [booked("2026-10-27")],
+    });
+    await updateEntry({ id: E, version: 1, kind: "work" }, ACTOR);
+    expect(readinessWrites()).toEqual([{ checkKey: "pressure_wash", state: "todo", dueDate: null }]);
+  });
+
+  it("taking a job off the calendar resets the checks of the bookings removed", async () => {
+    h.fake.queue({
+      "select:projects": [[project("scheduled")]],
+      "update:schedule_entries": [[{ id: E, kind: "pressure_wash" }, { id: E2, kind: "work" }]],
+      "select:schedule_entries": [[AGG], []],
+      "select:project_readiness": [booked("2026-10-27")],
+    });
+    expect(await removeProjectEntries({ projectId: P }, ACTOR)).toEqual({ removed: 2 });
+    expect(readinessWrites()).toEqual([{ checkKey: "pressure_wash", state: "todo", dueDate: null }]);
+  });
+
+  it("leaves the office's Done alone, and painting bookings never touch the checks", async () => {
+    h.fake.queue({
+      "select:schedule_entries": [[rawEntry(PW)], [AGG], []],
+      "select:projects": [[project("need_to_schedule")]],
+      "update:schedule_entries": [[{ id: E }]],
+      "select:project_readiness": [booked("2026-10-27", "done")],
+    });
+    await deleteEntry({ id: E, version: 1 }, ACTOR);
+    expect(readinessWrites()).toEqual([]);
+
+    h.fake.reset();
+    h.fake.queue({
+      "select:schedule_entries": [[rawEntry()], [AGG]],
+      "select:projects": [[project("scheduled")]],
+      "update:schedule_entries": [[{ id: E }]],
+    });
+    await deleteEntry({ id: E, version: 1 }, ACTOR);
+    expect(h.fake.find("select", "project_readiness")).toEqual([]);
+    expect(readinessWrites()).toEqual([]);
   });
 });
 

@@ -17,7 +17,7 @@ import {
 } from "@/db/schema";
 import { addDays, diffDays, isoToInstant, todayIso, type IsoDate } from "@/lib/calendar-date";
 import { needsUpdate } from "@/lib/schedule/confirmation";
-import { MAX_BOOKING_SPAN_DAYS } from "@/lib/schedule/constants";
+import { MAX_BOOKING_SPAN_DAYS, type ScheduleEntryKind } from "@/lib/schedule/constants";
 import { entryHours, PARTLY_SCHEDULED_MIN_HOURS, remainingHours, suggestedWorkingDays, type CrewCapacity } from "@/lib/schedule/duration";
 import { conflictsForEntry } from "@/lib/schedule/conflicts";
 import { dateRangeLabel, jobTitle } from "@/lib/schedule/format";
@@ -51,15 +51,16 @@ import { d, Decimal, toDb } from "@/lib/money";
 import { audit } from "./audit";
 import { toCrewDTO } from "./crews";
 import { changeProjectStatus, type Tx } from "./project-status";
-import { applyLinkedReadiness, getReadinessItems, getReadinessSummaries } from "./readiness";
+import { getReadinessItems, getReadinessSummaries, syncLinkedReadiness } from "./readiness";
 import { afterScheduleChange } from "./schedule-hooks";
 import { defaultCapacity, getHoursPerCrewDay, getScheduleSettings } from "./schedule-settings";
 
 /*
  * The only writer of schedule_entries (enforced by architecture.test.ts). Every
  * write runs in one transaction with the project row locked, keeps projects.start/
- * end_date in step, moves need_to_schedule ⇄ scheduled through changeProjectStatus,
- * and ends at afterScheduleChange (the Slack / Google Calendar seam).
+ * end_date and the readiness checks tied to booking kinds in step, moves
+ * need_to_schedule ⇄ scheduled through changeProjectStatus, and ends at
+ * afterScheduleChange (the Slack / Google Calendar seam).
  *
  * Reads select explicit columns and never touch contract or cost columns: every
  * DTO here goes to schedule.read users, who may lack financials.read. Callers check
@@ -483,6 +484,17 @@ async function syncProjectDates(t: Tx, p: LockedProject, actorId: string, opts: 
   if (next) await changeProjectStatus(p.id, next, { actorId, note: next === "scheduled" ? "Scheduled on the calendar" : "Removed from the calendar" }, t);
 }
 
+/** Readiness checks tied to a booking kind (pressure wash, colour consult) follow the project's bookings of that kind. */
+async function syncReadiness(t: Tx, projectId: string, kinds: ScheduleEntryKind[], checks: ScheduleSettings["readinessChecks"], actorId: string) {
+  const changedKinds = [...new Set(kinds)].filter((k) => checks.some((c) => c.linkedEntryKind === k));
+  if (!changedKinds.length) return;
+  const bookings = await t
+    .select({ kind: scheduleEntries.kind, startDate: scheduleEntries.startDate })
+    .from(scheduleEntries)
+    .where(and(eq(scheduleEntries.projectId, projectId), inArray(scheduleEntries.kind, changedKinds), isNull(scheduleEntries.deletedAt)));
+  await syncLinkedReadiness(t, { projectId, changedKinds, bookings, checks, actorId });
+}
+
 function assertSpan(start: IsoDate, end: IsoDate) {
   if (end < start) throw new ScheduleError("The end date is before the start date.");
   if (diffDays(start, end) > MAX_BOOKING_SPAN_DAYS) throw new ScheduleError(SPAN);
@@ -559,7 +571,7 @@ export async function createEntry(raw: unknown, actor: ScheduleActor): Promise<{
         updatedBy: actor.id,
       })
       .returning({ id: scheduleEntries.id });
-    await applyLinkedReadiness(tx, { projectId: p.id, kind: input.kind, startDate, checks: settings.readinessChecks, actorId: actor.id });
+    await syncReadiness(tx, p.id, [input.kind], settings.readinessChecks, actor.id);
     await syncProjectDates(tx, p, actor.id, { confirmOnHold: input.confirmOnHold });
     await audit(
       { actorId: actor.id, action: "schedule.entry.create", entityType: "schedule_entry", entityId: row.id, after: { projectId: p.id, crewId: crew?.id ?? null, kind: input.kind, startDate, endDate } },
@@ -617,7 +629,7 @@ export async function updateEntry(raw: unknown, actor: ScheduleActor): Promise<{
 
     const datesChanged = changed.some((k) => k === "kind" || k === "startDate" || k === "endDate");
     if (datesChanged) await syncProjectDates(tx, p, actor.id, { confirmOnHold: false });
-    if (changed.includes("kind")) await applyLinkedReadiness(tx, { projectId: p.id, kind: next.kind, startDate: next.startDate, checks: settings.readinessChecks, actorId: actor.id });
+    if (datesChanged) await syncReadiness(tx, p.id, [cur.kind, next.kind], settings.readinessChecks, actor.id);
     await audit(
       {
         actorId: actor.id,
@@ -647,6 +659,7 @@ function sameHours(a: string | null, b: string | null): boolean {
 /** Soft-delete a booking (version-checked). Callers check schedule.write. */
 export async function deleteEntry(raw: unknown, actor: ScheduleActor): Promise<{ projectId: string }> {
   const input = deleteEntrySchema.parse(raw);
+  const settings = await getScheduleSettings();
   const projectId = await db.transaction(async (tx) => {
     const cur = await lockEntry(tx, input.id, input.version);
     const p = await lockProject(tx, cur.projectId);
@@ -658,6 +671,7 @@ export async function deleteEntry(raw: unknown, actor: ScheduleActor): Promise<{
       .returning({ id: scheduleEntries.id });
     if (!row) throw new ScheduleError(STALE, "stale");
     await syncProjectDates(tx, p, actor.id, { confirmOnHold: false });
+    await syncReadiness(tx, p.id, [cur.kind], settings.readinessChecks, actor.id);
     await audit(
       {
         actorId: actor.id,
@@ -681,6 +695,7 @@ export async function deleteEntry(raw: unknown, actor: ScheduleActor): Promise<{
 /** Remove every booking of a project at once (e.g. a cancelled job). Callers check schedule.write. */
 export async function removeProjectEntries(raw: unknown, actor: ScheduleActor): Promise<{ removed: number }> {
   const input = removeProjectEntriesSchema.parse(raw);
+  const settings = await getScheduleSettings();
   const ids = await db.transaction(async (tx) => {
     const p = await lockProject(tx, input.projectId);
     const now = new Date();
@@ -688,9 +703,10 @@ export async function removeProjectEntries(raw: unknown, actor: ScheduleActor): 
       .update(scheduleEntries)
       .set({ deletedAt: now, deletedBy: actor.id, version: sql`${scheduleEntries.version} + 1`, updatedAt: now, updatedBy: actor.id })
       .where(and(eq(scheduleEntries.projectId, p.id), isNull(scheduleEntries.deletedAt)))
-      .returning({ id: scheduleEntries.id });
+      .returning({ id: scheduleEntries.id, kind: scheduleEntries.kind });
     if (!rows.length) return [];
     await syncProjectDates(tx, p, actor.id, { confirmOnHold: false });
+    await syncReadiness(tx, p.id, rows.map((r) => r.kind), settings.readinessChecks, actor.id);
     await audit({ actorId: actor.id, action: "schedule.entry.delete_all", entityType: "project", entityId: p.id, before: { entryIds: rows.map((r) => r.id) } }, tx);
     await logActivity(tx, p, `Removed from the schedule (${rows.length} booking${rows.length === 1 ? "" : "s"})`, { projectId: p.id }, actor.id);
     return rows.map((r) => r.id);
@@ -737,6 +753,7 @@ export async function splitEntry(raw: unknown, actor: ScheduleActor): Promise<{ 
       })
       .returning({ id: scheduleEntries.id });
     await syncProjectDates(tx, p, actor.id, { confirmOnHold: false });
+    await syncReadiness(tx, p.id, [cur.kind], settings.readinessChecks, actor.id);
     await audit(
       {
         actorId: actor.id,

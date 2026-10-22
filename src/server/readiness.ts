@@ -1,9 +1,18 @@
 import "server-only";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { projectReadiness, projects, type ReadinessState, type ScheduleEntryKind } from "@/db/schema";
-import type { IsoDate } from "@/lib/calendar-date";
-import { linkedReadinessUpdate, readinessItems, readinessSummary, type ReadinessItem, type ReadinessSummary } from "@/lib/schedule/readiness";
+import { projectReadiness, projects, scheduleEntries, type ReadinessState, type ScheduleEntryKind } from "@/db/schema";
+import { todayIso, type IsoDate } from "@/lib/calendar-date";
+import {
+  DONE_WHEN_BOOKING_PASSES,
+  linkedReadinessChanges,
+  readinessItems,
+  readinessSummary,
+  type LinkedBooking,
+  type ReadinessContext,
+  type ReadinessItem,
+  type ReadinessSummary,
+} from "@/lib/schedule/readiness";
 import { readinessSchema } from "@/lib/schedule/schemas";
 import type { ReadinessCheck } from "@/lib/schedule/settings-schema";
 import { audit } from "./audit";
@@ -30,20 +39,34 @@ async function rowsFor(projectIds: string[], t: Tx | typeof db = db) {
     .where(inArray(projectReadiness.projectId, projectIds));
 }
 
-/** The project's checklist: current settings' checks merged with saved answers (missing = todo). */
-export async function getReadinessItems(projectId: string): Promise<ReadinessItem[]> {
-  if (!UUID_RE.test(projectId)) return [];
-  const [settings, rows] = await Promise.all([getScheduleSettings(), rowsFor([projectId])]);
-  return readinessItems(settings.readinessChecks, rows);
+/** By project, the last booked day of each kind that is over once its bookings have passed (a pressure wash). */
+async function bookedThrough(projectIds: string[]): Promise<Map<string, ReadinessContext["bookedThrough"]>> {
+  const out = new Map<string, ReadinessContext["bookedThrough"]>();
+  if (!projectIds.length) return out;
+  const rows = await db
+    .select({ projectId: scheduleEntries.projectId, kind: scheduleEntries.kind, last: sql<IsoDate>`max(${scheduleEntries.endDate})` })
+    .from(scheduleEntries)
+    .where(and(inArray(scheduleEntries.projectId, projectIds), inArray(scheduleEntries.kind, [...DONE_WHEN_BOOKING_PASSES]), isNull(scheduleEntries.deletedAt)))
+    .groupBy(scheduleEntries.projectId, scheduleEntries.kind);
+  for (const r of rows) out.set(r.projectId, { ...out.get(r.projectId), [r.kind]: r.last });
+  return out;
 }
 
-/** Summaries by project id, for the calendar and the sidebar. */
+/** The project's checklist: current settings' checks merged with saved answers (missing = todo), as of today. */
+export async function getReadinessItems(projectId: string): Promise<ReadinessItem[]> {
+  if (!UUID_RE.test(projectId)) return [];
+  const [settings, rows, booked] = await Promise.all([getScheduleSettings(), rowsFor([projectId]), bookedThrough([projectId])]);
+  return readinessItems(settings.readinessChecks, rows, { today: todayIso(), bookedThrough: booked.get(projectId) ?? {} });
+}
+
+/** Summaries by project id, for the calendar and the sidebar, as of today. */
 export async function getReadinessSummaries(projectIds: string[], checks: readonly ReadinessCheck[]): Promise<Record<string, ReadinessSummary>> {
   const ids = [...new Set(projectIds)].filter((id) => UUID_RE.test(id));
-  const rows = await rowsFor(ids);
+  const [rows, booked] = await Promise.all([rowsFor(ids), bookedThrough(ids)]);
+  const today = todayIso();
   const byProject = new Map<string, { checkKey: string; state: ReadinessState }[]>();
   for (const r of rows) byProject.set(r.projectId, [...(byProject.get(r.projectId) ?? []), r]);
-  return Object.fromEntries(ids.map((id) => [id, readinessSummary(checks, byProject.get(id) ?? [])]));
+  return Object.fromEntries(ids.map((id) => [id, readinessSummary(checks, byProject.get(id) ?? [], { today, bookedThrough: booked.get(id) ?? {} })]));
 }
 
 /** Callers check schedule.write. The check must exist in the current settings. */
@@ -87,24 +110,34 @@ export async function setReadinessItem(raw: unknown, actor: { id: string }): Pro
 }
 
 /**
- * Inside a booking transaction: booking a linked kind (a pressure wash) marks its
- * check "in progress" with the booking date, if it was still "todo". Internal only.
+ * Inside every booking transaction (schedule.ts passes the project's current bookings of
+ * the kinds that changed): the checks linked to those kinds follow the calendar, see
+ * linkedReadinessChanges. Internal only.
  */
-export async function applyLinkedReadiness(
+export async function syncLinkedReadiness(
   tx: Tx,
-  input: { projectId: string; kind: ScheduleEntryKind; startDate: IsoDate; checks: readonly ReadinessCheck[]; actorId: string },
+  input: { projectId: string; changedKinds: readonly ScheduleEntryKind[]; bookings: readonly LinkedBooking[]; checks: readonly ReadinessCheck[]; actorId: string },
 ): Promise<void> {
-  if (!input.checks.some((c) => c.linkedEntryKind === input.kind)) return;
+  if (!input.checks.some((c) => c.linkedEntryKind && input.changedKinds.includes(c.linkedEntryKind))) return;
   const rows = await rowsFor([input.projectId], tx);
-  const change = linkedReadinessUpdate(input.checks, rows, input.kind, input.startDate);
-  if (!change) return;
-  await tx
-    .insert(projectReadiness)
-    .values({ projectId: input.projectId, checkKey: change.checkKey, state: change.state, dueDate: change.dueDate, updatedBy: input.actorId })
-    .onConflictDoUpdate({
-      target: [projectReadiness.projectId, projectReadiness.checkKey],
-      set: { state: change.state, dueDate: change.dueDate, updatedBy: input.actorId, updatedAt: new Date() },
-    });
+  for (const change of linkedReadinessChanges(input.checks, rows, input.bookings, input.changedKinds)) {
+    const values = { state: change.state, dueDate: change.dueDate, updatedBy: input.actorId, updatedAt: new Date() };
+    await tx
+      .insert(projectReadiness)
+      .values({ projectId: input.projectId, checkKey: change.checkKey, ...values })
+      .onConflictDoUpdate({ target: [projectReadiness.projectId, projectReadiness.checkKey], set: values });
+    await audit(
+      {
+        actorId: input.actorId,
+        action: "schedule.readiness.linked",
+        entityType: "project",
+        entityId: input.projectId,
+        before: { checkKey: change.checkKey, ...change.before },
+        after: { checkKey: change.checkKey, state: change.state, dueDate: change.dueDate },
+      },
+      tx,
+    );
+  }
 }
 
 /**
