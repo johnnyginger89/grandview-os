@@ -5,16 +5,27 @@ import { Popover, popoverItem } from "@/components/app-shell/popover";
 import { Dialog } from "@/components/dialog";
 import { FollowUpDialog } from "@/components/proposals/follow-up-dialog";
 import { Badge, Button, Field, FormError, Input, Textarea, type Tone } from "@/components/ui";
-import { formatDateTime } from "@/lib/utils";
+import { formatDate, formatDateTime } from "@/lib/utils";
 import { sendProposalAction, setStatusAction, withdrawProposalAction } from "../actions";
 import { AcceptDialog, acceptedText } from "./accept-dialog";
 import type { ProposalProps, ProposalRow } from "./proposal-types";
 
-const TONE: Record<string, Tone> = { sent: "info", viewed: "brand", accepted: "success", declined: "danger", superseded: "neutral", withdrawn: "neutral" };
+const TONE: Record<string, Tone> = { sent: "info", viewed: "brand", expired: "warning", accepted: "success", declined: "danger", superseded: "neutral", withdrawn: "neutral" };
 const LINK_TOKEN = "[Proposal link]";
 
+const isOpen = (p: ProposalRow) => p.status === "sent" || p.status === "viewed";
+
+/** The proposal waiting on the customer, if any (expired or not). */
+const openRow = (rows: ProposalRow[]) => rows.find(isOpen) ?? null;
+
+/** "valid until Nov 19, 2026" while the customer can still accept the open proposal. */
+export function validUntilText(rows: ProposalRow[]): string | null {
+  const open = openRow(rows);
+  return open?.expiresAt && !open.expired ? `valid until ${formatDate(open.expiresAt)}` : null;
+}
+
 /** The one Send dialog: the email from the template, checked and sent (or just a link). */
-export function SendDialog({ estimateId, proposals, onClose }: { estimateId: string; proposals: ProposalProps; onClose: () => void }) {
+export function SendDialog({ estimateId, proposals, onClose, title = "Send proposal" }: { estimateId: string; proposals: ProposalProps; onClose: () => void; title?: string }) {
   const [to, setTo] = useState(proposals.defaultEmail);
   const [subject, setSubject] = useState(proposals.emailDraft.subject);
   const [body, setBody] = useState(proposals.emailDraft.body);
@@ -46,7 +57,7 @@ export function SendDialog({ estimateId, proposals, onClose }: { estimateId: str
     <Dialog
       open
       onClose={onClose}
-      title="Send proposal"
+      title={title}
       description="Sending freezes this version as a revision. You can keep editing; a newer proposal replaces this one."
       className="w-[min(40rem,calc(100vw-2rem))]"
       footer={
@@ -114,7 +125,8 @@ export function SendControls({ estimateId, status, proposals, compact }: { estim
   const [copied, setCopied] = useState(false);
   const [pending, start] = useTransition();
   if (!proposals.canSend) return null;
-  const open = proposals.rows.find((p) => p.status === "sent" || p.status === "viewed");
+  // An expired link is dead; there's nothing worth copying.
+  const open = proposals.rows.find((p) => isOpen(p) && !p.expired);
 
   const signNow = () =>
     start(async () => {
@@ -194,7 +206,32 @@ export function proposalStatusText(rows: ProposalRow[]): string | null {
   if (p.acceptedAt) return acceptedText(p);
   if (p.status === "declined") return "Declined";
   if (p.status === "withdrawn") return "Withdrawn";
+  if (p.expired && p.expiresAt) return `Expired on ${formatDate(p.expiresAt)}`;
   return p.firstViewedAt ? `Opened ${p.viewCount}×` : "Sent · not opened yet";
+}
+
+/** The open proposal ran out before the customer accepted: say so, and offer the Send dialog again. */
+export function ExpiredNotice({ estimateId, proposals }: { estimateId: string; proposals: ProposalProps }) {
+  const [sending, setSending] = useState(false);
+  const open = openRow(proposals.rows);
+  return (
+    <>
+      {open?.expired && open.expiresAt && (
+        <section aria-label="Expired proposal" className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md bg-warning-soft px-3 py-2 text-sm text-warning">
+          <p>
+            <strong>Expired on {formatDate(open.expiresAt)}.</strong> The customer can no longer accept this proposal.
+          </p>
+          {proposals.canSend && (
+            <Button size="sm" onClick={() => setSending(true)}>
+              <Send className="size-4" aria-hidden /> Send updated proposal
+            </Button>
+          )}
+        </section>
+      )}
+      {/* Outside the notice: once sent, the page refreshes and the notice goes, but the link stays on screen. */}
+      {sending && <SendDialog estimateId={estimateId} proposals={proposals} title="Send updated proposal" onClose={() => setSending(false)} />}
+    </>
+  );
 }
 
 /** Every proposal sent for this estimate, with follow-up and withdraw. */
@@ -220,23 +257,24 @@ export function SentProposals({ estimateId, proposals }: { estimateId: string; p
         {rows.map((p) => (
           <li key={p.id} className="space-y-1 px-4 py-3">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge tone={TONE[p.status]}>{p.status}</Badge>
+              <Badge tone={TONE[p.expired ? "expired" : p.status]}>{p.expired ? "expired" : p.status}</Badge>
               <span className="text-muted">Rev {p.revision} · {p.sentTo ? `sent ${formatDateTime(p.sentAt)} to ${p.sentTo}` : `created ${formatDateTime(p.sentAt)}`}</span>
             </div>
             <p className="text-xs text-muted">
               {acceptedText(p) ?? (p.firstViewedAt ? `Opened ${p.viewCount}× · first ${formatDateTime(p.firstViewedAt)}` : "Not opened yet")}
               {p.declineReason ? ` · Declined: "${p.declineReason}"` : ""}
-              {(p.status === "sent" || p.status === "viewed") && followUps.count > 0 && followUps.lastAt
+              {isOpen(p) && followUps.count > 0 && followUps.lastAt
                 ? ` · Followed up ${followUps.count === 1 ? "once" : `${followUps.count} times`}, last ${formatDateTime(followUps.lastAt)}`
                 : ""}
+              {isOpen(p) && p.expiresAt ? ` · ${p.expired ? "Expired on" : "Valid until"} ${formatDate(p.expiresAt)}` : ""}
             </p>
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
               <a href={p.link} target="_blank" rel="noreferrer" className="inline-flex min-h-8 items-center gap-1 text-brand hover:underline"><ExternalLink className="size-3" aria-hidden /> Open</a>
               <button type="button" onClick={() => copy(p.link)} className="inline-flex min-h-8 items-center gap-1 text-brand hover:underline"><Copy className="size-3" aria-hidden /> {copied === p.link ? "Copied" : "Copy link"}</button>
-              {canSend && (p.status === "sent" || p.status === "viewed") && p.sentTo && (
+              {canSend && isOpen(p) && !p.expired && p.sentTo && (
                 <button type="button" onClick={() => setFollowingUp(p.id)} className="inline-flex min-h-8 items-center gap-1 font-medium text-brand hover:underline"><Send className="size-3" aria-hidden /> Follow up</button>
               )}
-              {canSend && (p.status === "sent" || p.status === "viewed") && (
+              {canSend && isOpen(p) && (
                 <button
                   type="button"
                   className="min-h-8 text-muted hover:text-danger"

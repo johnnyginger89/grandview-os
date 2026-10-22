@@ -7,7 +7,7 @@ import { requirePermission } from "@/lib/authz/guard";
 import { can } from "@/lib/authz/permissions";
 import { formatAddress } from "@/lib/utils";
 import { listRevisions, listTemplates, loadEstimate, recentColours } from "@/server/estimates";
-import { followUpHistory, listProposals, proposalEmailDraft, proposalUrl } from "@/server/proposals";
+import { followUpHistory, listProposals, proposalEmailDraft, proposalExpired, proposalUrl } from "@/server/proposals";
 import { calculateDoc } from "@/lib/estimating/document";
 import { formatCAD } from "@/lib/money";
 import type { ProposalOption } from "./proposal-types";
@@ -29,6 +29,7 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
   const loaded = await loadEstimate(id);
   if (!loaded) notFound();
   const { estimate, doc } = loaded;
+  const now = new Date();
 
   const [customer, property, rates, factors, templates, revisions, pricing, proposalRows, contact, project, template, emailDraft, followUps, presets, recent, materials] = await Promise.all([
     db.query.customers.findFirst({ where: eq(customers.id, estimate.customerId) }),
@@ -42,7 +43,7 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
     db.query.contacts.findFirst({ where: and(eq(contacts.customerId, estimate.customerId), eq(contacts.isPrimary, true)) }),
     db.query.projects.findFirst({ where: eq(projects.estimateId, id), columns: { id: true, number: true } }),
     getProposalTemplate(),
-    proposalEmailDraft(id, user),
+    proposalEmailDraft(id, user, now),
     followUpHistory(id),
     getEstimatingPresets(),
     recentColours(),
@@ -80,7 +81,6 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
           customerName: customer?.displayName ?? "",
           address: property ? formatAddress(property) : null,
           opportunityId: estimate.opportunityId,
-          validUntil: estimate.validUntil?.toISOString() ?? null,
           updatedAt: estimate.updatedAt.toISOString(),
           project: project ? { id: project.id, number: project.number } : null,
         }}
@@ -109,6 +109,7 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
             id: p.id, revision: p.revision, status: p.status, link: proposalUrl(p.token), sentTo: p.sentTo, sentAt: p.sentAt.toISOString(),
             firstViewedAt: p.firstViewedAt?.toISOString() ?? null, viewCount: p.viewCount, acceptedAt: p.acceptedAt?.toISOString() ?? null,
             acceptedName: p.acceptedName, acceptedMethod: p.acceptedMethod, declineReason: p.declineReason,
+            expiresAt: p.expiresAt?.toISOString() ?? null, expired: proposalExpired(p, now),
           })),
         }}
       />

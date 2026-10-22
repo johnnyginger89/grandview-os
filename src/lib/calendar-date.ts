@@ -108,6 +108,14 @@ export function isoToInstant(s: IsoDate, time = "00:00"): Date {
   return at;
 }
 
+/**
+ * The last moment (23:59:59.999 Vancouver) of the day `days` calendar days after the day
+ * `from` falls on. Counted in calendar days, so a DST change in between never moves it.
+ */
+export function endOfBusinessDay(from: Date | string, days = 0): Date {
+  return new Date(isoToInstant(addDays(businessDate(from), days + 1)).getTime() - 1);
+}
+
 /** Half-open instants [start of `from`, start of the day after `toInclusive`) in Vancouver. */
 export function dayRangeInstants(from: IsoDate, toInclusive: IsoDate): { start: Date; end: Date } {
   return { start: isoToInstant(from), end: isoToInstant(addDays(toInclusive, 1)) };

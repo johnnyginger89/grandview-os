@@ -9,7 +9,7 @@ import { calculateDoc, type DocArea, type DocCostItem, type DocLine, type Estima
 import type { EstimateResult } from "@/lib/estimating/engine";
 import { categoryOrder, presetGroupFor, type EstimatingPresets } from "@/lib/estimating/presets";
 import { formatCAD, formatNum, formatPct } from "@/lib/money";
-import { cn, formatDate, formatDateTime } from "@/lib/utils";
+import { cn, formatDateTime } from "@/lib/utils";
 import { STATUS_TONE } from "../status";
 import { createRevisionAction, duplicateAction, restoreRevisionAction, saveEstimateAction, saveTemplateAction, setStatusAction, templatePartsAction } from "../actions";
 import { AddRoom, type NewSurface } from "./add-room";
@@ -18,7 +18,7 @@ import type { FactorOption, MaterialOption, RateOption, Revision } from "./edito
 import { useHideCosts } from "./hide-costs";
 import type { ProposalProps } from "./proposal-types";
 import { RoomCard, surfaceGroup, type ColourChoices, type RoomApi } from "./room-card";
-import { proposalStatusText, SendControls, SentProposals } from "./send-proposal";
+import { ExpiredNotice, proposalStatusText, SendControls, SentProposals, validUntilText } from "./send-proposal";
 import { EstimateBar, TotalsPanel, type TotalsProps } from "./totals-panel";
 
 type SaveState = "saved" | "dirty" | "saving" | "error";
@@ -53,7 +53,7 @@ export function EstimateEditor({
   materials,
   proposals,
 }: {
-  estimate: { id: string; number: number; status: string; revision: number; customerId: string; customerName: string; address: string | null; opportunityId: string | null; validUntil: string | null; updatedAt: string; project: { id: string; number: number | null } | null };
+  estimate: { id: string; number: number; status: string; revision: number; customerId: string; customerName: string; address: string | null; opportunityId: string | null; updatedAt: string; project: { id: string; number: number | null } | null };
   initialDoc: EstimateDoc;
   rates: RateOption[];
   factors: FactorOption[];
@@ -297,6 +297,8 @@ export function EstimateEditor({
   const general = doc.lines.filter((l) => !l.areaId);
   const lastHeight = [...doc.areas].reverse().find((a) => a.kind === "room" && a.height)?.height ?? null;
   const statusText = proposalStatusText(proposals.rows);
+  // From the open proposal: a draft has no date until it's sent.
+  const validity = validUntilText(proposals.rows);
   const totalsProps: TotalsProps = {
     doc,
     result,
@@ -357,7 +359,7 @@ export function EstimateEditor({
           <p className="mt-1 text-sm text-muted">
             <Link href={`/customers/${estimate.customerId}`} className="hover:text-text hover:underline">{estimate.customerName}</Link>
             {estimate.address ? ` · ${estimate.address}` : ""}
-            {estimate.validUntil ? ` · valid until ${formatDate(estimate.validUntil)}` : ""}
+            {validity ? ` · ${validity}` : ""}
             {statusText && <> · <a href="#proposals" className="text-brand hover:underline">{statusText}</a></>}
           </p>
           {estimate.project && (
@@ -380,6 +382,7 @@ export function EstimateEditor({
           <EstimateMenu estimateId={estimate.id} status={estimate.status} canEdit={canEdit} onVersions={() => setSheet("versions")} onSaveTemplate={() => setSheet("template")} />
         </div>
       </div>
+      <ExpiredNotice estimateId={estimate.id} proposals={proposals} />
       <FormError message={saveError} />
       {calc.error && <FormError message={calc.error} />}
       {staleRates > 0 && !ro && (

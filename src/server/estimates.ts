@@ -61,7 +61,7 @@ export async function createEstimate(
     title = [JOB_TITLES[input.jobType ?? "interior"] ?? "Painting", street].filter(Boolean).join(" – ");
   }
   const pricing = await getPricing();
-  const validUntil = new Date(Date.now() + pricing.estimateValidDays * 86_400_000);
+  // No validUntil yet: a quote is valid from the day it's sent (see freezeProposal).
   const [row] = await db
     .insert(estimates)
     .values({
@@ -79,7 +79,6 @@ export async function createEstimate(
       gstRate: pricing.gstRate,
       depositPct: pricing.depositPct,
       finalPriceBeforeUpgrades: true,
-      validUntil,
       estimatorId: userId,
       createdBy: userId,
     })

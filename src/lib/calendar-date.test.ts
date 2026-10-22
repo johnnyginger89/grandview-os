@@ -5,6 +5,7 @@ import {
   dayOfWeek,
   dayRangeInstants,
   diffDays,
+  endOfBusinessDay,
   formatIsoDate,
   isIsoDate,
   isoToInstant,
@@ -97,6 +98,38 @@ function zoneIndependentFixtures() {
     expect(businessDate(new Date("2026-03-09T07:00:00Z"))).toBe("2026-03-09");
     const r = dayRangeInstants("2026-03-08", "2026-03-08");
     expect(r.end.getTime() - r.start.getTime()).toBe(23 * 3_600_000);
+  });
+
+  it("ends the day N days later at 23:59:59.999 Vancouver, whatever the time of sending", () => {
+    // Oct 20 2025 + 30 days = Nov 19, after the Nov 2 2025 change (PDT → PST, UTC-8).
+    for (const sent of ["2025-10-20T07:00:00Z", "2025-10-20T17:00:00Z", "2025-10-21T06:59:59Z"]) {
+      expect(iso(endOfBusinessDay(new Date(sent), 30)), sent).toBe("2025-11-20T07:59:59.999Z");
+    }
+    // 11:30 pm Oct 20 in Vancouver is already Oct 21 in UTC; the Vancouver day counts.
+    expect(iso(endOfBusinessDay("2025-10-21T06:30:00.000Z", 30))).toBe("2025-11-20T07:59:59.999Z");
+    expect(iso(endOfBusinessDay(new Date("2025-10-21T07:00:00Z"), 30))).toBe("2025-11-21T07:59:59.999Z");
+    // Days 0: the end of the same day, and one millisecond later is the next day.
+    const end = endOfBusinessDay(new Date("2026-10-20T17:00:00Z"));
+    expect(iso(end)).toBe("2026-10-21T06:59:59.999Z");
+    expect(businessDate(end)).toBe("2026-10-20");
+    expect(businessDate(new Date(end.getTime() + 1))).toBe("2026-10-21");
+    expect(() => endOfBusinessDay(new Date("2026-10-20T17:00:00Z"), 1.5)).toThrow(RangeError);
+    expect(() => endOfBusinessDay(new Date(Number.NaN), 30)).toThrow(RangeError);
+  });
+
+  it("keeps the end of the day across the spring change (Mar 8 2026, PST → PDT)", () => {
+    // Feb 20 + 30 days = Mar 22 (PDT, UTC-7).
+    expect(iso(endOfBusinessDay(new Date("2026-02-20T17:00:00Z"), 30))).toBe("2026-03-23T06:59:59.999Z");
+    // Sent 11:30 pm Feb 20: 30 × 24 hours later is already 12:30 am Mar 23, but the quote ends with Mar 22.
+    const sent = new Date("2026-02-21T07:30:00Z");
+    expect(businessDate(new Date(sent.getTime() + 30 * 86_400_000))).toBe("2026-03-23");
+    expect(iso(endOfBusinessDay(sent, 30))).toBe("2026-03-23T06:59:59.999Z");
+    expect(businessDate(endOfBusinessDay(sent, 30))).toBe("2026-03-22");
+  });
+
+  it("ends on a DST change day itself (25 hours on Nov 2 2025, 23 on Mar 8 2026)", () => {
+    expect(iso(endOfBusinessDay(new Date("2025-10-03T19:00:00Z"), 30))).toBe("2025-11-03T07:59:59.999Z");
+    expect(iso(endOfBusinessDay(new Date("2026-02-06T19:00:00Z"), 30))).toBe("2026-03-09T06:59:59.999Z");
   });
 
   it("converts wall-clock times on a day to instants", () => {

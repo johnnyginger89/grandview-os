@@ -12,6 +12,10 @@ export interface ProposalRow {
   /** online, phone, email, in_person or paper. */
   acceptedMethod: string | null;
   declineReason: string | null;
+  /** End of the last day the customer can accept it. */
+  expiresAt: string | null;
+  /** Still sent or viewed, but past expiresAt (worked out on the server). */
+  expired: boolean;
 }
 
 export interface ProposalOption {

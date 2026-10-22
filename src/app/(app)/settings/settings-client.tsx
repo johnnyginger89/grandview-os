@@ -82,7 +82,7 @@ export function PricingForm({ pricing }: { pricing: Record<string, string | numb
         <Field label="Minimum job price ($)"><Input name="minimumJobPrice" defaultValue={String(pricing.minimumJobPrice)} inputMode="decimal" /></Field>
         <Field label="Deposit (%)"><Input name="depositPct" defaultValue={pct("depositPct")} inputMode="decimal" /></Field>
         <Field label="GST (%)"><Input name="gstRate" defaultValue={pct("gstRate")} inputMode="decimal" /></Field>
-        <Field label="Estimates valid for (days)"><Input name="estimateValidDays" defaultValue={String(pricing.estimateValidDays)} inputMode="numeric" /></Field>
+        <Field label="Estimates valid for (days)" hint="Counted from the day each proposal is sent, up to the end of the last day"><Input name="estimateValidDays" defaultValue={String(pricing.estimateValidDays)} inputMode="numeric" /></Field>
         <Field label="Hours per crew day"><Input name="hoursPerCrewDay" defaultValue={String(pricing.hoursPerCrewDay)} inputMode="decimal" /></Field>
         <div className="flex items-center gap-3 sm:col-span-2"><Button type="submit" disabled={pending}>Save</Button><Saved state={state} /></div>
       </Card>

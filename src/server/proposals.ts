@@ -1,6 +1,6 @@
 import "server-only";
 import { createHash, randomBytes } from "node:crypto";
-import { and, desc, eq, gte, inArray, isNotNull, isNull, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import {
@@ -20,6 +20,7 @@ import {
   type ProposalAcceptMethod,
 } from "@/db/schema";
 import { MESSAGE_TEMPLATES } from "@/db/seed-data";
+import { endOfBusinessDay } from "@/lib/calendar-date";
 import { sendEmail } from "@/lib/email";
 import { calculateDoc, type EstimateDoc } from "@/lib/estimating/document";
 import { toDb } from "@/lib/money";
@@ -32,7 +33,7 @@ import { notifyLater, notifyProposalEvent } from "./notifications";
 import { createSoldProject } from "./project-status";
 import { createWorkOrderForSale } from "./work-orders";
 import { buildProposalView, normalizeView, type ProposalViewV2 } from "./proposal-view";
-import { getCompany, getProposalTemplate } from "./settings";
+import { getCompany, getPricing, getProposalTemplate } from "./settings";
 
 export { buildProposalView, normalizeView };
 export type { ProposalView, ProposalViewV1, ProposalViewV2, ServiceLine } from "./proposal-view";
@@ -71,6 +72,20 @@ export function proposalUrl(token: string) {
   return `${base}/share/p/${token}`;
 }
 
+/**
+ * When a proposal sent at `sentAt` stops accepting signatures: the end of the Vancouver day
+ * "Estimates valid for (days)" later (Settings → Pricing, as set when it's sent).
+ */
+export async function proposalValidUntil(sentAt: Date): Promise<Date> {
+  const { estimateValidDays } = await getPricing();
+  return endOfBusinessDay(sentAt, Number(estimateValidDays));
+}
+
+/** Sent or viewed, and past the end of its last valid day: the customer can no longer accept it. */
+export function proposalExpired(p: { status: string; expiresAt: Date | null }, now: Date): boolean {
+  return (p.status === "sent" || p.status === "viewed") && !!p.expiresAt && p.expiresAt.getTime() < now.getTime();
+}
+
 export const sendProposalSchema = z.object({
   to: z.string().trim().toLowerCase().email("Enter the customer's email").optional().or(z.literal("").transform(() => undefined)),
   /** Shown at the top of the proposal page. */
@@ -94,21 +109,23 @@ async function proposalTemplate(): Promise<{ subject: string; body: string }> {
  * The proposal email from the "Sending a proposal" template (Settings → Email templates),
  * with this customer's details filled in and the link left as [Proposal link].
  */
-export async function proposalEmailDraft(estimateId: string, sender: { name: string }): Promise<{ to: string; subject: string; body: string } | null> {
+export async function proposalEmailDraft(estimateId: string, sender: { name: string }, now = new Date()): Promise<{ to: string; subject: string; body: string } | null> {
   const estimate = await db.query.estimates.findFirst({ where: eq(estimates.id, estimateId) });
   if (!estimate) return null;
-  const [customer, contact, company, template] = await Promise.all([
+  const [customer, contact, company, template, validUntil] = await Promise.all([
     db.query.customers.findFirst({ where: eq(customers.id, estimate.customerId) }),
     db.query.contacts.findFirst({ where: and(eq(contacts.customerId, estimate.customerId), eq(contacts.isPrimary, true)) }),
     getCompany(),
     proposalTemplate(),
+    // The date it gets if it's sent today, not whatever an earlier send gave it.
+    proposalValidUntil(now),
   ]);
   const vars = {
     first_name: contact?.firstName?.trim() || customer?.displayName.split(" ")[0] || "there",
     customer_name: customer?.displayName ?? "",
     job_title: estimate.title,
     proposal_link: PROPOSAL_LINK_TOKEN,
-    valid_until: estimate.validUntil ? `This proposal is valid until ${formatDate(estimate.validUntil, { dateStyle: "long" })}.` : "",
+    valid_until: `This proposal is valid until ${formatDate(validUntil, { dateStyle: "long" })}.`,
     sender_name: sender.name,
     company_name: company.displayName || company.name,
     company_phone: company.phone ?? "",
@@ -127,7 +144,7 @@ export function withProposalLink(body: string, link: string): string {
 type LoadedEstimate = NonNullable<Awaited<ReturnType<typeof loadEstimate>>>;
 
 /** The customer-facing view of an estimate as it stands now (used when sending and for the staff draft preview). */
-async function viewFor(estimate: LoadedEstimate["estimate"], doc: EstimateDoc, opts: { revision: number; message: string | null }) {
+async function viewFor(estimate: LoadedEstimate["estimate"], doc: EstimateDoc, opts: { revision: number; message: string | null; validUntil: Date; issuedAt: Date }) {
   const [customer, contact, property, company, template] = await Promise.all([
     db.query.customers.findFirst({ where: eq(customers.id, estimate.customerId) }),
     db.query.contacts.findFirst({ where: and(eq(contacts.customerId, estimate.customerId), eq(contacts.isPrimary, true)) }),
@@ -147,7 +164,8 @@ async function viewFor(estimate: LoadedEstimate["estimate"], doc: EstimateDoc, o
       phone: contact?.phone || customer.phone || null,
     },
     jobAddress: property ? formatAddress(property) : null,
-    validUntil: estimate.validUntil,
+    validUntil: opts.validUntil,
+    issuedAt: opts.issuedAt,
     company,
     template,
     message: opts.message,
@@ -156,11 +174,11 @@ async function viewFor(estimate: LoadedEstimate["estimate"], doc: EstimateDoc, o
 }
 
 /** Staff "Preview proposal": what the customer would see if the estimate were sent now. Nothing is saved. */
-export async function draftProposal(estimateId: string) {
+export async function draftProposal(estimateId: string, now = new Date()) {
   const loaded = await loadEstimate(estimateId);
   if (!loaded) return null;
   const { estimate, doc } = loaded;
-  const { view } = await viewFor(estimate, doc, { revision: (estimate.revision ?? 0) + 1, message: null });
+  const { view } = await viewFor(estimate, doc, { revision: (estimate.revision ?? 0) + 1, message: null, validUntil: await proposalValidUntil(now), issuedAt: now });
   const recommended = view.options.filter((o) => o.recommended).map((o) => o.id);
   return { status: "sent", view, initialSelection: recommended, totals: proposalTotals(doc, recommended), accepted: null };
 }
@@ -172,20 +190,24 @@ export async function draftTotals(estimateId: string, selectedIds: string[]): Pr
   return proposalTotals(loaded.doc, selectedIds.filter((id) => allowed.has(id)));
 }
 
-/** Freezes the estimate as it is now into a new open proposal (replacing any open one). */
+/**
+ * Freezes the estimate as it is now into a new open proposal (replacing any open one). Each one
+ * is valid from the day it's sent; the estimate keeps the same date so every screen agrees.
+ */
 async function freezeProposal(
   loaded: LoadedEstimate,
   opts: { message: string | null; to: string | null; reason: string; activity: string | null },
   user: { id: string; name: string },
+  now = new Date(),
 ) {
   const { estimate, doc } = loaded;
   const estimateId = estimate.id;
   if (estimate.status === "accepted") throw new ProposalError("This estimate has already been accepted.");
   if (!doc.lines.length && !doc.costItems.length) throw new ProposalError("Add at least one item before sending a proposal.");
+  const validUntil = await proposalValidUntil(now);
   const revision = await createRevision(estimateId, opts.reason, user.id);
-  const { view, customer, company } = await viewFor(estimate, doc, { revision, message: opts.message });
+  const { view, customer, company } = await viewFor(estimate, doc, { revision, message: opts.message, validUntil, issuedAt: now });
   const token = randomBytes(24).toString("base64url");
-  const now = new Date();
   const proposal = await db.transaction(async (tx) => {
     await tx
       .update(proposals)
@@ -193,19 +215,19 @@ async function freezeProposal(
       .where(and(eq(proposals.estimateId, estimateId), inArray(proposals.status, ["sent", "viewed"])));
     const [p] = await tx
       .insert(proposals)
-      .values({ estimateId, revision, token, snapshot: doc, view, message: opts.message, sentTo: opts.to, sentBy: user.id, expiresAt: estimate.validUntil })
+      .values({ estimateId, revision, token, snapshot: doc, view, message: opts.message, sentTo: opts.to, sentBy: user.id, sentAt: now, expiresAt: validUntil })
       .returning();
-    await tx.update(estimates).set({ status: "sent", sentAt: now, updatedAt: now }).where(eq(estimates.id, estimateId));
+    await tx.update(estimates).set({ status: "sent", sentAt: now, validUntil, updatedAt: now }).where(eq(estimates.id, estimateId));
     if (opts.activity) {
       await tx.insert(activities).values({ customerId: estimate.customerId, opportunityId: estimate.opportunityId, type: "estimate", body: opts.activity.replace("{revision}", String(revision)), createdBy: user.id });
     }
-    await audit({ actorId: user.id, action: "proposal.send", entityType: "proposal", entityId: p.id, after: { estimateId, revision, to: opts.to } }, tx);
+    await audit({ actorId: user.id, action: "proposal.send", entityType: "proposal", entityId: p.id, after: { estimateId, revision, to: opts.to, expiresAt: validUntil.toISOString() } }, tx);
     return p;
   });
   return { proposal, token, view, customer, company };
 }
 
-export async function sendProposal(estimateId: string, raw: z.input<typeof sendProposalSchema>, user: { id: string; name: string }) {
+export async function sendProposal(estimateId: string, raw: z.input<typeof sendProposalSchema>, user: { id: string; name: string }, now = new Date()) {
   const input = sendProposalSchema.parse(raw);
   const loaded = await loadEstimate(estimateId);
   if (!loaded) throw new ProposalError("Estimate not found");
@@ -221,6 +243,7 @@ export async function sendProposal(estimateId: string, raw: z.input<typeof sendP
       activity: `Proposal for estimate #${estimate.number} (revision {revision}) ${input.email ? `sent to ${input.to}` : "created – link shared manually"}`,
     },
     user,
+    now,
   );
 
   // Move the lead forward if it's still before "Proposal Sent".
@@ -240,7 +263,7 @@ export async function sendProposal(estimateId: string, raw: z.input<typeof sendP
   let emailError: string | undefined;
   if (input.email && input.to) {
     // What the sender saw and edited; older callers get the template as it stands.
-    const draft = input.body && input.subject ? null : await proposalEmailDraft(estimateId, user);
+    const draft = input.body && input.subject ? null : await proposalEmailDraft(estimateId, user, now);
     const subject = input.subject || draft?.subject || `Your painting proposal from ${(await getCompany()).name}`;
     const text = withProposalLink(input.body || draft?.body || "", link);
     const company = await getCompany();
@@ -276,7 +299,7 @@ export async function getProposalForCustomer(token: string) {
   const p = await db.query.proposals.findFirst({ where: eq(proposals.token, token) });
   if (!p) return null;
   const estimate = await db.query.estimates.findFirst({ where: eq(estimates.id, p.estimateId), columns: { jobType: true } });
-  const expired = !!p.expiresAt && p.expiresAt < new Date() && (p.status === "sent" || p.status === "viewed");
+  const expired = proposalExpired(p, new Date());
   const doc = p.snapshot as EstimateDoc;
   // Old proposals stored a v1 view; it is converted for display only (the stored view and its hash never change).
   const view: ProposalViewV2 = normalizeView(p.view, estimate?.jobType ?? "default");
@@ -373,7 +396,7 @@ export async function acceptProposal(token: string, raw: unknown, meta: { ip: st
   if (!p) throw new ProposalError("This proposal link is not valid.");
   if (p.status === "accepted") throw new ProposalError("This proposal has already been accepted. Thank you!");
   if (p.status !== "sent" && p.status !== "viewed") throw new ProposalError("This proposal is no longer open. Please contact us for an updated one.");
-  if (p.expiresAt && p.expiresAt < new Date()) throw new ProposalError("This proposal has expired. Please contact us and we'll send an updated one.");
+  if (proposalExpired(p, new Date())) throw new ProposalError("This proposal has expired. Please contact us and we'll send an updated one.");
   return completeAcceptance(p, {
     name: input.name,
     email: input.email ?? null,
@@ -601,14 +624,18 @@ export const followUpSchema = z.object({
   body: z.string().trim().min(1, "Write the email").max(10_000),
 });
 
-async function openProposal(proposalId: string) {
+async function openProposal(proposalId: string, now: Date) {
   const [p] = await db
-    .select({ id: proposals.id, token: proposals.token, status: proposals.status, sentTo: proposals.sentTo, estimateId: proposals.estimateId })
+    .select({ id: proposals.id, token: proposals.token, status: proposals.status, sentTo: proposals.sentTo, estimateId: proposals.estimateId, expiresAt: proposals.expiresAt })
     .from(proposals)
     .where(eq(proposals.id, proposalId))
     .limit(1);
   if (!p) throw new ProposalError("Proposal not found");
   if (p.status !== "sent" && p.status !== "viewed") throw new ProposalError("This proposal isn't waiting on the customer any more, so there's nothing to follow up.");
+  // Chasing it would send the customer a link they can't accept. A follow-up never extends it.
+  if (proposalExpired(p, now)) {
+    throw new ProposalError(`This proposal expired on ${formatDate(p.expiresAt)}, so the customer can no longer accept it. Send an updated proposal from the estimate instead.`);
+  }
   return p;
 }
 
@@ -626,8 +653,8 @@ async function lastProposalEmail(estimateId: string) {
 const reply = (subject: string) => (/^re:/i.test(subject) ? subject : `Re: ${subject}`);
 
 /** The follow-up email, ready to send: "Following up on a proposal" template, this customer's details and the proposal link. */
-export async function followUpDraft(proposalId: string, sender: { name: string }): Promise<{ to: string; subject: string; body: string }> {
-  const p = await openProposal(proposalId);
+export async function followUpDraft(proposalId: string, sender: { name: string }, now = new Date()): Promise<{ to: string; subject: string; body: string }> {
+  const p = await openProposal(proposalId, now);
   const estimate = await db.query.estimates.findFirst({ where: eq(estimates.id, p.estimateId) });
   if (!estimate) throw new ProposalError("Estimate not found");
   const [customer, contact, company, t, last] = await Promise.all([
@@ -654,9 +681,9 @@ export async function followUpDraft(proposalId: string, sender: { name: string }
 }
 
 /** Sends the follow-up the user checked, as a reply in the proposal's email conversation. */
-export async function sendProposalFollowUp(proposalId: string, raw: z.input<typeof followUpSchema>, user: { id: string; name: string }) {
+export async function sendProposalFollowUp(proposalId: string, raw: z.input<typeof followUpSchema>, user: { id: string; name: string }, now = new Date()) {
   const input = followUpSchema.parse(raw);
-  const p = await openProposal(proposalId);
+  const p = await openProposal(proposalId, now);
   const estimate = await db.query.estimates.findFirst({ where: eq(estimates.id, p.estimateId), columns: { id: true, number: true, customerId: true, opportunityId: true } });
   if (!estimate) throw new ProposalError("Estimate not found");
   const link = proposalUrl(p.token);
@@ -708,7 +735,7 @@ export interface FollowUpDue {
   customerEmailedAt: string | null;
 }
 
-/** Open proposals nobody has chased for a few days: the newest first-in-line, oldest contact first. */
+/** Open proposals nobody has chased for a few days: the newest first-in-line, oldest contact first. Expired ones are left out (their link is dead). */
 export async function followUpsDue(now: Date, limit = 10): Promise<FollowUpDue[]> {
   const cutoff = new Date(now.getTime() - FOLLOW_UP_AFTER_DAYS * 86_400_000);
   const followUps = db
@@ -739,7 +766,15 @@ export async function followUpsDue(now: Date, limit = 10): Promise<FollowUpDue[]
     .innerJoin(estimates, eq(estimates.id, proposals.estimateId))
     .innerJoin(customers, eq(customers.id, estimates.customerId))
     .leftJoin(followUps, eq(followUps.estimateId, proposals.estimateId))
-    .where(and(inArray(proposals.status, ["sent", "viewed"]), isNotNull(proposals.sentTo), lte(lastContact, cutoff)))
+    .where(
+      and(
+        inArray(proposals.status, ["sent", "viewed"]),
+        isNotNull(proposals.sentTo),
+        // Same rule as proposalExpired: still open at the exact expiry instant.
+        or(isNull(proposals.expiresAt), gte(proposals.expiresAt, now)),
+        lte(lastContact, cutoff),
+      ),
+    )
     .orderBy(lastContact)
     .limit(limit);
   if (!rows.length) return [];
