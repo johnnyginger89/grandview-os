@@ -6,14 +6,29 @@ import { db } from "@/db";
 import * as schema from "@/db/schema/auth";
 import { sendEmail } from "@/lib/email";
 
+export function trustedOrigins(base: string | undefined, extra: string | undefined): string[] {
+  const out = (extra ?? "")
+    .split(",")
+    .map((o) => o.trim().replace(/\/$/, ""))
+    .filter((o) => /^https:\/\/[a-z0-9.-]+$/i.test(o));
+  try {
+    const u = new URL(base ?? "");
+    if (u.protocol === "https:" && u.hostname.split(".").length >= 2) {
+      const twin = u.hostname.startsWith("www.") ? u.hostname.slice(4) : `www.${u.hostname}`;
+      if (!u.hostname.endsWith(".vercel.app")) out.push(`https://${twin}`);
+    }
+  } catch {
+    // No main address configured (local tools): nothing to add.
+  }
+  return [...new Set(out)];
+}
+
 export const auth = betterAuth({
   appName: "Grandview OS",
   baseURL: process.env.BETTER_AUTH_URL,
-  // Other addresses the app answers on (e.g. the old *.vercel.app one during a domain switch).
-  trustedOrigins: (process.env.BETTER_AUTH_TRUSTED_ORIGINS ?? "")
-    .split(",")
-    .map((o) => o.trim().replace(/\/$/, ""))
-    .filter((o) => /^https:\/\/[a-z0-9.-]+$/i.test(o)),
+  // Other addresses the app answers on: the www/plain twin of the main address (Vercel can
+  // forward either way) and any in BETTER_AUTH_TRUSTED_ORIGINS (e.g. the old *.vercel.app one).
+  trustedOrigins: trustedOrigins(process.env.BETTER_AUTH_URL, process.env.BETTER_AUTH_TRUSTED_ORIGINS),
   secret: process.env.BETTER_AUTH_SECRET,
   database: drizzleAdapter(db, {
     provider: "pg",
