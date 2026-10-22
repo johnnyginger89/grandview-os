@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { db } from "@/db";
 import { media } from "@/db/schema";
-import { getCurrentUser } from "@/lib/authz/guard";
+import { getCurrentUser, needsAccountSetup } from "@/lib/authz/guard";
 import { can } from "@/lib/authz/permissions";
 import { documentHeaders, downloadName } from "@/server/media-headers";
 
@@ -27,7 +27,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
 
   if (meta.kind === "document") {
     const user = await getCurrentUser();
-    if (!user || !(can(user.role, "settings.manage") || can(user.role, "estimates.read"))) return notFound();
+    if (!user || needsAccountSetup(user) || !(can(user.role, "settings.manage") || can(user.role, "estimates.read"))) return notFound();
   }
 
   const etag = `"${meta.sha256}"`;

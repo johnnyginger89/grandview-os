@@ -2,7 +2,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { actionError } from "@/lib/action-error";
-import { AuthorizationError, getCurrentUser, needsMfaEnrollment } from "@/lib/authz/guard";
+import { accountSetupMessage, AuthorizationError, getCurrentUser, needsAccountSetup } from "@/lib/authz/guard";
 import { colourConsultProject, getColourFormForStaff, saveColourSelection, signColourSelectionOnDevice, startColourSelection } from "@/server/colour-selections";
 
 /*
@@ -22,7 +22,7 @@ function fail(e: unknown): { ok: false; error: string } {
 async function consultant(entry: string, selectionId?: string) {
   const user = await getCurrentUser();
   if (!user) throw new AuthorizationError("Your session has expired. Please sign in again.");
-  if (needsMfaEnrollment(user)) throw new AuthorizationError("Set up two-factor authentication first.");
+  if (needsAccountSetup(user)) throw new AuthorizationError(accountSetupMessage(user));
   const projectId = await colourConsultProject(user.id, entry);
   if (!projectId) throw new AuthorizationError("This colour consult isn't booked for your crew any more.");
   if (selectionId !== undefined) {

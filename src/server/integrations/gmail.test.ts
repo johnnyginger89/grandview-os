@@ -7,6 +7,8 @@ const h = vi.hoisted(() => ({
   requests: [] as { url: string; method: string; body: string | null }[],
   respond: (() => ({ status: 200, body: {} })) as (url: string, method: string) => { status: number; body: unknown },
   notices: [] as { to: string[]; notice: { title: string; href: string } }[],
+  companyEmail: "office@example.com",
+  audits: [] as { actorId: string | null; action: string; ipAddress?: string | null; before?: unknown; after?: unknown }[],
 }));
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/auth", () => ({ auth: {} }));
@@ -15,8 +17,8 @@ vi.mock("@/db", async () => {
   h.fake = createFakeDb();
   return { db: h.fake.db };
 });
-vi.mock("../audit", () => ({ audit: async () => undefined }));
-vi.mock("../settings", () => ({ getCompany: async () => ({ name: "Grandview Painting Ltd.", displayName: "Grandview Painting" }) }));
+vi.mock("../audit", () => ({ audit: async (e: (typeof h.audits)[number]) => void h.audits.push(e) }));
+vi.mock("../settings", () => ({ getCompany: async () => ({ name: "Grandview Painting Ltd.", displayName: "Grandview Painting", email: h.companyEmail }) }));
 vi.mock("../notifications", () => ({
   officeRecipients: async () => [{ id: "owner-1" }, { id: "ops-1" }],
   notify: async (to: string[], notice: { title: string; href: string }) => void h.notices.push({ to, notice }),
@@ -30,6 +32,7 @@ const gmail = await import("./gmail");
 const { seal } = await import("@/lib/crypto/secret-box");
 
 const REFRESH = "1//refresh-token-[TEST DATA]";
+const NEW_REFRESH = "1//new-refresh-token-[TEST DATA]";
 const CUSTOMER = "00000000-0000-4000-8000-000000000030";
 const connected = (extra: Record<string, unknown> = {}) => [
   { value: { refreshToken: seal(REFRESH), email: "info@example.com", connectedBy: "owner-1", connectedAt: "2026-10-01T00:00:00.000Z", historyId: "100", lastSyncAt: null, backfill: "done", lastResult: null, broken: false, ...extra } },
@@ -42,6 +45,8 @@ beforeEach(() => {
   h.rows = {};
   h.requests = [];
   h.notices = [];
+  h.audits = [];
+  h.companyEmail = "office@example.com";
   h.respond = () => ({ status: 200, body: {} });
   h.fake.otherwise((call) => {
     const r = h.rows[`${call.op}:${call.table}`];
@@ -50,7 +55,11 @@ beforeEach(() => {
   vi.stubGlobal("fetch", async (url: string, init: RequestInit = {}) => {
     const method = init.method ?? "GET";
     h.requests.push({ url, method, body: init.body ? String(init.body) : null });
-    if (url.startsWith("https://oauth2.googleapis.com/token")) return Response.json({ access_token: "ya29.test", expires_in: 3600 });
+    if (url.startsWith("https://oauth2.googleapis.com/token")) {
+      // Swapping a sign-in code also gives the lasting (refresh) token and the granted scopes.
+      const signIn = String(init.body ?? "").includes("grant_type=authorization_code");
+      return Response.json({ access_token: "ya29.test", expires_in: 3600, ...(signIn ? { refresh_token: NEW_REFRESH, scope: gmail.GMAIL_SCOPES.join(" ") } : {}) });
+    }
     const r = h.respond(url, method);
     return new Response(JSON.stringify(r.body), { status: r.status, headers: { "Content-Type": "application/json" } });
   });
@@ -215,5 +224,91 @@ describe("connecting", () => {
     expect(url.searchParams.get("scope")).toContain("gmail.readonly");
     expect(url.searchParams.get("access_type")).toBe("offline");
     expect(url.searchParams.get("state")).toBe("state-123");
+  });
+});
+
+describe("who can connect, and which mailbox", () => {
+  const OWNER = { id: "owner-1", role: "owner" };
+  const META = { ip: "203.0.113.20", userAgent: "test" };
+  const googleSays = (emailAddress: string) => {
+    h.respond = (url) => (url.endsWith("/profile") ? { status: 200, body: { emailAddress, historyId: 500 } } : { status: 404, body: {} });
+  };
+  const revoked = () => h.requests.filter((q) => q.url.startsWith("https://oauth2.googleapis.com/revoke")).map((q) => decodeURIComponent(new URL(q.url).searchParams.get("token") ?? ""));
+
+  it("reads the domain of an address", () => {
+    expect(gmail.emailDomain(" Info@GrandviewPainting.ca ")).toBe("grandviewpainting.ca");
+    expect(gmail.emailDomain("someone@mail.example.com")).toBe("mail.example.com");
+    for (const bad of ["", null, undefined, "no-at-sign", "a@b", "two@at@example.com", "x@exa mple.com"]) expect(gmail.emailDomain(bad), String(bad)).toBeNull();
+  });
+
+  it("only the owner can connect: an administrator is refused before Google is even asked", async () => {
+    for (const role of ["admin", "operations_manager", "estimator"]) {
+      await expect(gmail.completeGmailConnection("sign-in-code", { id: "x", role }, META)).rejects.toThrow("Only the owner can connect or disconnect Gmail.");
+    }
+    expect(h.requests).toEqual([]);
+    expect(savedSetting()).toBeUndefined();
+  });
+
+  it("needs the company email, to know which domain is the company's", async () => {
+    h.companyEmail = "";
+    await expect(gmail.completeGmailConnection("sign-in-code", OWNER, META)).rejects.toThrow(/Add the company email/);
+    expect(h.requests).toEqual([]);
+  });
+
+  it("refuses a mailbox off the company domain, hands Google's access back and keeps nothing", async () => {
+    for (const mailbox of ["someone@gmail.com", "info@mail.example.com", "info@example.com.evil.test"]) {
+      h.requests = [];
+      h.audits = [];
+      googleSays(mailbox);
+      await expect(gmail.completeGmailConnection("sign-in-code", OWNER, META)).rejects.toThrow(gmail.GmailError);
+      expect(revoked(), mailbox).toEqual([NEW_REFRESH]);
+      expect(savedSetting(), mailbox).toBeUndefined();
+      expect(h.audits, mailbox).toEqual([expect.objectContaining({ action: "integration.gmail.refused", ipAddress: "203.0.113.20", after: { email: mailbox, companyDomain: "example.com", endedOlderConnection: false } })]);
+    }
+  });
+
+  it("refusing the mailbox an older connection uses ends that connection too (its access was handed back)", async () => {
+    h.rows["select:app_settings"] = connected({ email: "personal@gmail.com", connectedBy: "admin-1" });
+    googleSays("personal@gmail.com");
+    await expect(gmail.completeGmailConnection("sign-in-code", OWNER, META)).rejects.toThrow(/isn't on the company's email domain/);
+    expect(h.fake.find("delete", "app_settings")).toHaveLength(1);
+    expect(h.audits).toEqual([expect.objectContaining({ action: "integration.gmail.refused", after: expect.objectContaining({ endedOlderConnection: true }) })]);
+  });
+
+  it("refusing another mailbox leaves the company mailbox connected", async () => {
+    h.rows["select:app_settings"] = connected({ email: "office@example.com" });
+    googleSays("someone@gmail.com");
+    await expect(gmail.completeGmailConnection("sign-in-code", OWNER, META)).rejects.toThrow(gmail.GmailError);
+    expect(h.fake.find("delete", "app_settings")).toEqual([]);
+    expect(revoked()).toEqual([NEW_REFRESH]);
+  });
+
+  it("connects the owner's sign-in to a mailbox on the company domain", async () => {
+    googleSays("Office@Example.com");
+    expect(await gmail.completeGmailConnection("sign-in-code", OWNER, META)).toBe("Office@Example.com");
+    expect(savedSetting()?.value).toMatchObject({ email: "office@example.com", connectedBy: "owner-1", broken: false });
+    expect(revoked()).toEqual([]);
+    expect(h.audits).toEqual([expect.objectContaining({ action: "integration.gmail.connect", ipAddress: "203.0.113.20" })]);
+  });
+
+  it("only the owner can disconnect", async () => {
+    h.rows["select:app_settings"] = connected();
+    await expect(gmail.disconnectGmail({ id: "admin-1", role: "admin" }, META)).rejects.toThrow("Only the owner can connect or disconnect Gmail.");
+    expect(h.fake.find("delete", "app_settings")).toEqual([]);
+    expect(h.requests).toEqual([]);
+    await gmail.disconnectGmail(OWNER, META);
+    expect(h.fake.find("delete", "app_settings")).toHaveLength(1);
+    expect(revoked()).toEqual([REFRESH]);
+    expect(h.audits).toEqual([expect.objectContaining({ action: "integration.gmail.disconnect", ipAddress: "203.0.113.20" })]);
+  });
+
+  it("Settings can warn about an older connection off the company domain, or not made by the owner", async () => {
+    h.rows["select:app_settings"] = connected({ email: "personal@gmail.com", connectedBy: "admin-1" });
+    h.rows["select:user"] = [{ name: "Ada Admin", role: "admin" }];
+    h.rows["select:inbound_emails"] = [{ n: 0 }];
+    expect(await gmail.gmailStatus()).toMatchObject({ connected: true, companyEmail: "office@example.com", companyDomain: "example.com", onCompanyDomain: false, connectedByOwner: false, connectedByName: "Ada Admin" });
+    h.rows["select:app_settings"] = connected({ email: "office@example.com" });
+    h.rows["select:user"] = [{ name: "Olive Owner", role: "owner" }];
+    expect(await gmail.gmailStatus()).toMatchObject({ onCompanyDomain: true, connectedByOwner: true });
   });
 });

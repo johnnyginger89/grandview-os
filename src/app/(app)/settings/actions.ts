@@ -1,5 +1,6 @@
 "use server";
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { safeErrorMessage } from "@/lib/action-error";
@@ -7,8 +8,9 @@ import { db } from "@/db";
 import { messageTemplates } from "@/db/schema";
 import { assertPermission } from "@/lib/authz/guard";
 import { audit } from "@/server/audit";
+import { requestMeta } from "@/server/request-meta";
 import { getCompany, getPricing, setSetting } from "@/server/settings";
-import { createUserAccount, updateUserAccess } from "@/server/users";
+import { createUserAccount, resetTwoFactor, setTemporaryPassword, updateUserAccess } from "@/server/users";
 
 type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string };
 const err = (e: unknown) => ({ ok: false as const, error: safeErrorMessage(e) });
@@ -102,7 +104,7 @@ export async function createUserAction(_: unknown, f: FormData): Promise<Result<
   try {
     const me = await assertPermission("users.manage");
     const input = { name: String(f.get("name")), email: String(f.get("email")), role: String(f.get("role")) as "painter", phone: String(f.get("phone") ?? "") };
-    const r = await createUserAccount(input, me.id, me.role);
+    const r = await createUserAccount(input, me.id, me.role, requestMeta(await headers()));
     revalidatePath("/settings");
     return { ok: true, tempPassword: r.tempPassword, email: input.email };
   } catch (e) {
@@ -114,9 +116,35 @@ export async function updateUserAction(userId: string, patch: { role?: string; a
   try {
     const me = await assertPermission("users.manage");
     const v = z.object({ role: z.string().max(40).optional(), active: z.boolean().optional() }).strict().parse(patch);
-    await updateUserAccess(z.string().min(1).max(100).parse(userId), v, me.id, me.role);
+    await updateUserAccess(z.string().min(1).max(100).parse(userId), v, me.id, me.role, requestMeta(await headers()));
     revalidatePath("/settings");
     return { ok: true };
+  } catch (e) {
+    return err(e);
+  }
+}
+
+const userId = z.string().min(1).max(100);
+
+/** The owner gives someone a temporary password (shown once); they choose their own at their next sign-in. */
+export async function setTemporaryPasswordAction(id: unknown): Promise<Result<{ name: string; email: string; tempPassword: string }>> {
+  try {
+    const me = await assertPermission("users.manage");
+    const r = await setTemporaryPassword(userId.parse(id), me, requestMeta(await headers()));
+    revalidatePath("/settings");
+    return { ok: true, ...r };
+  } catch (e) {
+    return err(e);
+  }
+}
+
+/** The owner turns off someone's two-step sign-in so they set it up again at their next sign-in. */
+export async function resetTwoFactorAction(id: unknown): Promise<Result<{ name: string }>> {
+  try {
+    const me = await assertPermission("users.manage");
+    const r = await resetTwoFactor(userId.parse(id), me, requestMeta(await headers()));
+    revalidatePath("/settings");
+    return { ok: true, ...r };
   } catch (e) {
     return err(e);
   }

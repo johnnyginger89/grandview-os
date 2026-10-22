@@ -4,10 +4,12 @@ import { and, desc, eq, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { activities, appSettings, contacts, customers, inboundEmails, user } from "@/db/schema";
+import { canConnectMailbox } from "@/lib/authz/permissions";
 import { seal, sealedSchema, unseal } from "@/lib/crypto/secret-box";
 import type { EmailMessage, EmailResult } from "@/lib/email";
 import { audit } from "../audit";
 import { notify, officeRecipients } from "../notifications";
+import type { RequestMeta } from "../request-meta";
 import { getCompany } from "../settings";
 
 /*
@@ -17,6 +19,9 @@ import { getCompany } from "../settings";
  * customer's address is copied into their file and the office is told. Google keeps the
  * originals. The refresh token is stored encrypted. Customer email is still only ever
  * sent by a person clicking Send after seeing it (CLAUDE.md rule 8).
+ *
+ * Password-reset emails go out through it too (their links sit in its Sent folder), so only
+ * the owner may connect or disconnect it, and only a mailbox on the company email's domain.
  */
 
 const SETTING = "integration_gmail";
@@ -64,6 +69,21 @@ async function save(value: Stored) {
   await db.insert(appSettings).values({ key: SETTING, value }).onConflictDoUpdate({ target: appSettings.key, set: { value, updatedAt: new Date() } });
 }
 
+/** "Info@Example.com" → "example.com"; null when there's no usable address. */
+export function emailDomain(email: string | null | undefined): string | null {
+  const m = /^[^@\s]+@([a-z0-9-]+(?:\.[a-z0-9-]+)+)$/i.exec((email ?? "").trim());
+  return m ? m[1].toLowerCase() : null;
+}
+
+async function companyDomain(): Promise<{ email: string | null; domain: string | null }> {
+  const email = ((await getCompany()).email ?? "").trim() || null;
+  return { email, domain: emailDomain(email) };
+}
+
+async function revokeAtGoogle(token: string): Promise<void> {
+  await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(token)}`, { method: "POST", signal: AbortSignal.timeout(5000) }).catch(() => undefined);
+}
+
 export interface GmailStatus {
   /** GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET are set on the server. */
   configured: boolean;
@@ -80,14 +100,26 @@ export interface GmailStatus {
   importedTotal: number;
   /** What to enter as the redirect URI in Google Cloud. */
   redirectUri: string | null;
+  /** The company email (Settings → Company); Gmail may only be a mailbox on its domain. */
+  companyEmail: string | null;
+  companyDomain: string | null;
+  /** Null when nothing is connected or the company email isn't set. */
+  onCompanyDomain: boolean | null;
+  /** False for a connection made by someone who isn't an owner (before only the owner could connect). */
+  connectedByOwner: boolean | null;
 }
 
 export async function gmailStatus(): Promise<GmailStatus> {
   const c = config();
   const s = await stored();
   const readable = !!s && unseal(s.refreshToken) !== null;
-  const [by] = s?.connectedBy ? await db.select({ name: user.name }).from(user).where(eq(user.id, s.connectedBy)).limit(1) : [];
+  const [by] = s?.connectedBy ? await db.select({ name: user.name, role: user.role }).from(user).where(eq(user.id, s.connectedBy)).limit(1) : [];
+  const company = await companyDomain();
   return {
+    companyEmail: company.email,
+    companyDomain: company.domain,
+    onCompanyDomain: s && company.domain ? emailDomain(s.email) === company.domain : null,
+    connectedByOwner: s ? by?.role === "owner" : null,
     configured: !!c,
     connected: !!s && readable && !s.broken,
     broken: !!s && (!readable || s.broken),
@@ -129,10 +161,19 @@ async function tokenRequest(body: Record<string, string>) {
   return { ok: res.ok, json };
 }
 
-/** After Google sends the owner back: swap the code for tokens and keep the refresh token, encrypted. */
-export async function completeGmailConnection(code: string, actor: { id: string }): Promise<string> {
+type MailboxActor = { id: string; role: string };
+const NO_META: RequestMeta = { ip: null, userAgent: null };
+
+/**
+ * After Google sends the owner back: swap the code for tokens and keep the refresh token,
+ * encrypted. A mailbox off the company email's domain is refused and its access handed back.
+ */
+export async function completeGmailConnection(code: string, actor: MailboxActor, meta: RequestMeta = NO_META): Promise<string> {
+  if (!canConnectMailbox(actor.role)) throw new GmailError(GMAIL_CONNECT_MESSAGES.owner);
   const c = config();
   if (!c) throw new GmailError(GMAIL_CONNECT_MESSAGES.setup);
+  const company = await companyDomain();
+  if (!company.domain) throw new GmailError(GMAIL_CONNECT_MESSAGES.nodomain);
   const { ok, json } = await tokenRequest({ code, client_id: c.clientId, client_secret: c.clientSecret, redirect_uri: c.redirectUri, grant_type: "authorization_code" });
   const t = tokenSchema.safeParse(json);
   if (!ok || !t.success) throw new GmailError(GMAIL_CONNECT_MESSAGES.incomplete);
@@ -141,19 +182,32 @@ export async function completeGmailConnection(code: string, actor: { id: string 
   if (!granted.includes("https://www.googleapis.com/auth/gmail.send") || !granted.includes("https://www.googleapis.com/auth/gmail.readonly"))
     throw new GmailError(GMAIL_CONNECT_MESSAGES.scopes);
   const profile = z.object({ emailAddress: z.string(), historyId: z.coerce.string() }).parse(await gmailFetch("/profile", {}, t.data.access_token));
+  const mailbox = profile.emailAddress.toLowerCase();
+  if (emailDomain(mailbox) !== company.domain) {
+    await revokeAtGoogle(t.data.refresh_token);
+    // Handing back access ends any older connection to the same mailbox too.
+    const endedOlderConnection = (await stored())?.email === mailbox;
+    if (endedOlderConnection) {
+      await db.delete(appSettings).where(eq(appSettings.key, SETTING));
+      cache = null;
+    }
+    await audit({ actorId: actor.id, action: "integration.gmail.refused", entityType: "settings", entityId: SETTING, ipAddress: meta.ip, after: { email: mailbox, companyDomain: company.domain, endedOlderConnection } });
+    throw new GmailError(GMAIL_CONNECT_MESSAGES.domain);
+  }
   cache = { token: t.data.access_token, expires: Date.now() + (t.data.expires_in ?? 3000) * 1000 };
-  await save({ refreshToken: seal(t.data.refresh_token), email: profile.emailAddress.toLowerCase(), connectedBy: actor.id, connectedAt: new Date().toISOString(), historyId: profile.historyId, lastSyncAt: null, backfill: null, lastResult: null, broken: false });
-  await audit({ actorId: actor.id, action: "integration.gmail.connect", entityType: "settings", entityId: SETTING, after: { email: profile.emailAddress } });
+  await save({ refreshToken: seal(t.data.refresh_token), email: mailbox, connectedBy: actor.id, connectedAt: new Date().toISOString(), historyId: profile.historyId, lastSyncAt: null, backfill: null, lastResult: null, broken: false });
+  await audit({ actorId: actor.id, action: "integration.gmail.connect", entityType: "settings", entityId: SETTING, ipAddress: meta.ip, after: { email: profile.emailAddress } });
   return profile.emailAddress;
 }
 
-export async function disconnectGmail(actor: { id: string }): Promise<void> {
+export async function disconnectGmail(actor: MailboxActor, meta: RequestMeta = NO_META): Promise<void> {
+  if (!canConnectMailbox(actor.role)) throw new GmailError(GMAIL_CONNECT_MESSAGES.owner);
   const s = await stored();
   const refresh = s ? unseal(s.refreshToken) : null;
-  if (refresh) await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(refresh)}`, { method: "POST", signal: AbortSignal.timeout(5000) }).catch(() => undefined);
+  if (refresh) await revokeAtGoogle(refresh);
   await db.delete(appSettings).where(eq(appSettings.key, SETTING));
   cache = null;
-  await audit({ actorId: actor.id, action: "integration.gmail.disconnect", entityType: "settings", entityId: SETTING, before: { email: s?.email ?? null } });
+  await audit({ actorId: actor.id, action: "integration.gmail.disconnect", entityType: "settings", entityId: SETTING, before: { email: s?.email ?? null }, ipAddress: meta.ip });
 }
 
 let cache: { token: string; expires: number } | null = null;

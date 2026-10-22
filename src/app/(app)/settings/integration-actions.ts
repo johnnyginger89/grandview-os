@@ -1,10 +1,12 @@
 "use server";
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 import { z } from "zod";
 import { actionError } from "@/lib/action-error";
 import { assertPermission } from "@/lib/authz/guard";
 import { connectCompanyCam, disconnectCompanyCam } from "@/server/integrations/companycam";
 import { disconnectGmail, syncGmail } from "@/server/integrations/gmail";
+import { requestMeta } from "@/server/request-meta";
 
 type Result = { ok: true } | { ok: false; error: string };
 
@@ -36,10 +38,11 @@ export async function disconnectCompanyCamAction(): Promise<Result> {
   }
 }
 
+/** Owner only (checked in disconnectGmail): password-reset emails go out through this mailbox. */
 export async function disconnectGmailAction(): Promise<Result> {
   try {
     const user = await assertPermission("settings.manage");
-    await disconnectGmail(user);
+    await disconnectGmail(user, requestMeta(await headers()));
     revalidatePath("/settings");
     return { ok: true };
   } catch (e) {

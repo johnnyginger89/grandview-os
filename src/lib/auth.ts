@@ -1,10 +1,25 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { APIError, createAuthMiddleware } from "better-auth/api";
 import { nextCookies } from "better-auth/next-js";
 import { twoFactor } from "better-auth/plugins";
 import { db } from "@/db";
 import * as schema from "@/db/schema/auth";
 import { sendEmail } from "@/lib/email";
+
+/**
+ * Someone chose their own password through Better Auth (Password & security, or an emailed
+ * reset link): a temporary one is gone. Loaded lazily because scripts import this file outside
+ * the server. Never fails the password change itself.
+ */
+async function passwordChosen(userId: string, how: "changed" | "reset_link", requestHeaders: Headers | undefined) {
+  try {
+    const [{ passwordChosenBySelf }, { requestMeta }] = await Promise.all([import("@/server/passwords"), import("@/server/request-meta")]);
+    await passwordChosenBySelf(userId, how, requestMeta(requestHeaders ?? new Headers()));
+  } catch (e) {
+    console.error(`[auth] could not record the password change for user ${userId}`, e instanceof Error ? e.message : e);
+  }
+}
 
 export function trustedOrigins(base: string | undefined, extra: string | undefined): string[] {
   const out = (extra ?? "")
@@ -56,13 +71,32 @@ export const auth = betterAuth({
       });
       if (r.status === "failed") console.error(`[auth] password reset email to user ${user.id} failed: ${r.error}`);
     },
+    onPasswordReset: async ({ user }, request) => passwordChosen(user.id, "reset_link", request?.headers),
   },
   user: {
     additionalFields: {
       role: { type: "string", input: false, defaultValue: "painter" },
       active: { type: "boolean", input: false, defaultValue: true },
       phone: { type: "string", required: false, input: false },
+      // Set when someone else chose the password; cleared when the person picks their own.
+      mustChangePassword: { type: "boolean", input: false, defaultValue: false },
     },
+  },
+  hooks: {
+    before: createAuthMiddleware(async (ctx) => {
+      // Re-entering a temporary password would keep the one the owner knows.
+      const body = ctx.body as { currentPassword?: unknown; newPassword?: unknown } | undefined;
+      if (ctx.path === "/change-password" && typeof body?.newPassword === "string" && body.newPassword === body.currentPassword) {
+        throw new APIError("BAD_REQUEST", { message: "Choose a new password, different from your current one.", code: "PASSWORD_UNCHANGED" });
+      }
+    }),
+    after: createAuthMiddleware(async (ctx) => {
+      if (ctx.path !== "/change-password") return;
+      const returned = ctx.context.returned;
+      if (!returned || typeof returned !== "object" || returned instanceof Error) return;
+      const id = (returned as { user?: { id?: unknown } }).user?.id;
+      if (typeof id === "string") await passwordChosen(id, "changed", ctx.request?.headers ?? ctx.headers);
+    }),
   },
   session: {
     expiresIn: 60 * 60 * 24 * 7,

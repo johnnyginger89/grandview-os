@@ -5,7 +5,7 @@ import { db } from "@/db";
 import { messageTemplates } from "@/db/schema";
 import { COMPANY_PREFILL, DEFAULT_GOALS } from "@/db/seed-data";
 import { requirePermission } from "@/lib/authz/guard";
-import { can } from "@/lib/authz/permissions";
+import { can, canConnectMailbox, canResetSignIn } from "@/lib/authz/permissions";
 import { todayIso } from "@/lib/calendar-date";
 import { getGoals } from "@/server/goals";
 import { getCompany, getList, getPricing } from "@/server/settings";
@@ -47,7 +47,12 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       {tab === "lists" && <ListsForm lists={{ lead_sources: await getList("lead_sources"), lost_reasons: await getList("lost_reasons"), project_types: await getList("project_types") }} />}
       {tab === "templates" && <TemplatesForm templates={(await db.query.messageTemplates.findMany({ orderBy: asc(messageTemplates.name) })).map((t) => ({ id: t.id, name: t.name, subject: t.subject ?? "", body: t.body }))} />}
       {tab === "users" && can(me.role, "users.manage") && (
-        <UsersPanel meId={me.id} isOwner={me.role === "owner"} users={(await listUsers()).map((u) => ({ id: u.id, name: u.name, email: u.email, role: u.role, active: u.active, mfa: !!u.twoFactorEnabled }))} />
+        <UsersPanel
+          meId={me.id}
+          isOwner={me.role === "owner"}
+          canResetSignIn={canResetSignIn(me.role)}
+          users={(await listUsers()).map((u) => ({ id: u.id, name: u.name, email: u.email, role: u.role, active: u.active, mfa: !!u.twoFactorEnabled, mustChangePassword: u.mustChangePassword }))}
+        />
       )}
       {tab === "work-orders" && (
         <>
@@ -57,7 +62,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       )}
       {tab === "integrations" && (
         <div className="max-w-3xl space-y-4">
-          <GmailSettings status={await gmailStatus()} result={{ gmail: sp.gmail, reason: sp.reason }} />
+          <GmailSettings status={await gmailStatus()} result={{ gmail: sp.gmail, reason: sp.reason }} canConnect={canConnectMailbox(me.role)} />
           <CompanyCamSettings status={await companyCamStatus()} />
           <IntegrationsInfo appUrl={appUrl} />
         </div>

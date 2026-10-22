@@ -127,3 +127,18 @@ export function isFieldRole(role: Role | string | null | undefined): boolean {
 export function canManageAccount(actorRole: Role | string | null | undefined, targetRole: Role | string | null | undefined): boolean {
   return actorRole === "owner" || !can(targetRole, "financials.read");
 }
+
+/*
+ * Two security actions sit on top of a permission administrators share, and stay the owner's:
+ * whoever can do them can take over someone else's login, or read every password-reset email.
+ */
+
+/** Set a temporary password for someone else, or reset their two-step sign-in. */
+export function canResetSignIn(role: Role | string | null | undefined): boolean {
+  return role === "owner" && can(role, "users.manage");
+}
+
+/** Connect or disconnect the company Gmail, which password-reset emails go out through. */
+export function canConnectMailbox(role: Role | string | null | undefined): boolean {
+  return role === "owner" && can(role, "settings.manage");
+}

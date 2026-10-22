@@ -13,5 +13,6 @@
   "0011_job_chat": "0da11e70fecbca7461361926f600ae529248d789dc6c5ca8eb5ae77683b9cbcf",
   "0012_integration_links": "8a6627cc57af4ff503e091b6df2f58ab0a44820959451437d3c145e49ee77db4",
   "0013_gmail": "9a4e973b03811a915c3a9a08cdc18e35edb59338cdf4fd47ad34463d6af4989e",
-  "0014_final_price_before_upgrades": "d478c6576dff58be715ec1cf36f8e71f2e7823cd87efd5761e9ca5f9bc6c874d"
+  "0014_final_price_before_upgrades": "d478c6576dff58be715ec1cf36f8e71f2e7823cd87efd5761e9ca5f9bc6c874d",
+  "0015_must_change_password": "6d02a08450447c7cad26a72c3256a3c35d5bee454659a866d827358945c36228"
 }
