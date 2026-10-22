@@ -198,6 +198,8 @@ export interface FieldJobView {
   address: string | null;
   mapsUrl: string | null;
   accessNotes: string | null;
+  /** The property was built before 1990: crews assume lead paint and asbestos. Safety, not money. */
+  builtBefore1990: boolean;
   crewNotes: string | null;
   /** Crew lead only. */
   contact: { name: string; phone: string } | null;

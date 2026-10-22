@@ -5,6 +5,7 @@ import { outer } from "@/db/sql";
 import { CUSTOMER_TYPES, customers, properties } from "@/db/schema";
 import { loadPage, type Paged } from "@/lib/paging";
 import { parseSearchQuery, type ParsedQuery } from "@/lib/search/query";
+import { reachColumn } from "./customer-columns";
 import { customerMatches } from "./search";
 
 export type CustomerType = (typeof CUSTOMER_TYPES)[number];
@@ -37,7 +38,7 @@ export async function listCustomers(opts: { q?: string; type?: CustomerType | ""
     async () => (await db.select({ n: count() }).from(customers).where(where))[0]?.n ?? 0,
     (limit, offset) =>
       db
-        .select({ id: customers.id, name: customers.displayName, type: customers.type, email: customers.email, phone: customers.phone, tags: customers.tags, city, createdAt: customers.createdAt })
+        .select({ id: customers.id, name: customers.displayName, type: customers.type, email: reachColumn("email"), phone: reachColumn("phone"), tags: customers.tags, city, createdAt: customers.createdAt })
         .from(customers)
         .where(where)
         // Imports add many customers in one go with the same created time; the id keeps pages from overlapping.

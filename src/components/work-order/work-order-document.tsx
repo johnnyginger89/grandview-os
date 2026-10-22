@@ -1,6 +1,7 @@
-import { MapPin, Phone } from "lucide-react";
+import { MapPin, Phone, TriangleAlert } from "lucide-react";
 import Image from "next/image";
 import type { ReactNode } from "react";
+import { PRE_1990_WARNING } from "@/lib/property-safety";
 import { cn } from "@/lib/utils";
 import type { CompanyCamPhoto } from "@/server/integrations/companycam";
 import type { Block, WorkOrderColour, WorkOrderPaint, WorkOrderScopeItem, WorkOrderSection, WorkOrderView } from "@/server/work-order-view";
@@ -150,6 +151,12 @@ export function WorkOrderDocument({
       </div>
 
       <Section id="details" title="Job" changed={is("details")}>
+        {view.builtBefore1990 && (
+          <p className="mb-3 flex items-start gap-2 rounded-lg bg-warning-soft px-3 py-2.5 font-semibold text-warning print:border print:border-current print:bg-transparent">
+            <TriangleAlert className="mt-0.5 size-5 shrink-0" aria-hidden />
+            <span>{PRE_1990_WARNING}</span>
+          </p>
+        )}
         <p className="text-lg font-semibold leading-snug">{view.title}</p>
         <dl className="mt-3 grid grid-cols-[7.5rem_1fr] gap-x-3 gap-y-2 text-sm sm:grid-cols-[9rem_1fr]">
           <dt className="text-muted">Job number</dt>

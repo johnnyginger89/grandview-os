@@ -85,6 +85,8 @@ export interface WorkOrderView {
   address: string | null;
   mapsUrl: string | null;
   accessNotes: string | null;
+  /** The property was built before 1990: crews assume lead paint and asbestos. Left out otherwise (older versions don't have it). */
+  builtBefore1990?: true;
   crew: { name: string; lead: string | null } | null;
   bookings: WorkOrderBooking[];
   /** The office contact for the crew. */
@@ -128,7 +130,7 @@ export interface WorkOrderInput {
   template: ProposalTemplate;
   company: { name: string; displayName?: string; phone?: string };
   customer: { name: string; phone: string | null };
-  property: { street: string; unit: string | null; city: string | null; province: string | null; postalCode: string | null; accessNotes: string | null } | null;
+  property: { street: string; unit: string | null; city: string | null; province: string | null; postalCode: string | null; accessNotes: string | null; builtBefore1990?: boolean | null } | null;
   crew: { name: string; lead: string | null } | null;
   /** Labour hours and paint to order are optional extras (the work-order settings). */
   show: { hours: boolean; paint: boolean };
@@ -285,6 +287,7 @@ export function buildWorkOrderView(input: WorkOrderInput): WorkOrderView {
     address,
     mapsUrl: address ? mapsUrl(address) : null,
     accessNotes: clean(wo.accessNotes) ?? clean(input.property?.accessNotes),
+    ...(input.property?.builtBefore1990 ? { builtBefore1990: true as const } : {}),
     crew: input.crew ? { name: input.crew.name, lead: input.crew.lead } : null,
     bookings,
     projectManager: input.projectManager ? { name: input.projectManager.name, phone: clean(input.projectManager.phone) } : null,
@@ -307,8 +310,9 @@ export type WorkOrderSection = (typeof WORK_ORDER_SECTIONS)[number];
 
 function sectionValue(v: WorkOrderView, s: WorkOrderSection): unknown {
   switch (s) {
+    // The pre-1990 warning shows at the top of the job details.
     case "details":
-      return [v.title, v.customerName, v.customerPhone, v.crew, v.projectManager];
+      return [v.title, v.customerName, v.customerPhone, v.crew, v.projectManager, v.builtBefore1990 ?? false];
     case "access":
       return [v.address, v.accessNotes];
     // Versions issued before hours and paint existed have no such keys: compare them as "none".

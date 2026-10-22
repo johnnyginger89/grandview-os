@@ -275,6 +275,32 @@ describe("the customer's signed colours", () => {
   });
 });
 
+describe("a property built before 1990", () => {
+  const flagged = buildWorkOrderView(input({ property: { ...input().property!, builtBefore1990: true } }));
+
+  it("is flagged for the crew, as safety information with no money in it", () => {
+    expect(flagged.builtBefore1990).toBe(true);
+    expect(Object.keys(flagged).filter((k) => !Object.keys(buildWorkOrderView(input())).includes(k))).toEqual(["builtBefore1990"]);
+    const json = JSON.stringify(flagged);
+    for (const s of SENTINELS) expect(json, `must not contain ${s}`).not.toContain(s);
+    expect([...allKeys(flagged)].filter((k) => FORBIDDEN_KEY.test(k))).toEqual([]);
+  });
+
+  it("leaves the key out when the box isn't ticked or isn't known, so older versions compare equal", () => {
+    for (const builtBefore1990 of [false, null, undefined]) {
+      expect("builtBefore1990" in buildWorkOrderView(input({ property: { ...input().property!, builtBefore1990 } })), String(builtBefore1990)).toBe(false);
+    }
+    expect("builtBefore1990" in buildWorkOrderView(input({ property: null }))).toBe(false);
+  });
+
+  it("counts as a change to the job details, the section that shows the warning", () => {
+    const before = buildWorkOrderView(input());
+    expect(changedSections(before, flagged)).toEqual(["details"]);
+    expect(changedSections(flagged, before)).toEqual(["details"]);
+    expect(changedSections(flagged, { ...flagged })).toEqual([]);
+  });
+});
+
 describe("changedSections", () => {
   it("names the sections that differ between versions", () => {
     const v1 = buildWorkOrderView(input());

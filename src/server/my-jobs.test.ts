@@ -24,7 +24,7 @@ const cal = calendarsFor(defaultScheduleSettings(), "2026-10-01", "2026-12-31").
 const TODAY = "2026-10-27"; // Tuesday
 
 const KEYS = [
-  "accessNotes", "address", "contact", "crewName", "crewNotes", "customerName", "dayNumber", "endDate", "entryId", "jobTitle", "kind", "kindLabel",
+  "accessNotes", "address", "builtBefore1990", "contact", "crewName", "crewNotes", "customerName", "dayNumber", "endDate", "entryId", "jobTitle", "kind", "kindLabel",
   "mapsUrl", "onHold", "phaseLabel", "projectId", "projectNumber", "projectTypes", "section", "startDate", "tentative", "workingDays",
 ].sort();
 
@@ -33,7 +33,7 @@ function row(extra: Partial<FieldJobRow> = {}): FieldJobRow {
     entryId: "e-1", kind: "work", phaseLabel: "Bldg B", startDate: "2026-10-26", endDate: "2026-10-30", crewNotes: " Bring the tall ladder ",
     crewId: "crew-1", crewName: "[TEST DATA] Sub crew", worksSaturdays: false, projectId: "p-1", projectNumber: 3018, projectName: "[TEST DATA] Kim – Exterior repaint",
     estimateTitle: "Exterior repaint", projectStatus: "scheduled", confirmation: "date_sent", customerName: "[TEST DATA] Kim", street: "1 Example St",
-    unit: null, city: "Surrey", province: "BC", postalCode: "V3S 0A1", accessNotes: "Gate code 1234", projectTypes: ["Exterior"],
+    unit: null, city: "Surrey", province: "BC", postalCode: "V3S 0A1", accessNotes: "Gate code 1234", builtBefore1990: null, projectTypes: ["Exterior"],
     contactFirstName: "Kim", contactLastName: "Lee", contactPhone: "604-555-0100", customerPhone: null, ...extra,
   };
 }
@@ -65,6 +65,14 @@ describe("toFieldJobView", () => {
     expect(toFieldJobView(row({ startDate: "2026-11-02", endDate: "2026-11-03" }), { isLead: false, today: TODAY, cal }).section).toBe("upcoming");
     expect(toFieldJobView(row({ startDate: "2026-10-19", endDate: "2026-10-23" }), { isLead: false, today: TODAY, cal }).section).toBe("recent");
     expect(toFieldJobView(row({ confirmation: "date_confirmed" }), { isLead: false, today: TODAY, cal }).tentative).toBe(false);
+  });
+
+  it("flags a property built before 1990 for every crew member, lead or not", () => {
+    expect(toFieldJobView(row({ builtBefore1990: true }), { isLead: false, today: TODAY, cal }).builtBefore1990).toBe(true);
+    expect(toFieldJobView(row({ builtBefore1990: true }), { isLead: true, today: TODAY, cal }).builtBefore1990).toBe(true);
+    // Not known isn't a warning: only a ticked box is.
+    expect(toFieldJobView(row({ builtBefore1990: null }), { isLead: false, today: TODAY, cal }).builtBefore1990).toBe(false);
+    expect(toFieldJobView(row({ builtBefore1990: false }), { isLead: false, today: TODAY, cal }).builtBefore1990).toBe(false);
   });
 
   it("has no day number on a weekend inside the booking", () => {
@@ -102,6 +110,12 @@ describe("listFieldJobs", () => {
     const where = new PgDialect().sqlToQuery(h.fake.find("select", "schedule_entries")[0].args.where[0] as SQL);
     expect(where.params).toContain("cancelled");
     expect(where.params).not.toContain("on_hold");
+  });
+
+  it("reads the property's pre-1990 flag with the booking", async () => {
+    h.fake.queue({ "select:crew_members": [[{ crewId: "crew-1", isLead: false }]], "select:schedule_entries": [[{ ...dbRow, builtBefore1990: true }]] });
+    const jobs = await listFieldJobs({ id: "u-1" }, new Date("2026-10-27T19:00:00Z"));
+    expect(jobs[0].builtBefore1990).toBe(true);
   });
 
   it("reads the primary contact's phone for the lead", async () => {

@@ -293,6 +293,23 @@ describe("issueWorkOrder", () => {
     expect(h.audits.at(-1)?.after).toMatchObject({ version: 2, changed: ["specialInstructions"] });
   });
 
+  it("warns about a property built before 1990 once it's ticked, as a change to issue", async () => {
+    const v1 = await issueFirst();
+    expect("builtBefore1990" in v1).toBe(false);
+    h.fake.reset();
+    h.audits = [];
+    h.fake.otherwise((c) => {
+      const r = h.rows[`${c.op}:${c.table}`];
+      return typeof r === "function" ? r(c) : (r ?? []);
+    });
+    h.rows["select:properties"] = [{ ...PROPERTY, builtBefore1990: true }];
+    h.rows["select:work_order_versions"] = [{ version: 1, view: v1 }];
+    h.rows["select:work_orders"] = [woRow({ status: "issued", currentVersion: 1 })];
+    expect(await wo.issueWorkOrder({ id: WO }, ACTOR)).toMatchObject({ version: 2 });
+    expect(lastInsert("work_order_versions").view).toMatchObject({ builtBefore1990: true });
+    expect(h.audits.at(-1)?.after).toMatchObject({ changed: ["details"] });
+  });
+
   it("won't issue a cancelled work order or one on a cancelled job", async () => {
     sourceRows();
     h.rows["select:work_orders"] = [woRow({ status: "cancelled" })];

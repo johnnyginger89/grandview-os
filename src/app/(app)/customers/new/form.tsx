@@ -36,6 +36,10 @@ export function NewCustomerForm({ sources }: { sources: string[] }) {
           <Field label="Unit" className="sm:col-span-2"><Input name="unit" /></Field>
           <Field label="City" className="sm:col-span-3"><Input name="city" /></Field>
           <Field label="Postal code" className="sm:col-span-3"><Input name="postalCode" /></Field>
+          <label className="flex items-start gap-2 text-sm sm:col-span-6">
+            <input type="checkbox" name="builtBefore1990" className="mt-0.5 size-4 shrink-0" />
+            <span>Built before 1990 <span className="text-subtle">(crews are told to assume lead paint and asbestos)</span></span>
+          </label>
         </div>
       </Card>
       <Field label="Notes"><Textarea name="notes" /></Field>

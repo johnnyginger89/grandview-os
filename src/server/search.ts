@@ -10,6 +10,7 @@ import { can } from "@/lib/authz/permissions";
 import { likePattern, parseSearchQuery, type NumberKind, type ParsedQuery } from "@/lib/search/query";
 import type { SearchHit, SearchKind, SearchResult } from "@/lib/search/types";
 import { STATUS_LABEL as WORK_ORDER_STATUS_LABEL } from "@/lib/work-orders/types";
+import { reachColumn } from "@/server/customer-columns";
 import { getProposalTemplate } from "@/server/settings";
 
 // Never cache: what comes back depends on the viewer's role. No money in any result.
@@ -85,7 +86,7 @@ async function findCustomers(q: ParsedQuery, limit: number): Promise<SearchHit[]
     from ${properties} where ${properties.customerId} = ${outer(customers.id)}
     order by ${properties.createdAt} limit 1)`;
   const rows = await db
-    .select({ id: customers.id, name: customers.displayName, type: customers.type, email: customers.email, phone: customers.phone, address })
+    .select({ id: customers.id, name: customers.displayName, type: customers.type, email: reachColumn("email"), phone: reachColumn("phone"), address })
     .from(customers)
     .where(and(isNull(customers.archivedAt), customerMatches(q)))
     .orderBy(desc(sql`${customers.displayName} ilike ${`${q.tokens[0].replace(/[\\%_]/g, (c) => `\\${c}`)}%`}`), desc(customers.updatedAt))

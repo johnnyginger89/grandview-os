@@ -184,7 +184,15 @@ function unsignedDoc(projectName: string): EstimateDoc {
 async function propertyFor(propertyId: string | null) {
   if (!propertyId) return null;
   const [row] = await db
-    .select({ street: properties.street, unit: properties.unit, city: properties.city, province: properties.province, postalCode: properties.postalCode, accessNotes: properties.accessNotes })
+    .select({
+      street: properties.street,
+      unit: properties.unit,
+      city: properties.city,
+      province: properties.province,
+      postalCode: properties.postalCode,
+      accessNotes: properties.accessNotes,
+      builtBefore1990: properties.builtBefore1990,
+    })
     .from(properties)
     .where(eq(properties.id, propertyId))
     .limit(1);

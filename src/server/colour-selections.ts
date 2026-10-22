@@ -29,6 +29,7 @@ import {
   splitColour,
   type ColourFormSettings,
 } from "@/lib/colours/schemas";
+import { sameEmail, samePhone, type Reach } from "@/lib/customer-reach";
 import { sendEmail } from "@/lib/email";
 import { isIncluded } from "@/lib/estimating/engine";
 import type { EstimateDoc } from "@/lib/estimating/document";
@@ -57,6 +58,7 @@ export class ColourFormError extends Error {
 }
 
 type Actor = { id: string; name?: string | null };
+type DbOrTx = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
@@ -354,6 +356,35 @@ export async function cancelColourSelection(id: string, actor: Actor): Promise<{
     await audit({ actorId: actor.id, action: "colours.cancel", entityType: "colour_selection", entityId: s.id, before: { status: s.status } }, tx);
   });
   return { projectId: s.projectId };
+}
+
+/**
+ * A corrected customer email or phone reaches their open forms (draft or sent): a form
+ * still showing the old value gets the new one, so its link goes to the right address.
+ * Signed forms stay as signed; a different value typed on a form for its job stays.
+ * Called inside the customer change's transaction. Returns how many forms changed.
+ */
+export async function carryReachToOpenForms(t: DbOrTx, customerId: string, before: Reach, after: Reach): Promise<number> {
+  const emailChanged = !sameEmail(before.email, after.email);
+  const phoneChanged = (before.phone ?? "") !== (after.phone ?? "");
+  if (!emailChanged && !phoneChanged) return 0;
+  const open = await t
+    .select({ id: colourSelections.id, client: colourSelections.client })
+    .from(colourSelections)
+    .where(and(eq(colourSelections.customerId, customerId), inArray(colourSelections.status, OPEN)));
+  let changed = 0;
+  for (const s of open) {
+    const client = { ...s.client };
+    if (emailChanged && sameEmail(client.email, before.email)) client.email = after.email ?? "";
+    if (phoneChanged && samePhone(client.phone, before.phone)) client.phone = after.phone ?? "";
+    if (client.email === s.client.email && client.phone === s.client.phone) continue;
+    await t
+      .update(colourSelections)
+      .set({ client, updatedAt: new Date() })
+      .where(and(eq(colourSelections.id, s.id), inArray(colourSelections.status, OPEN)));
+    changed++;
+  }
+  return changed;
 }
 
 async function emailTemplate(): Promise<{ subject: string; body: string }> {
