@@ -34,6 +34,11 @@ How to add an entry (for whoever makes the change, including the AI assistant):
 - **Sign now on this device** works: it opens the customer's own proposal page with signing switched on, even though the tablet is signed in as staff. The job's history records that the customer signed in person, on whose device.
 - **Mark as accepted** ticks the same upgrades the customer's page would and shows the price before GST, GST, total and deposit, updating as upgrades are ticked. The job is sold exactly as on screen, or nothing changes.
 - A signature, a decline and the office's status changes arriving at the same moment can no longer trip over each other: an old link or a decline never undoes a sale.
+- **Every estimate goes with its lead.** New estimate from the customer page or "+" picks the customer's open lead, or asks which one when there are several, so the lead moves to Proposal sent and Won with it and the sale counts in the sales figures. The estimate shows what the customer asked for on the lead (project types, their request, the visit) and starts on the matching job type. An estimate without a lead says so and links in one click, and Mark as accepted warns when no lead will be marked won.
+- **Pick the job address on the estimate.** It's in the estimate's header, chosen from the customer's addresses, so a landlord's or strata manager's job goes to the right property on the proposal, the contract and the crew's work order. Nothing is sent or marked accepted without one.
+- **No more $0 surprises on a proposal.** Send, Sign now and Mark as accepted list any surface in the job that has no price yet (usually not measured) and go ahead only once you confirm it's meant.
+- **Quotes and leads stay in step.** When a customer declines, the estimate offers to move the lead to Lost with a reason. A lead marked Lost closes its open quotes, so nobody can sign for a job you've let go. A quote "marked as sent without emailing" moves its lead to Proposal sent. When one quote on a lead is accepted, the lead's other open quotes close (Mark as accepted says which first), so a job can't be sold twice.
+- **Book the estimate visit on the lead.** A visit agreed by phone is booked (or moved) right on the lead page, in Vancouver time. It counts like an online booking on Home and in the figures, and moves a new or contacted lead to Estimate booked.
 - Home's "N jobs today" counts every job with painting booked today; a job used to drop off on the morning of its last day.
 - The readiness checklist follows pressure-wash and colour-consult bookings when they're moved or removed, and a booked pressure wash shows as done after its last day.
 - Signing colours no longer says they're on the work order before they are. A work order that signed colours or a booking change has made out of date is flagged "issue a new version" on the job (nothing is issued automatically).
@@ -52,6 +57,7 @@ How to add an entry (for whoever makes the change, including the AI assistant):
 - **New backup codes** on Password & security, after typing a code from your authenticator app; the old ones stop working.
 - Only the owner can connect or disconnect the company Gmail, and only a mailbox on the company email's own domain (Settings → Company), because password-reset emails go out through it.
 - The owner recovery page allows 5 wrong codes an hour, works once per code, records where each try came from, and tells the owner about every recovery.
+- A proposal link that was withdrawn, replaced by a newer one or has expired now shows the customer only a short "no longer available" message with your phone number: no name, address or prices, in case it went to the wrong person. You still see the full proposal from the same link.
 
 ## 2026.10.22 – sign-in, passwords and Gmail catch-up
 

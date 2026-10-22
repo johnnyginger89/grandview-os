@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/db";
@@ -6,10 +6,11 @@ import { contacts, customers, projects, properties } from "@/db/schema";
 import { requirePermission } from "@/lib/authz/guard";
 import { can } from "@/lib/authz/permissions";
 import { formatAddress } from "@/lib/utils";
+import { leadSummary, openLeadsFor, otherOpenQuotes } from "@/server/estimate-lead";
 import { listRevisions, listTemplates, loadEstimate, recentColours } from "@/server/estimates";
 import { followUpHistory, listProposals, proposalEmailDraft, proposalExpired, proposalUrl } from "@/server/proposals";
 import { listFactors, listMaterialOptions, listRates, toSnapshot } from "@/server/rates";
-import { getEstimatingPresets, getPricing, getProposalTemplate } from "@/server/settings";
+import { getEstimatingPresets, getList, getPricing, getProposalTemplate } from "@/server/settings";
 import { resolveJobType } from "@/lib/proposal-template/resolve";
 import { JOB_TYPE_KEYS } from "@/lib/proposal-template/schema";
 import { CompanyCamSection } from "@/components/companycam/companycam-section";
@@ -28,9 +29,11 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
   const { estimate, doc } = loaded;
   const now = new Date();
 
-  const [customer, property, rates, factors, templates, revisions, pricing, proposalRows, contact, project, template, emailDraft, followUps, presets, recent, materials] = await Promise.all([
+  const canEdit = can(user.role, "estimates.write");
+  const [customer, places, rates, factors, templates, revisions, pricing, proposalRows, contact, project, template, emailDraft, followUps, presets, recent, materials, lead, leadChoices] = await Promise.all([
     db.query.customers.findFirst({ where: eq(customers.id, estimate.customerId) }),
-    estimate.propertyId ? db.query.properties.findFirst({ where: eq(properties.id, estimate.propertyId) }) : null,
+    // The customer's addresses, for the job address in the header.
+    db.query.properties.findMany({ where: eq(properties.customerId, estimate.customerId), orderBy: asc(properties.createdAt) }),
     listRates(),
     listFactors(),
     listTemplates(),
@@ -46,6 +49,14 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
     recentColours(),
     // $/gal goes to the browser only for logins that may see costs.
     can(user.role, "estimates.costing") ? listMaterialOptions() : [],
+    estimate.opportunityId ? leadSummary(estimate.opportunityId) : null,
+    // A sold estimate keeps its lead.
+    canEdit && estimate.status !== "accepted" ? openLeadsFor(estimate.customerId) : [],
+  ]);
+  const declinedProposal = proposalRows[0]?.status === "declined" ? proposalRows[0] : null;
+  const [lostReasons, otherQuotes] = await Promise.all([
+    estimate.opportunityId && can(user.role, "pipeline.write") ? getList("lost_reasons") : [],
+    estimate.opportunityId && estimate.status !== "accepted" ? otherOpenQuotes(estimate.id, estimate.opportunityId) : [],
   ]);
   const proposalText = Object.fromEntries(
     JOB_TYPE_KEYS.map((k) => {
@@ -68,7 +79,8 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
           revision: estimate.revision,
           customerId: estimate.customerId,
           customerName: customer?.displayName ?? "",
-          address: property ? formatAddress(property) : null,
+          propertyId: estimate.propertyId,
+          addresses: places.map((p) => ({ id: p.id, label: formatAddress(p) || p.street })),
           opportunityId: estimate.opportunityId,
           updatedAt: estimate.updatedAt.toISOString(),
           // Only people who can open the job page get a link to it.
@@ -80,15 +92,27 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
         templates={templates.map((t) => ({ id: t.id, name: t.name }))}
         revisions={revisions.map((r) => ({ revision: r.revision, reason: r.reason, totals: r.totals, createdAt: r.createdAt.toISOString() }))}
         hoursPerDay={pricing.hoursPerCrewDay}
-        canEdit={can(user.role, "estimates.write") && estimate.status !== "accepted"}
+        canEdit={canEdit && estimate.status !== "accepted"}
         showCosting={can(user.role, "estimates.costing")}
         proposalText={proposalText}
         canEditWording={can(user.role, "settings.manage")}
         presets={presets}
         recentColours={recent}
         materials={materials}
+        lead={{
+          lead: lead ? { ...lead, visitAt: lead.visitAt?.toISOString() ?? null } : null,
+          choices: leadChoices,
+          canOpenLead: can(user.role, "pipeline.read"),
+          declined: declinedProposal || estimate.status === "declined" ? { reason: declinedProposal?.declineReason ?? null } : null,
+          lostReasons,
+        }}
         proposals={{
-          canSend: can(user.role, "estimates.write") && estimate.status !== "accepted",
+          canSend: canEdit && estimate.status !== "accepted",
+          unlinkedLead: !estimate.opportunityId && leadChoices.length > 0,
+          addressMissing: !estimate.propertyId,
+          otherQuotes,
+          // Filled in by the editor from what's on screen.
+          unpriced: [],
           customerName: customer?.displayName ?? "",
           followUps,
           defaultEmail: contact?.email ?? customer?.email ?? "",

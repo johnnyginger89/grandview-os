@@ -202,7 +202,7 @@ export function StatusBanner({ contact }: { contact: string }) {
   if (status === "expired" || status === "superseded" || status === "withdrawn")
     return (
       <p className="rounded-xl bg-warning-soft p-4 text-sm text-warning" role="status">
-        {status === "expired" ? "This proposal has expired." : "This proposal has been replaced by a newer version."} Please contact us at {contact} for an up-to-date proposal.
+        {status === "expired" ? "This proposal has expired." : status === "withdrawn" ? "This proposal was withdrawn." : "This proposal has been replaced by a newer version."} Please contact us at {contact} for an up-to-date proposal.
       </p>
     );
   return null;

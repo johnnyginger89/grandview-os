@@ -7,12 +7,26 @@ import { assertPermission } from "@/lib/authz/guard";
 import { followUpInstant } from "@/lib/pipeline/list-view";
 import { assignEstimatorInput, bulkMoveStageInput, followUpInput, lostReasonSchema } from "@/lib/pipeline/schemas";
 import { parseBusinessDateTime } from "@/lib/time";
-import { addNote, assignEstimator, bulkMoveStage, composeBookingEmail, ingestLead, moveStage, sendBookingLink, setNextFollowUp } from "@/server/leads";
+import { addNote, assignEstimator, bookVisit, bulkMoveStage, composeBookingEmail, ingestLead, moveStage, sendBookingLink, setNextFollowUp } from "@/server/leads";
 
 export type ActionResult = { ok: true; message?: string } | { ok: false; error: string };
 
 function fail(e: unknown): ActionResult {
   return { ok: false, error: safeErrorMessage(e) };
+}
+
+/** The office books or moves the estimate visit (Vancouver time). */
+export async function bookVisitAction(opportunityId: string, visitAt: string): Promise<ActionResult> {
+  try {
+    const user = await assertPermission("pipeline.write");
+    const at = parseBusinessDateTime(z.string().max(40).parse(visitAt));
+    if (!at) throw new Error("Pick the day and time of the visit.");
+    await bookVisit(z.string().uuid().parse(opportunityId), at, user.id);
+    revalidateLeads();
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
 }
 
 function revalidateLeads() {

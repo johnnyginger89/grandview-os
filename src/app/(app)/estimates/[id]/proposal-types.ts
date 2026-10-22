@@ -1,3 +1,5 @@
+import type { UnpricedSurface } from "@/lib/estimating/unpriced";
+
 export interface ProposalRow {
   id: string;
   revision: number;
@@ -28,4 +30,12 @@ export interface ProposalProps {
   customerName: string;
   followUps: { count: number; lastAt: string | null };
   canSend: boolean;
+  /** No lead linked although the customer has an open one, so accepting won't mark a lead won. */
+  unlinkedLead: boolean;
+  /** No job address yet: nothing can be sent or accepted until one is picked. */
+  addressMissing: boolean;
+  /** Surfaces in the job priced at $0, from what's on screen (the editor fills this in). */
+  unpriced: UnpricedSurface[];
+  /** Other estimates on the same lead the customer could still sign; accepting this one closes them. */
+  otherQuotes: number[];
 }

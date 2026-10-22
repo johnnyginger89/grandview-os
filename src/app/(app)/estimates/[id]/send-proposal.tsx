@@ -5,10 +5,12 @@ import { Popover, popoverItem } from "@/components/app-shell/popover";
 import { Dialog } from "@/components/dialog";
 import { FollowUpDialog } from "@/components/proposals/follow-up-dialog";
 import { Badge, Button, Field, FormError, Input, Textarea, type Tone } from "@/components/ui";
+import { unpricedSummary } from "@/lib/estimating/unpriced";
 import { signOnDeviceLink } from "@/lib/sign-on-device";
 import { formatDate, formatDateTime } from "@/lib/utils";
 import { sendProposalAction, setStatusAction, withdrawProposalAction } from "../actions";
 import { AcceptDialog, acceptedText } from "./accept-dialog";
+import { BeforeSend, readyToSend } from "./before-send";
 import type { WithSaved } from "./autosave";
 import type { ProposalProps, ProposalRow } from "./proposal-types";
 
@@ -37,13 +39,14 @@ export function SendDialog({ estimateId, proposals, withSaved, onClose, title = 
   const [result, setResult] = useState<{ link: string; note: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
   const [pending, start] = useTransition();
 
   const send = () =>
     start(async () => {
       setError(null);
       // The latest changes are saved first: the customer gets what's on screen.
-      const r = await withSaved((version) => sendProposalAction(estimateId, { to, message: note, email, subject, body, expectedUpdatedAt: version }));
+      const r = await withSaved((version) => sendProposalAction(estimateId, { to, message: note, email, subject, body, expectedUpdatedAt: version, allowUnpriced: confirmed }));
       if (!r.ok) return setError(r.error);
       const sent =
         r.emailStatus === "sent"
@@ -69,7 +72,7 @@ export function SendDialog({ estimateId, proposals, withSaved, onClose, title = 
         ) : (
           <>
             <Button variant="ghost" onClick={onClose} disabled={pending}>Cancel</Button>
-            <Button onClick={send} disabled={pending}>
+            <Button onClick={send} disabled={pending || !readyToSend(proposals, confirmed)}>
               <Send className="size-4" aria-hidden /> {pending ? "Sending…" : email ? "Send proposal" : "Create link"}
             </Button>
           </>
@@ -94,6 +97,7 @@ export function SendDialog({ estimateId, proposals, withSaved, onClose, title = 
         </div>
       ) : (
         <div className="space-y-3">
+          <BeforeSend proposals={proposals} confirmed={confirmed} onConfirm={setConfirmed} verb="send" />
           <label className="flex min-h-9 items-center gap-2 text-sm">
             <input type="checkbox" className="size-4" checked={email} onChange={(e) => setEmail(e.target.checked)} /> Email it to the customer
           </label>
@@ -134,11 +138,14 @@ export function SendControls({ estimateId, status, proposals, withSaved, compact
   // An expired link is dead; there's nothing worth copying.
   const open = proposals.rows.find((p) => isOpen(p) && !p.expired);
 
-  const signNow = () =>
+  const signNow = () => {
+    if (proposals.addressMissing) return setError("Pick the job address at the top of the estimate first.");
+    const n = proposals.unpriced.length;
+    if (n && !confirm(`${n === 1 ? "A surface has" : `${n} surfaces have`} no price yet (${unpricedSummary(proposals.unpriced)}), so the customer would see the work promised for $0. Sign anyway?`)) return;
     start(async () => {
       // Opened right away (before the request) so the browser doesn't block it as a pop-up.
       const tab = window.open("about:blank", "_blank");
-      const r = await withSaved((version) => sendProposalAction(estimateId, { to: "", message: "", email: false, expectedUpdatedAt: version }));
+      const r = await withSaved((version) => sendProposalAction(estimateId, { to: "", message: "", email: false, expectedUpdatedAt: version, allowUnpriced: n > 0 }));
       if (!r.ok) {
         tab?.close();
         return setError(r.error);
@@ -148,6 +155,7 @@ export function SendControls({ estimateId, status, proposals, withSaved, compact
       if (tab) tab.location.href = link;
       else window.location.href = link;
     });
+  };
 
   return (
     <div className="flex items-center gap-0.5">
@@ -202,7 +210,7 @@ export function SendControls({ estimateId, status, proposals, withSaved, compact
       {copied && <span role="status" className="ml-2 text-xs text-success">Link copied</span>}
       {error && <span role="alert" className="ml-2 text-xs text-danger">{error}</span>}
       {dialog === "send" && <SendDialog estimateId={estimateId} proposals={proposals} withSaved={withSaved} onClose={() => setDialog(null)} />}
-      {dialog === "accept" && <AcceptDialog estimateId={estimateId} defaultName={proposals.acceptName} withSaved={withSaved} onClose={() => setDialog(null)} />}
+      {dialog === "accept" && <AcceptDialog estimateId={estimateId} defaultName={proposals.acceptName} unlinkedLead={proposals.unlinkedLead} otherQuotes={proposals.otherQuotes} checks={proposals} withSaved={withSaved} onClose={() => setDialog(null)} />}
     </div>
   );
 }

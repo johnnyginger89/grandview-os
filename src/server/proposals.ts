@@ -1,6 +1,6 @@
 import "server-only";
 import { createHash, randomBytes } from "node:crypto";
-import { and, desc, eq, gte, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import {
@@ -10,9 +10,7 @@ import {
   estimates,
   inboundEmails,
   messageTemplates,
-  opportunities,
   outboundMessages,
-  pipelineStages,
   properties,
   proposals,
   type ProposalAcceptMethod,
@@ -23,11 +21,12 @@ import { endOfBusinessDay } from "@/lib/calendar-date";
 import { customerReach, followUpAddress } from "@/lib/customer-reach";
 import { sendEmail } from "@/lib/email";
 import { calculateDoc, estimateDocSchema, type EstimateDoc } from "@/lib/estimating/document";
+import { unpricedSummary, unpricedSurfaces } from "@/lib/estimating/unpriced";
 import { toDb } from "@/lib/money";
 import { formatAddress, formatDate, renderTemplate } from "@/lib/utils";
 import { audit } from "./audit";
 import { assertCurrentVersion, EstimateLockedError, insertRevision, loadEstimate, lockEstimate, nextVersion, writeEstimateDoc } from "./estimates";
-import { moveStage, stageByKey } from "./leads";
+import { advanceToProposalSent, moveStage, stageByKey } from "./leads";
 import { currentDocuments, visibleDocuments } from "./media";
 import { notifyLater, notifyProposalEvent } from "./notifications";
 import { createSoldProject } from "./project-status";
@@ -102,6 +101,8 @@ export const sendProposalSchema = z.object({
   body: z.string().trim().max(10_000).optional(),
   /** The estimate's version on the sender's screen: what they see is what gets sent. */
   expectedUpdatedAt: z.string().datetime({ offset: true }).nullish(),
+  /** The sender saw the surfaces with no price yet and sends anyway. */
+  allowUnpriced: z.boolean().optional(),
 });
 
 /** Stands in for the link in the email editor; the link itself only exists once the proposal is created. */
@@ -238,6 +239,8 @@ interface FreezeOptions {
   /** When it's sent, and the end of its last valid day (Settings → Pricing, read before the transaction). */
   now: Date;
   validUntil: Date;
+  /** Surfaces priced at $0 were seen and are meant (see unpricedSurfaces). */
+  allowUnpriced: boolean;
 }
 
 /**
@@ -253,6 +256,13 @@ async function freezeInTx(tx: Tx, estimateId: string, ctx: ViewContext, opts: Fr
   assertCurrentVersion(current, opts.expectedUpdatedAt);
   const { estimate, doc } = (await loadEstimate(estimateId, tx))!;
   if (!doc.lines.length && !doc.costItems.length) throw new ProposalError("Add at least one item before sending a proposal.");
+  // It goes on the proposal, the contract and the crew's work order.
+  if (!current.propertyId) throw new ProposalError("Pick the job address at the top of the estimate first.");
+  const unpriced = unpricedSurfaces(doc, calculateDoc(doc));
+  if (unpriced.length && !opts.allowUnpriced) {
+    const which = unpriced.length === 1 ? "A surface has" : `${unpriced.length} surfaces have`;
+    throw new ProposalError(`${which} no price yet (${unpricedSummary(unpriced)}), so the customer would see the work promised for $0. Measure ${unpriced.length === 1 ? "it" : "them"}, or confirm it's meant.`);
+  }
   const revision = await insertRevision(tx, estimateId, doc, opts.reason, user.id);
   const view = viewFrom(ctx, estimate, doc, { revision, message: opts.message, validUntil: opts.validUntil, issuedAt: opts.now });
   const token = randomBytes(24).toString("base64url");
@@ -295,22 +305,13 @@ export async function sendProposal(estimateId: string, raw: z.input<typeof sendP
         expectedUpdatedAt: input.expectedUpdatedAt ?? null,
         now,
         validUntil,
+        allowUnpriced: input.allowUnpriced ?? false,
       },
       user,
     ),
   );
 
-  // Move the lead forward if it's still before "Proposal Sent".
-  if (estimate.opportunityId) {
-    const opp = await db
-      .select({ key: pipelineStages.key })
-      .from(opportunities)
-      .innerJoin(pipelineStages, eq(pipelineStages.id, opportunities.stageId))
-      .where(eq(opportunities.id, estimate.opportunityId));
-    if (opp[0] && ["new_lead", "contacted", "estimate_booked", "estimate_completed"].includes(opp[0].key)) {
-      await moveStage(estimate.opportunityId, (await stageByKey("proposal_sent")).id, user.id);
-    }
-  }
+  if (estimate.opportunityId) await advanceToProposalSent(estimate.opportunityId, user.id);
 
   const link = proposalUrl(token);
   let emailStatus: "sent" | "logged" | "failed" | "skipped" = "skipped";
@@ -490,6 +491,8 @@ export const acceptForCustomerSchema = z.object({
   note: z.string().trim().max(1000, "Please keep the note under 1,000 characters").optional(),
   /** The estimate's version on the office's screen: what they checked is what gets accepted. */
   expectedUpdatedAt: z.string().datetime({ offset: true }).nullish(),
+  /** The office saw the surfaces with no price yet and accepts anyway. */
+  allowUnpriced: z.boolean().optional(),
 });
 
 /**
@@ -521,7 +524,7 @@ export async function acceptProposalForCustomer(estimateId: string, raw: unknown
       tx,
       estimateId,
       view,
-      { message: null, to: null, reason: "Accepted by the customer", activity: null, expectedUpdatedAt: input.expectedUpdatedAt ?? null, now, validUntil },
+      { message: null, to: null, reason: "Accepted by the customer", activity: null, expectedUpdatedAt: input.expectedUpdatedAt ?? null, now, validUntil, allowUnpriced: input.allowUnpriced ?? false },
       user,
     );
     return { proposalId: proposal.id, done: await acceptInTx(tx, proposal, a, ctx) };
@@ -612,6 +615,7 @@ async function acceptInTx(tx: Tx, p: ProposalRow, a: Acceptance, ctx: Acceptance
     .update(proposals)
     .set({ status: "superseded" })
     .where(and(eq(proposals.estimateId, p.estimateId), inArray(proposals.status, OPEN)));
+  await closeOtherQuotes(tx, ctx.estimate, a.markedBy?.id ?? null);
 
   const { estimate } = ctx;
   const inPerson = a.device ? ` in person, on ${a.device.name}'s device` : "";
@@ -662,6 +666,31 @@ async function acceptInTx(tx: Tx, p: ProposalRow, a: Acceptance, ctx: Acceptance
     tx,
   );
   return { project, totals };
+}
+
+/**
+ * The customer has chosen: other quotes on the same lead (alternatives, an older estimate) stop
+ * accepting signatures, so the job can't be sold twice. Their estimates are locked first.
+ */
+async function closeOtherQuotes(tx: Tx, sold: EstimateRow, actorId: string | null) {
+  if (!sold.opportunityId) return;
+  const others = await tx
+    .select({ id: estimates.id, number: estimates.number })
+    .from(estimates)
+    .where(and(eq(estimates.opportunityId, sold.opportunityId), ne(estimates.id, sold.id)))
+    .orderBy(asc(estimates.id))
+    .for("update");
+  if (!others.length) return;
+  const closed = await tx
+    .update(proposals)
+    .set({ status: "withdrawn" })
+    .where(and(inArray(proposals.estimateId, others.map((o) => o.id)), inArray(proposals.status, OPEN)))
+    .returning({ id: proposals.id, estimateId: proposals.estimateId });
+  for (const p of closed) {
+    const number = others.find((o) => o.id === p.estimateId)?.number;
+    await tx.insert(activities).values({ customerId: sold.customerId, opportunityId: sold.opportunityId, type: "estimate", body: `Proposal for estimate #${number} withdrawn: estimate #${sold.number} on the same lead was accepted`, createdBy: actorId });
+    await audit({ actorId, action: "proposal.withdraw", entityType: "proposal", entityId: p.id, after: { estimateId: p.estimateId, reason: "other_quote_accepted", acceptedEstimateId: sold.id } }, tx);
+  }
 }
 
 /** Once the sale is committed: the lead is won, the crew's work order started and the office told. */

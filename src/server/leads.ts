@@ -6,11 +6,13 @@ import {
   activities,
   contacts,
   customers,
+  estimates,
   messageTemplates,
   opportunities,
   outboundMessages,
   pipelineStages,
   properties,
+  proposals,
   user,
   type LEAD_CHANNELS,
 } from "@/db/schema";
@@ -513,11 +515,71 @@ export async function moveStageInTx(
     createdBy: userId,
   });
   await audit({ actorId: userId, action: "lead.stage", entityType: "opportunity", entityId: opp.id, before: { stage: from?.key }, after: { stage: to.key } }, tx);
+  if (to.kind === "lost") await closeProposalsOfLostLead(tx, opp, userId);
   return "moved";
+}
+
+/**
+ * A lost lead's quotes stop accepting signatures, so a customer can't sign for a job the office
+ * has given up on. The estimates are locked first, as every change to their proposals does.
+ */
+async function closeProposalsOfLostLead(tx: Tx, opp: Opportunity, userId: string | null) {
+  const quotes = await tx.select({ id: estimates.id, number: estimates.number }).from(estimates).where(eq(estimates.opportunityId, opp.id)).orderBy(asc(estimates.id)).for("update");
+  if (!quotes.length) return;
+  const closed = await tx
+    .update(proposals)
+    .set({ status: "withdrawn" })
+    .where(and(inArray(proposals.estimateId, quotes.map((q) => q.id)), inArray(proposals.status, ["sent", "viewed"])))
+    .returning({ id: proposals.id, estimateId: proposals.estimateId });
+  for (const p of closed) {
+    const number = quotes.find((q) => q.id === p.estimateId)?.number;
+    await tx.insert(activities).values({ customerId: opp.customerId, opportunityId: opp.id, type: "estimate", body: `Proposal for estimate #${number} withdrawn: the lead was marked Lost`, createdBy: userId });
+    await audit({ actorId: userId, action: "proposal.withdraw", entityType: "proposal", entityId: p.id, after: { estimateId: p.estimateId, reason: "lead_lost" } }, tx);
+  }
 }
 
 export async function moveStage(opportunityId: string, stageId: string, userId: string | null, lostReason?: string | null): Promise<void> {
   await db.transaction((tx) => moveStageInTx(tx, opportunityId, stageId, userId, lostReason));
+}
+
+/** Stages a visit booking moves on to "Estimate booked", the same as a YouCanBook.me booking. */
+const BEFORE_VISIT = ["new_lead", "contacted", "follow_up"];
+
+/**
+ * The office books (or moves) the estimate visit, by phone or in person. It counts like a
+ * YouCanBook.me booking: the first booking is the visit-booked milestone, and a lead still
+ * waiting for a visit moves to "Estimate booked".
+ */
+export async function bookVisit(opportunityId: string, at: Date, userId: string): Promise<void> {
+  await db.transaction(async (tx) => {
+    const [opp] = await tx.select().from(opportunities).where(eq(opportunities.id, opportunityId)).for("update");
+    if (!opp) throw new Error("Lead not found");
+    const from = await tx.query.pipelineStages.findFirst({ where: eq(pipelineStages.id, opp.stageId) });
+    if (from?.kind !== "open") throw new Error("This lead is closed. Move it back to an open stage first.");
+    const now = new Date();
+    const patch = { estimateVisitAt: at, ...milestoneUpdates(opp, { newVisitAt: at }, now), updatedAt: now };
+    await tx.update(opportunities).set(patch).where(eq(opportunities.id, opp.id));
+    const when = formatDateTime(at);
+    await tx.insert(activities).values({ customerId: opp.customerId, opportunityId: opp.id, type: "booking", body: opp.estimateVisitAt ? `Estimate visit moved to ${when}` : `Estimate visit booked for ${when}`, createdBy: userId });
+    await audit({ actorId: userId, action: "lead.visit", entityType: "opportunity", entityId: opp.id, before: { estimateVisitAt: opp.estimateVisitAt?.toISOString() ?? null }, after: { estimateVisitAt: at.toISOString() } }, tx);
+    if (BEFORE_VISIT.includes(from.key)) {
+      const booked = await stageByKey("estimate_booked", tx);
+      await moveStageInTx(tx, opp.id, booked.id, userId, null, { opp: { ...opp, ...patch }, from, to: booked });
+    }
+  });
+}
+
+/** Stages a lead passes through before the customer has a proposal. */
+const BEFORE_PROPOSAL = ["new_lead", "contacted", "estimate_booked", "estimate_completed"];
+
+/** A proposal went out for this lead: a lead still before "Proposal sent" moves there, never backwards. */
+export async function advanceToProposalSent(opportunityId: string, userId: string | null): Promise<void> {
+  const [opp] = await db
+    .select({ key: pipelineStages.key })
+    .from(opportunities)
+    .innerJoin(pipelineStages, eq(pipelineStages.id, opportunities.stageId))
+    .where(eq(opportunities.id, opportunityId));
+  if (opp && BEFORE_PROPOSAL.includes(opp.key)) await moveStage(opportunityId, (await stageByKey("proposal_sent")).id, userId);
 }
 
 /** Lock leads in id order so two bulk edits can't deadlock each other. */

@@ -127,6 +127,11 @@ export function startOfBusinessMonth(now = new Date(), timeZone = BUSINESS_TZ): 
   return parseBusinessDateTime(ym, timeZone)!;
 }
 
+/** An instant as Vancouver wall-clock time, "2026-10-29T10:00", e.g. to fill a date-and-time box. */
+export function businessWallClock(instant: Date, timeZone = BUSINESS_TZ): string {
+  return new Date(instant.getTime() + zoneOffsetMinutes(instant, timeZone) * 60_000).toISOString().slice(0, 16);
+}
+
 /** Hour of day (0–23) in the business time zone. */
 export function businessHour(now = new Date(), timeZone = BUSINESS_TZ): number {
   return Number(new Intl.DateTimeFormat("en-US", { timeZone: zoneFor(now, timeZone), hour: "2-digit", hourCycle: "h23" }).format(now));

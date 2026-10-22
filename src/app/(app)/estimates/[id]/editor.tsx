@@ -8,6 +8,7 @@ import { Badge, Button, buttonClass, Field, FormError, Input, Select, Textarea }
 import { calculateDoc, type DocArea, type DocCostItem, type DocLine, type EstimateDoc } from "@/lib/estimating/document";
 import type { EstimateResult } from "@/lib/estimating/engine";
 import { categoryOrder, presetGroupFor, type EstimatingPresets } from "@/lib/estimating/presets";
+import { unpricedSurfaces } from "@/lib/estimating/unpriced";
 import { formatCAD, formatNum, formatPct } from "@/lib/money";
 import { cn, formatDate, formatDateTime } from "@/lib/utils";
 import { STATUS_TONE } from "../status";
@@ -17,6 +18,8 @@ import { createAutosave, type WithSaved } from "./autosave";
 import { chip, NumInput, Section } from "./editor-parts";
 import type { FactorOption, MaterialOption, RateOption, Revision } from "./editor-types";
 import { useHideCosts } from "./hide-costs";
+import { JobAddress, type AddressOption } from "./job-address";
+import { LeadCard, type LeadProps } from "./lead-card";
 import type { ProposalProps } from "./proposal-types";
 import { RoomCard, surfaceGroup, type ColourChoices, type RoomApi } from "./room-card";
 import { ExpiredNotice, proposalStatusText, SendControls, SentProposals, validUntilText } from "./send-proposal";
@@ -54,9 +57,10 @@ export function EstimateEditor({
   presets,
   recentColours,
   materials,
+  lead,
   proposals,
 }: {
-  estimate: { id: string; number: number; status: string; revision: number; customerId: string; customerName: string; address: string | null; opportunityId: string | null; updatedAt: string; project: { id: string; number: number | null; canOpen: boolean } | null };
+  estimate: { id: string; number: number; status: string; revision: number; customerId: string; customerName: string; propertyId: string | null; addresses: AddressOption[]; opportunityId: string | null; updatedAt: string; project: { id: string; number: number | null; canOpen: boolean } | null };
   initialDoc: EstimateDoc;
   rates: RateOption[];
   factors: FactorOption[];
@@ -73,6 +77,7 @@ export function EstimateEditor({
   recentColours: string[];
   /** Paint products to swap onto a surface; only for logins that may see costs. */
   materials: MaterialOption[];
+  lead: LeadProps;
   proposals: ProposalProps;
 }) {
   const [doc, setDocState] = useState<EstimateDoc>(initialDoc);
@@ -294,6 +299,9 @@ export function EstimateEditor({
   const statusText = proposalStatusText(proposals.rows);
   // From the open proposal: a draft has no date until it's sent.
   const validity = validUntilText(proposals.rows);
+  // Surfaces at $0 are worked out from what's on screen, for the send and accept dialogs.
+  const unpriced = useMemo(() => (result ? unpricedSurfaces(doc, result) : []), [doc, result]);
+  const sendProps = useMemo(() => ({ ...proposals, unpriced }), [proposals, unpriced]);
   const sentOn = changedSinceSent(estimate.status, proposals.rows, { version: autosave.version, dirty });
   const withSaved: WithSaved = saver.withSaved;
   const totalsProps: TotalsProps = {
@@ -355,7 +363,8 @@ export function EstimateEditor({
           </div>
           <p className="mt-1 text-sm text-muted">
             <Link href={`/customers/${estimate.customerId}`} className="hover:text-text hover:underline">{estimate.customerName}</Link>
-            {estimate.address ? ` · ${estimate.address}` : ""}
+            {" · "}
+            <JobAddress estimateId={estimate.id} customerId={estimate.customerId} propertyId={estimate.propertyId} addresses={estimate.addresses} canEdit={canEdit} withSaved={withSaved} />
             {validity ? ` · ${validity}` : ""}
             {statusText && <> · <a href="#proposals" className="text-brand hover:underline">{statusText}</a></>}
           </p>
@@ -377,12 +386,12 @@ export function EstimateEditor({
             <Eye className="size-4" aria-hidden /> Preview
           </a>
           <div className="hidden xl:block">
-            <SendControls estimateId={estimate.id} status={estimate.status} proposals={proposals} withSaved={withSaved} />
+            <SendControls estimateId={estimate.id} status={estimate.status} proposals={sendProps} withSaved={withSaved} />
           </div>
           <EstimateMenu estimateId={estimate.id} status={estimate.status} canEdit={canEdit} withSaved={withSaved} onVersions={() => setSheet("versions")} onSaveTemplate={() => setSheet("template")} />
         </div>
       </div>
-      <ExpiredNotice estimateId={estimate.id} proposals={proposals} withSaved={withSaved} />
+      <ExpiredNotice estimateId={estimate.id} proposals={sendProps} withSaved={withSaved} />
       {autosave.conflict ? (
         // What's on screen stays put; only a reload brings in the newer copy.
         <div role="alert" className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">
@@ -403,6 +412,8 @@ export function EstimateEditor({
           {staleRates} line{staleRates > 1 ? "s use" : " uses"} an older version of a production rate. Prices stay as estimated unless you choose “Use current rate” on the line.
         </p>
       )}
+
+      <LeadCard estimateId={estimate.id} {...lead} />
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0 space-y-3">
@@ -562,7 +573,7 @@ export function EstimateEditor({
         </aside>
       </div>
 
-      <EstimateBar result={result} onOpen={() => setSheet("totals")} send={<SendControls estimateId={estimate.id} status={estimate.status} proposals={proposals} withSaved={withSaved} compact />} />
+      <EstimateBar result={result} onOpen={() => setSheet("totals")} send={<SendControls estimateId={estimate.id} status={estimate.status} proposals={sendProps} withSaved={withSaved} compact />} />
 
       <Dialog open={sheet === "totals"} onClose={() => setSheet(null)} title="Totals" className="w-[min(28rem,calc(100vw-1rem))]">
         <TotalsPanel {...totalsProps} />

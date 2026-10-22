@@ -93,7 +93,7 @@ const DOC: EstimateDoc = {
 
 /** Started in December with the old creation-day validity, sent in February. */
 const estimateRow = (extra: Record<string, unknown> = {}) => ({
-  id: EST, number: 5012, title: "Interior repaint", status: "draft", customerId: CUSTOMER, propertyId: null, opportunityId: null, revision: 0, jobType: "interior",
+  id: EST, number: 5012, title: "Interior repaint", status: "draft", customerId: CUSTOMER, propertyId: uuid(40), opportunityId: null, revision: 0, jobType: "interior",
   createdAt: new Date("2025-12-01T18:00:00.000Z"), validUntil: new Date("2025-12-31T18:00:00.000Z"), ...extra,
 });
 const openRow = (extra: Record<string, unknown> = {}) => ({ id: PROPOSAL, token: TOKEN, status: "viewed", sentTo: "kim@example.com", estimateId: EST, expiresAt: EXPIRY, ...extra });

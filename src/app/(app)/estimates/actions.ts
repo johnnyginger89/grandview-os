@@ -5,6 +5,7 @@ import { z } from "zod";
 import { safeErrorMessage } from "@/lib/action-error";
 import { ESTIMATE_STATUSES } from "@/db/schema";
 import { assertPermission } from "@/lib/authz/guard";
+import { linkEstimateToLead, markEstimateLeadLost, openLeadsFor, type LeadChoice } from "@/server/estimate-lead";
 import { searchCustomers } from "@/server/search";
 import {
   createEstimate,
@@ -15,6 +16,7 @@ import {
   restoreRevision,
   saveAsTemplate,
   saveEstimateDoc,
+  setEstimateProperty,
   setEstimateStatus,
   templateToDocParts,
 } from "@/server/estimates";
@@ -108,6 +110,18 @@ export async function restoreRevisionAction(id: string, revision: number): Promi
   }
 }
 
+/** The job address, from the customer's addresses. It's on the proposal, so it moves the version like an edit. */
+export async function setPropertyAction(id: string, propertyId: string, expectedUpdatedAt: string): Promise<Result<{ updatedAt: string }>> {
+  try {
+    const user = await assertPermission("estimates.write");
+    const r = await setEstimateProperty(uuid.parse(id), uuid.parse(propertyId), user.id, version.parse(expectedUpdatedAt));
+    revalidatePath(`/estimates/${id}`);
+    return { ok: true, updatedAt: r.updatedAt };
+  } catch (e) {
+    return err(e);
+  }
+}
+
 export async function setStatusAction(id: string, status: string, expectedUpdatedAt: string): Promise<Result<{ updatedAt: string }>> {
   try {
     const user = await assertPermission("estimates.write");
@@ -148,7 +162,7 @@ export async function templatePartsAction(templateId: string) {
 
 export async function sendProposalAction(
   id: string,
-  input: { to: string; message: string; email: boolean; subject?: string; body?: string; expectedUpdatedAt?: string },
+  input: { to: string; message: string; email: boolean; subject?: string; body?: string; expectedUpdatedAt?: string; allowUnpriced?: boolean },
 ): Promise<Result<{ link: string; emailStatus: string; emailError?: string; updatedAt: string }>> {
   try {
     const user = await assertPermission("estimates.write");
@@ -237,4 +251,34 @@ export async function findCustomersAction(query: string): Promise<{ id: string; 
   await assertPermission("estimates.write");
   await assertPermission("customers.read");
   return searchCustomers(z.string().max(100).parse(query));
+}
+
+/** The customer's open leads, for the lead choice on New estimate. */
+export async function openLeadsAction(customerId: string): Promise<LeadChoice[]> {
+  await assertPermission("estimates.write");
+  return openLeadsFor(uuid.parse(customerId));
+}
+
+/** The customer said no: the estimate's lead moves to Lost, for one of the lost reasons. */
+export async function leadLostAction(estimateId: string, reason: string): Promise<Result> {
+  try {
+    const user = await assertPermission("pipeline.write");
+    await markEstimateLeadLost(uuid.parse(estimateId), z.string().trim().min(1, "Choose why it was lost").max(200).parse(reason), user.id);
+    revalidatePath(`/estimates/${estimateId}`);
+    return { ok: true };
+  } catch (e) {
+    return err(e);
+  }
+}
+
+/** Link the estimate to one of its customer's open leads, or unlink it (null). */
+export async function linkLeadAction(estimateId: string, opportunityId: string | null): Promise<Result> {
+  try {
+    const user = await assertPermission("estimates.write");
+    await linkEstimateToLead(uuid.parse(estimateId), uuid.nullable().parse(opportunityId), user.id);
+    revalidatePath(`/estimates/${estimateId}`);
+    return { ok: true };
+  } catch (e) {
+    return err(e);
+  }
 }

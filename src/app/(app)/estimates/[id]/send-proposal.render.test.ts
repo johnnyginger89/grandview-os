@@ -26,7 +26,7 @@ const row = (extra: Partial<ProposalRow> = {}): ProposalRow => ({
 });
 const props = (rows: ProposalRow[], extra: Partial<ProposalProps> = {}): ProposalProps => ({
   rows, defaultEmail: "kim@example.com", emailDraft: { subject: "Your painting proposal", body: "Hi Kim" }, acceptName: "Kim Lee",
-  customerName: "[TEST DATA] Kim Lee", followUps: { count: 0, lastAt: null }, canSend: true, ...extra,
+  customerName: "[TEST DATA] Kim Lee", followUps: { count: 0, lastAt: null }, canSend: true, unlinkedLead: false, addressMissing: false, unpriced: [], otherQuotes: [], ...extra,
 });
 // React separates adjacent text with <!-- -->; drop it to read the text as shown.
 const text = (html: string) => html.replace(/<!-- -->/g, "");

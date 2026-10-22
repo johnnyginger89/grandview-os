@@ -8,10 +8,11 @@ import { activities, contacts, customers, estimates, opportunities, pipelineStag
 import { requirePermission } from "@/lib/authz/guard";
 import { can } from "@/lib/authz/permissions";
 import { formatCAD } from "@/lib/money";
+import { businessWallClock } from "@/lib/time";
 import { formatAddress, formatDateTime, mapsUrl } from "@/lib/utils";
 import { channelLabel, markViewed } from "@/server/leads";
 import { getList } from "@/server/settings";
-import { ActivityComposer, BookingLinkButton, StageSelect } from "./lead-actions";
+import { ActivityComposer, BookingLinkButton, StageSelect, VisitBooking } from "./lead-actions";
 
 const UUID = /^[0-9a-f-]{36}$/i;
 
@@ -54,7 +55,8 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
         description={<span>Lead #{opp.number} · {channelLabel(opp.channel)}{opp.source ? ` · heard via ${opp.source}` : ""}</span>}
         actions={
           <>
-            {canWrite && <StageSelect opportunityId={id} stageId={opp.stageId} stages={stages.map(({ id, name, kind }) => ({ id, name, kind }))} lostReasons={lostReasons} />}
+            {/* Keyed on the stage, so a move made elsewhere on the page (booking a visit) shows here too. */}
+            {canWrite && <StageSelect key={opp.stageId} opportunityId={id} stageId={opp.stageId} stages={stages.map(({ id, name, kind }) => ({ id, name, kind }))} lostReasons={lostReasons} />}
             {can(me.role, "estimates.write") && (
               <LinkButton variant="secondary" href={`/estimates/new?opportunity=${id}`}>Create estimate</LinkButton>
             )}
@@ -89,6 +91,7 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
               <dt className="text-muted">Visit</dt>
               <dd className="col-span-2">
                 {opp.estimateVisitAt ? formatDateTime(opp.estimateVisitAt) : "Not booked"}
+                {canWrite && stage?.kind === "open" && <VisitBooking opportunityId={id} current={opp.estimateVisitAt ? businessWallClock(opp.estimateVisitAt) : null} />}
                 {opp.bookingManageUrl && <a href={opp.bookingManageUrl} target="_blank" rel="noreferrer" className="ml-2 inline-flex items-center gap-1 text-xs text-brand hover:underline">Manage <ExternalLink className="size-3" /></a>}
               </dd>
               <dt className="text-muted">Estimator</dt><dd className="col-span-2">{estimator?.name ?? "—"}</dd>
