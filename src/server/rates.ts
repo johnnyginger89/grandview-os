@@ -108,19 +108,23 @@ export async function getRateSnapshot(rateId: string): Promise<RateSnapshot | nu
   return rows[0] ? toSnapshot(rows[0]) : null;
 }
 
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+async function addVersion(tx: Tx, rateId: string, v: z.output<typeof rateValuesSchema>, userId: string) {
+  const [{ latest }] = await tx.select({ latest: max(productionRateVersions.version) }).from(productionRateVersions).where(eq(productionRateVersions.rateId, rateId));
+  const [row] = await tx
+    .insert(productionRateVersions)
+    .values({ ...v, rateId, version: (latest ?? 0) + 1, createdBy: userId })
+    .returning();
+  await tx.update(productionRates).set({ currentVersionId: row.id }).where(eq(productionRates.id, rateId));
+  await audit({ actorId: userId, action: "rate.version", entityType: "production_rate", entityId: rateId, after: { version: row.version, ...v } }, tx);
+  return row;
+}
+
 /** Editing a rate never overwrites: it adds a new version and points the rate at it. */
 export async function saveRateVersion(rateId: string, values: z.input<typeof rateValuesSchema>, userId: string) {
   const v = rateValuesSchema.parse(values);
-  return db.transaction(async (tx) => {
-    const [{ latest }] = await tx.select({ latest: max(productionRateVersions.version) }).from(productionRateVersions).where(eq(productionRateVersions.rateId, rateId));
-    const [row] = await tx
-      .insert(productionRateVersions)
-      .values({ ...v, rateId, version: (latest ?? 0) + 1, createdBy: userId })
-      .returning();
-    await tx.update(productionRates).set({ currentVersionId: row.id }).where(eq(productionRates.id, rateId));
-    await audit({ actorId: userId, action: "rate.version", entityType: "production_rate", entityId: rateId, after: { version: row.version, ...v } }, tx);
-    return row;
-  });
+  return db.transaction((tx) => addVersion(tx, rateId, v, userId));
 }
 
 export async function updateRateIdentity(rateId: string, values: z.input<typeof rateIdentitySchema>, userId: string) {
@@ -132,9 +136,14 @@ export async function updateRateIdentity(rateId: string, values: z.input<typeof 
 
 export async function createRate(identity: z.input<typeof rateIdentitySchema>, values: z.input<typeof rateValuesSchema>, userId: string) {
   const { proposalGroup, ...id } = rateIdentitySchema.parse(identity);
-  const [rate] = await db.insert(productionRates).values({ ...id, proposalGroup: proposalGroup || null }).returning();
-  await saveRateVersion(rate.id, values, userId);
-  return rate;
+  // Numbers are checked before anything is written, and the rate and its first version are saved
+  // together: a refused save must not leave a rate with no numbers holding its code.
+  const v = rateValuesSchema.parse(values);
+  return db.transaction(async (tx) => {
+    const [rate] = await tx.insert(productionRates).values({ ...id, proposalGroup: proposalGroup || null }).returning();
+    await addVersion(tx, rate.id, v, userId);
+    return rate;
+  });
 }
 
 export async function setRateActive(rateId: string, active: boolean, userId: string) {

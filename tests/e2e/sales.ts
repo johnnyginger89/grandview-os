@@ -60,7 +60,8 @@ export async function draftThreeThousandDollarEstimate(page: Page, opts: DraftOp
 /** On "New estimate" with the customer already chosen: start with an empty estimate. */
 export async function startBlankEstimate(page: Page) {
   await page.getByRole("button", { name: "Start blank" }).click();
-  await expect(page).toHaveURL(/\/estimates\/[0-9a-f-]{36}/);
+  // Two round trips (create, then open the editor), which a busy dev server can take a while over.
+  await expect(page).toHaveURL(/\/estimates\/[0-9a-f-]{36}/, { timeout: 15_000 });
 }
 
 /**

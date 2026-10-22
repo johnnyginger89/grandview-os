@@ -33,6 +33,7 @@ export function checkEnv(env: NodeJS.ProcessEnv = process.env): EnvReport {
   if (live && env.MFA_ENFORCED === "false") warnings.push("MFA_ENFORCED=false is ignored in production; two-factor stays mandatory.");
   if (live && env.ALLOW_DEV_MODE) errors.push("ALLOW_DEV_MODE must not be set in production.");
   if (!env.RESEND_API_KEY) (live ? warnings : []).push("RESEND_API_KEY is not set: password-reset and booking-link emails will not be delivered.");
+  if (live && !env.CRON_SECRET) warnings.push("CRON_SECRET is not set: the scheduled jobs (Gmail check, 4 pm reminder) accept any caller that claims to be Vercel's cron.");
   if (env.SETUP_TOKEN && env.SETUP_TOKEN.length < 32) (live ? errors : warnings).push("SETUP_TOKEN must be at least 32 characters.");
   return { ok: errors.length === 0, errors, warnings };
 }

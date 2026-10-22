@@ -179,6 +179,43 @@ describe("estimate totals", () => {
     expect(o.totals.overrideAdjustment.toFixed(2)).toBe("160.00");
   });
 
+  describe("hand-set final price with upgrades", () => {
+    const base = line({ id: "base", rate: walls, quantity: 3000 }); // 5340
+    const upgrade = (selected: boolean) => line({ id: "up", rate: walls, quantity: 1000, isOptional: true, optionSelected: selected }); // 1780
+    const pressureWash = (selected: boolean) => ({ id: "pw", kind: "subcontractor" as const, description: "Pressure wash", cost: "200", isOptional: true, optionSelected: selected }); // 400
+    const rule = { ...settings, priceOverride: "5000", finalPriceBeforeUpgrades: true };
+
+    it("adds a selected upgrade on top of the final price", () => {
+      expect(calculateEstimate([base, upgrade(false)], [], rule).totals.price.toFixed(2)).toBe("5000.00");
+      const t = calculateEstimate([base, upgrade(true)], [pressureWash(true)], rule).totals;
+      expect(t.selectedOptionsPrice.toFixed(2)).toBe("2180.00");
+      expect(t.price.toFixed(2)).toBe("7180.00");
+      expect(t.gst.toFixed(2)).toBe("359.00");
+      expect(t.deposit.toFixed(2)).toBe("1507.80");
+    });
+
+    it("keeps the adjustment row consistent with the price", () => {
+      const t = calculateEstimate([base, upgrade(true)], [], rule).totals;
+      expect(t.overrideAdjustment.toFixed(2)).toBe("-340.00");
+      expect(t.subtotal.plus(t.minimumAdjustment).minus(t.discount).plus(t.overrideAdjustment).toFixed(2)).toBe(t.price.toFixed(2));
+      expect(t.selectedOptionsCost.toFixed(2)).toBe("890.00");
+    });
+
+    it("estimates made before the rule keep a final price that includes selected upgrades", () => {
+      const legacy = { ...settings, priceOverride: "5000" };
+      expect(calculateEstimate([base, upgrade(true)], [], legacy).totals.price.toFixed(2)).toBe("5000.00");
+    });
+
+    it("leaves the minimum job price covering the whole job", () => {
+      const small = line({ id: "small", rate: walls, quantity: 500 }); // 890
+      const t = calculateEstimate([small, upgrade(true)], [], { ...settings, finalPriceBeforeUpgrades: true }).totals;
+      expect(t.minimumAdjustment.toFixed(2)).toBe("0.00");
+      expect(t.price.toFixed(2)).toBe("2670.00");
+      const under = calculateEstimate([small, line({ id: "u2", rate: walls, quantity: 300, isOptional: true, optionSelected: true })], [], { ...settings, finalPriceBeforeUpgrades: true }).totals;
+      expect(under.price.toFixed(2)).toBe("2000.00");
+    });
+  });
+
   it("summarizes materials by product with container counts", () => {
     const res = calculateEstimate(
       [line({ rate: walls, quantity: 3000 }), line({ rate: walls, quantity: 1000 })],

@@ -92,6 +92,117 @@ test("add rooms with their usual surfaces, one colour for all walls, options and
   await expect(page.getByRole("region", { name: "Hallway" })).toBeVisible();
 });
 
+test("Hide costs hides every cost on the page, stays hidden on this device, and Show costs brings them back", async ({ page }) => {
+  await newCustomerEstimate(page, "Customer view");
+  await startBlankEstimate(page);
+  await addRoom(page, "Living room", { size: "15 12 8", only: ["Walls – roll & cut"] });
+  await page.getByRole("button", { name: /^Extras/ }).click();
+  await page.getByRole("button", { name: "Subcontractor", exact: true }).click();
+  await page.getByLabel("Cost", { exact: true }).fill("500");
+
+  const room = page.getByRole("region", { name: "Living room" });
+  const walls = room.getByRole("button", { name: /Walls – roll & cut/ });
+  const note = room.getByText(/^Rate: /);
+  const paint = room.getByLabel("Paint product").locator("option", { hasText: "Sherwin-Williams Duration Home Interior Matte" });
+  const versions = page.getByRole("dialog", { name: "Versions" });
+  const openVersions = async () => {
+    await page.getByRole("button", { name: "Estimate menu" }).click();
+    await page.getByRole("button", { name: "Versions" }).click();
+  };
+  // Labour cost and rate, paint $/gal, other costs, cost, margin, markup: none of it for the customer.
+  const internal = /Labour \$|@ \$|\/gal|Other \$|Cost \$|Margin|markup/i;
+
+  // Costs show to the owner until hidden.
+  await walls.click();
+  await expect(note).toContainText(/Labour \$[\d,.]+ @ \$[\d,.]+\/h · Paint [\d.]+ gal \$[\d,.]+ · Other \$[\d,.]+ · Cost \$[\d,.]+ · Margin [\d.]+%/);
+  await expect(paint).toHaveText(/^Sherwin-Williams Duration Home Interior Matte · \$[\d,.]+\/gal$/);
+  await expect(page.getByLabel("Markup %")).toBeVisible();
+  await expect(page.getByText("All changes saved")).toBeVisible({ timeout: 10_000 });
+  await openVersions();
+  await versions.getByRole("button", { name: "Save a version" }).click();
+  await expect(versions.getByRole("columnheader", { name: "Margin" })).toBeVisible();
+  await versions.getByRole("button", { name: "Close" }).click();
+
+  // One switch hides them in the room card, the surface details, the paint picker, Extras, Versions and Totals.
+  await page.getByRole("button", { name: "Hide costs" }).click();
+  await expect(note).toHaveText(/^Rate: [\d.]+ sq ft\/h \(v\d+\) · Paint [\d.]+ gal$/);
+  await expect(paint).toHaveText("Sherwin-Williams Duration Home Interior Matte");
+  await expect(room).not.toContainText(internal);
+  await expect(page.getByLabel("Cost", { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("Markup %")).toHaveCount(0);
+  await expect(page.getByText("Gross margin")).toHaveCount(0);
+  await expect(page.getByRole("tab", { name: "Price" })).toHaveCount(0);
+  await openVersions();
+  await expect(versions.getByRole("columnheader", { name: "Price" })).toBeVisible();
+  await expect(versions.getByRole("columnheader", { name: "Margin" })).toHaveCount(0);
+  await versions.getByRole("button", { name: "Close" }).click();
+  // The prices the customer sees on the proposal stay.
+  await expect(page.getByTestId("editor-total")).toHaveText(/\$[\d,]+\.\d\d/);
+  await expect(room.getByText(/^\$[\d,]+\.\d\d$/).first()).toBeVisible();
+
+  // Remembered on this device.
+  await page.reload();
+  // Retry until the page has loaded enough to open the surface.
+  await expect(async () => {
+    if ((await walls.getAttribute("aria-expanded")) !== "true") await walls.click();
+    await expect(paint).toBeAttached({ timeout: 500 });
+  }).toPass();
+  await expect(paint).toHaveText("Sherwin-Williams Duration Home Interior Matte");
+  await expect(room).not.toContainText(internal);
+  await expect(page.getByLabel("Markup %")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Show costs" }).click();
+  await expect(note).toContainText(/Labour \$[\d,.]+ @ \$[\d,.]+\/h · .+ · Margin [\d.]+%/);
+  await expect(paint).toHaveText(/\/gal$/);
+  await expect(page.getByLabel("Markup %")).toBeVisible();
+  await expect(page.getByText("Gross margin")).toBeVisible();
+});
+
+test("a tab with an older copy can't overwrite newer work: it says so and offers a reload", async ({ page }) => {
+  await newCustomerEstimate(page, "Two tabs");
+  await startBlankEstimate(page);
+  await addRoom(page, "Kitchen", { size: "12 10" });
+  await expect(page.getByText("All changes saved")).toBeVisible({ timeout: 10_000 });
+  const older = await page.context().newPage();
+  await older.goto(page.url());
+  await expect(older.getByText("All changes saved")).toBeVisible();
+
+  // This tab moves on…
+  await page.getByLabel("Estimate title").fill("Kitchen – newer [TEST DATA]");
+  await expect(page.getByText("Unsaved changes")).toBeVisible();
+  await expect(page.getByText("All changes saved")).toBeVisible({ timeout: 10_000 });
+  // …then the other one, still on the older copy, is changed too.
+  await older.getByLabel("Estimate title").fill("Kitchen – older tab [TEST DATA]");
+  const alert = older.getByRole("alert").filter({ hasText: "This estimate was changed on another device or tab. Reload to see the latest." });
+  await expect(alert).toBeVisible({ timeout: 10_000 });
+  await expect(older.getByText("Not saved", { exact: true })).toBeVisible();
+  // What they typed stays on screen until they choose to reload.
+  await expect(older.getByLabel("Estimate title")).toHaveValue("Kitchen – older tab [TEST DATA]");
+  await alert.getByRole("button", { name: "Reload" }).click();
+  await expect(older.getByLabel("Estimate title")).toHaveValue("Kitchen – newer [TEST DATA]");
+  await older.close();
+  await page.reload();
+  await expect(page.getByLabel("Estimate title")).toHaveValue("Kitchen – newer [TEST DATA]");
+});
+
+test("nothing is sent while the latest changes can't be saved", async ({ page }) => {
+  await newCustomerEstimate(page, "Unsaved send");
+  await startBlankEstimate(page);
+  await addRoom(page, "Kitchen", { size: "12 10" });
+  await expect(page.getByText("All changes saved")).toBeVisible({ timeout: 10_000 });
+  // An estimate needs a title, so this change can't be saved.
+  await page.getByLabel("Estimate title").fill("");
+  await expect(page.getByText("Save failed")).toBeVisible({ timeout: 10_000 });
+  await page.getByRole("button", { name: "Send proposal" }).click();
+  const dialog = page.getByRole("dialog", { name: "Send proposal" });
+  await dialog.getByText("Email it to the customer").click();
+  await dialog.getByRole("button", { name: "Create link" }).click();
+  await expect(dialog.getByRole("alert")).toContainText("Your latest changes couldn't be saved");
+  await expect(dialog.getByLabel("Proposal link")).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.locator("#proposals")).toHaveCount(0);
+});
+
 test("save as a template and start the next estimate from it", async ({ page }) => {
   await newCustomerEstimate(page, "Template source");
   await startBlankEstimate(page);

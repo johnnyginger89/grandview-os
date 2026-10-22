@@ -45,7 +45,11 @@ in YouCanBook.me's placeholder list. The field names on the left are what Grandv
 ```
 
 For the cancellation webhook, send the same `bookingId` with `"event": "cancelled"`.
-The lead moves to **Lost** with reason "Booking cancelled".
+If the lead is still before the visit (New lead, Contacted, Estimate booked) it moves to
+**Lost** with reason "Booking cancelled"; further along (e.g. a proposal is out) it stays where
+it is and the cancellation is noted on its timeline. If the customer books again, the cancelled
+lead reopens at Estimate booked instead of a second lead being made. The office and the lead's
+estimator are notified of bookings, changes and cancellations.
 
 Field names are matched loosely, so `first_name`, `fname` and `First Name` all work.
 Multiple project types can be comma-separated.
@@ -53,7 +57,8 @@ Multiple project types can be comma-separated.
 ## Reliability
 
 - Every payload is stored in `inbound_events` before processing, so nothing is lost if
-  processing fails. Failed events show the error and can be replayed.
+  processing fails. Anything that couldn't be imported is listed under **Leads → Couldn't
+  import** with the reason, **Retry** and **Dismiss**, and the office is notified.
 - Re-sending the same booking reference and event is ignored, so retries are safe.
 
 ## Testing
@@ -73,8 +78,10 @@ x-webhook-secret: <FORM_WEBHOOK_SECRET>
 
 The website form uses Gravity Forms, so post from the website **server** with the Gravity Forms Webhooks add-on, adding the secret as a request header. Never put the secret in browser-side code. Accepts JSON or a normal form post. Recognized fields: `name` (or `firstName`/`lastName`),
 `email`, `phone`, `address`, `city`, `postalCode`, `service`/`projectType`, `message`, `source`.
-An email or a phone number is required. Add a hidden empty field named `website_url` as a spam
-honeypot: submissions that fill it in are silently dropped.
+A name, email or phone is enough: an invalid email is kept as a note on the lead instead of
+rejecting it, and over-long text is shortened (the full submission stays saved). A repeat
+inquiry from someone with an open lead is added to that lead. Add a hidden empty field named
+`website_url` as a spam honeypot: submissions that fill it in are silently dropped.
 
 Leads land in **New Lead – To Contact**. Opening one shows the **Send booking link** button,
 which previews and then emails your YouCanBook.me link (Settings → Company) using the

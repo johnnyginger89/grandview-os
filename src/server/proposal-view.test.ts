@@ -157,6 +157,18 @@ describe("buildProposalView", () => {
     expect(view.lines[1].price).toBe(enginePrice);
   });
 
+  it("an upgrade ticked on a hand-priced proposal adds its price", () => {
+    const upgradeId = interiorDoc.lines.find((l) => l.isOptional)!.id;
+    const priced = { ...interiorDoc, settings: { ...interiorDoc.settings, priceOverride: "3000", finalPriceBeforeUpgrades: true } };
+    const upgradePrice = calculateDoc({ ...interiorDoc, lines: interiorDoc.lines.map((l) => (l.id === upgradeId ? { ...l, optionSelected: true } : l)) }).totals.selectedOptionsPrice;
+    expect(upgradePrice.gt(0)).toBe(true);
+    expect(proposalTotals(priced, []).price).toBe("3000.00");
+    expect(proposalTotals(priced, [upgradeId]).price).toBe(upgradePrice.plus(3000).toFixed(2));
+    // A proposal sent before the rule existed keeps what the customer was shown.
+    const legacy = { ...interiorDoc, settings: { ...interiorDoc.settings, priceOverride: "3000" } };
+    expect(proposalTotals(legacy, [upgradeId]).price).toBe("3000.00");
+  });
+
   it("hidden cost items still count in the totals", () => {
     const without = { ...interiorDoc, costItems: interiorDoc.costItems.slice(1) };
     expect(Number(proposalTotals(interiorDoc, []).price)).toBeGreaterThan(Number(proposalTotals(without, []).price));

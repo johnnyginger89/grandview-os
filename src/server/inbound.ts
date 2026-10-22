@@ -1,6 +1,6 @@
 import "server-only";
 import { timingSafeEqual } from "node:crypto";
-import type { LeadInput } from "./leads";
+import type { InboundLead } from "@/lib/pipeline/lead-input";
 
 export type WebhookSource = "youcanbookme" | "form";
 const SECRET_VAR: Record<WebhookSource, string> = { youcanbookme: "YCBM_WEBHOOK_SECRET", form: "FORM_WEBHOOK_SECRET" };
@@ -36,7 +36,7 @@ function splitList(v: string | null): string[] {
 }
 
 /** Map a form or booking payload with flexible field names onto a lead. */
-export function payloadToLead(p: Payload): LeadInput {
+export function payloadToLead(p: Payload): InboundLead {
   let firstName = pick(p, "firstName", "fname", "first", "first_name");
   let lastName = pick(p, "lastName", "lname", "last", "last_name", "surname");
   const full = pick(p, "name", "fullName", "full_name");
@@ -60,10 +60,50 @@ export function payloadToLead(p: Payload): LeadInput {
     description: pick(p, "description", "message", "projectDescription", "comments", "details", "tellUsAboutYourProject"),
     timeline: pick(p, "timeline", "timeframe", "when"),
     leadSource: pick(p, "leadSource", "source", "howDidYouHear", "howDidYouHearAboutUs", "referral"),
-    visitAt: pick(p, "visitAt", "startTime", "start", "appointment", "bookingStart", "datetime") as string | null,
+    visitAt: pick(p, "visitAt", "startTime", "start", "appointment", "bookingStart", "datetime"),
     bookingRef: pick(p, "bookingRef", "bookingId", "reference", "ref", "id"),
     bookingManageUrl: pick(p, "manageUrl", "manageBookingUrl", "bookingManageUrl", "cancelUrl", "rescheduleUrl"),
   };
+}
+
+/** The YouCanBook.me event: "booked" unless the template says otherwise ("cancelled", "rescheduled"). */
+export function bookingEvent(p: Payload): string {
+  return (pick(p, "event", "action", "type") ?? "booked").toLowerCase();
+}
+
+/**
+ * Key that makes a resent booking event harmless. A booking can be rescheduled many
+ * times, so a reschedule includes the new time and each change is processed once.
+ */
+export function bookingKey(p: Payload): string | null {
+  const lead = payloadToLead(p);
+  const event = bookingEvent(p);
+  return lead.bookingRef ? [lead.bookingRef, event, event.includes("resched") ? (lead.visitAt ?? "") : ""].join(":") : null;
+}
+
+/**
+ * A website form body: JSON or a normal form post. A body that can't be read is kept
+ * as text, so it shows under "Couldn't import" instead of being lost.
+ */
+export async function readFormBody(req: Request): Promise<Payload> {
+  const type = (req.headers.get("content-type") ?? "").toLowerCase();
+  if (type.includes("multipart/form-data")) {
+    try {
+      return Object.fromEntries([...(await req.formData()).entries()].map(([k, v]) => [k, typeof v === "string" ? v : v.name]));
+    } catch {
+      return { unparseable: "A form upload that couldn't be read." };
+    }
+  }
+  const text = await req.text();
+  if (type.includes("application/x-www-form-urlencoded")) return Object.fromEntries(new URLSearchParams(text));
+  return parseLenientJsonObject(text) ?? { unparseable: text.slice(0, 20_000) };
+}
+
+/** A stored payload that was kept as text because it couldn't be read. */
+export function unreadableText(stored: unknown): string | null {
+  if (!stored || typeof stored !== "object" || Array.isArray(stored)) return null;
+  const p = stored as Payload;
+  return typeof p.unparseable === "string" && Object.keys(p).length === 1 ? p.unparseable : null;
 }
 
 /**

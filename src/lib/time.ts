@@ -4,8 +4,41 @@
  */
 export const BUSINESS_TZ = "America/Vancouver";
 
-/** Minutes the zone is ahead of UTC at the given instant (Vancouver: -420 or -480). */
+/**
+ * British Columbia stays on UTC−7 all year and doesn't fall back on 2026-11-01
+ * (tz database 2026b). Node builds, browsers and servers with older zone data would
+ * show every time from then on an hour early, so on those we use a fixed UTC−7 zone
+ * from that moment. Runtimes with current data use America/Vancouver as is.
+ */
+const BC_STAYS_ON_UTC_MINUS_7 = Date.UTC(2026, 10, 1, 9);
+const FIXED_UTC_MINUS_7 = "Etc/GMT+7"; // POSIX sign: this is UTC−7
+let staleBcData: boolean | undefined;
+
+function hasStaleBcData(): boolean {
+  // Mid-January 2027 is −8 only in zone data from before the change.
+  staleBcData ??= intlOffsetMinutes(new Date(Date.UTC(2027, 0, 15, 12)), BUSINESS_TZ) === -480;
+  return staleBcData;
+}
+
+/** Tests only: pretend the runtime's zone data is outdated (true), current (false) or detect it (undefined). */
+export function setStaleBcDataForTests(value: boolean | undefined) {
+  staleBcData = value;
+}
+
+/** The zone to hand to Intl for an instant in Grandview's local time. */
+export function businessZone(at: Date | number | string = Date.now()): string {
+  const ms = at instanceof Date ? at.getTime() : typeof at === "string" ? Date.parse(at) : at;
+  return ms >= BC_STAYS_ON_UTC_MINUS_7 && hasStaleBcData() ? FIXED_UTC_MINUS_7 : BUSINESS_TZ;
+}
+
+const zoneFor = (instant: Date, timeZone: string) => (timeZone === BUSINESS_TZ ? businessZone(instant) : timeZone);
+
+/** Minutes the zone is ahead of UTC at the given instant (Vancouver: -420, or -480 before 2026). */
 export function zoneOffsetMinutes(instant: Date, timeZone = BUSINESS_TZ): number {
+  return intlOffsetMinutes(instant, zoneFor(instant, timeZone));
+}
+
+function intlOffsetMinutes(instant: Date, timeZone: string): number {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone,
     hourCycle: "h23",
@@ -96,5 +129,5 @@ export function startOfBusinessMonth(now = new Date(), timeZone = BUSINESS_TZ): 
 
 /** Hour of day (0–23) in the business time zone. */
 export function businessHour(now = new Date(), timeZone = BUSINESS_TZ): number {
-  return Number(new Intl.DateTimeFormat("en-US", { timeZone, hour: "2-digit", hourCycle: "h23" }).format(now));
+  return Number(new Intl.DateTimeFormat("en-US", { timeZone: zoneFor(now, timeZone), hour: "2-digit", hourCycle: "h23" }).format(now));
 }

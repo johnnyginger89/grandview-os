@@ -25,6 +25,10 @@ describe("production configuration check", () => {
     expect(checkEnv({ ...good, BETTER_AUTH_URL: "http://example.com" } as NodeJS.ProcessEnv).ok).toBe(false);
     expect(checkEnv({ ...good, ALLOW_DEV_MODE: "1" } as NodeJS.ProcessEnv).ok).toBe(false);
   });
+  it("warns when the scheduled jobs have no secret", () => {
+    expect(checkEnv(good).warnings.join(" ")).toMatch(/CRON_SECRET/);
+    expect(checkEnv({ ...good, CRON_SECRET: "c".repeat(48) } as NodeJS.ProcessEnv).warnings.join(" ")).not.toMatch(/CRON_SECRET/);
+  });
   it("only warns outside production", () => {
     const r = checkEnv({ NODE_ENV: "production" } as NodeJS.ProcessEnv);
     expect(r.ok).toBe(true);

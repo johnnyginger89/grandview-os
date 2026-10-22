@@ -71,6 +71,8 @@ test.describe("job chat (booked painter)", () => {
     await page.getByRole("article").filter({ hasText: CREW }).getByRole("link", { name: "Job chat" }).click();
     await expect(page).toHaveURL(new RegExp(`${chatPath}$`));
     await expect(log(page).getByText(HELLO)).toBeVisible();
+    // Crews see who is in the chat, never the list of every other staff member.
+    expect(await page.content()).not.toContain("Estimator (Dev)");
 
     await page.getByRole("button", { name: "Post today's daily update" }).click();
     await page.getByLabel("How far along").selectOption("60");

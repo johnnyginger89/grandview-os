@@ -2,9 +2,12 @@
  * A stand-in for the Drizzle `db` in unit tests. Every query chain records its
  * operation, base table and method arguments, and resolves to whatever the test's
  * resolver returns (by default, the next queued result for "op:table", else []).
- * Transactions run their callback with the same fake.
+ * Relational queries (`db.query.<table>.findFirst/findMany`) are selects on that
+ * table; findFirst resolves to the first row. Transactions run their callback with
+ * the same fake.
  */
 import { getTableName, isTable } from "drizzle-orm";
+import * as schema from "@/db/schema";
 
 export type FakeOp = "select" | "insert" | "update" | "delete" | "execute";
 
@@ -53,6 +56,18 @@ export function createFakeDb() {
     return proxy;
   }
 
+  function relational(key: string) {
+    const table = tableName((schema as Record<string, unknown>)[key]) ?? key;
+    const run = (method: "findFirst" | "findMany") => (opts?: unknown) => {
+      const call: FakeCall = { op: "select", table, args: { [method]: [opts] } };
+      calls.push(call);
+      return Promise.resolve()
+        .then(() => resolve(call))
+        .then((rows) => (method === "findFirst" && Array.isArray(rows) ? rows[0] : rows));
+    };
+    return { findFirst: run("findFirst"), findMany: run("findMany") };
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db: any = {
     select: () => chain("select"),
@@ -62,6 +77,7 @@ export function createFakeDb() {
     delete: (t: unknown) => chain("delete", t),
     execute: () => chain("execute"),
     transaction: async (fn: (tx: unknown) => unknown) => fn(db),
+    query: new Proxy({}, { get: (_t, key) => (typeof key === "symbol" ? undefined : relational(key)) }),
   };
 
   return {

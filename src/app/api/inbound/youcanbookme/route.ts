@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { finishInbound, ingestLead, moveStage, recordInbound, stageByKey } from "@/server/leads";
-import { parseLenientJsonObject, payloadToLead, pick, verifyWebhookSecret } from "@/server/inbound";
-import { db } from "@/db";
+import { verifyWebhookSecret } from "@/server/inbound";
+import { receiveBooking } from "@/server/inbound-events";
 
 /**
  * YouCanBook.me webhook. Configure a webhook notification in YouCanBook.me
@@ -10,39 +9,6 @@ import { db } from "@/db";
  */
 export async function POST(req: Request) {
   if (!verifyWebhookSecret(req, "youcanbookme")) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const text = await req.text();
-  const parsed = parseLenientJsonObject(text);
-  if (!parsed) {
-    await recordInbound("youcanbookme", null, { unparseable: text.slice(0, 20_000) });
-    return NextResponse.json({ error: "invalid JSON" }, { status: 400 });
-  }
-  const payload: Record<string, unknown> = parsed;
-  const lead = payloadToLead(payload);
-  const event = (pick(payload, "event", "action", "type") ?? "booked").toLowerCase();
-  const ref = lead.bookingRef ? String(lead.bookingRef) : null;
-  // A booking can be rescheduled many times; include the new time so each change is processed once.
-  const dedupeKey = ref ? [ref, event, event.includes("resched") ? (lead.visitAt ?? "") : ""].join(":") : null;
-  const inbound = await recordInbound("youcanbookme", dedupeKey, payload);
-  if (inbound.duplicate) return NextResponse.json({ ok: true, duplicate: true, opportunityId: inbound.opportunityId });
-
-  try {
-    if (event.includes("cancel")) {
-      const opp = ref
-        ? await db.query.opportunities.findFirst({ where: (t, { and, eq }) => and(eq(t.externalSource, "youcanbookme"), eq(t.externalRef, ref)) })
-        : undefined;
-      if (opp) {
-        const lost = await stageByKey("lost");
-        await moveStage(opp.id, lost.id, null, "Booking cancelled");
-      }
-      await finishInbound(inbound.id, { opportunityId: opp?.id });
-      return NextResponse.json({ ok: true, cancelled: !!opp });
-    }
-    const result = await ingestLead(lead, { stageKey: "estimate_booked", channel: "youcanbookme", externalSource: "youcanbookme", externalRef: ref });
-    await finishInbound(inbound.id, { opportunityId: result.opportunityId });
-    return NextResponse.json({ ok: true, ...result });
-  } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
-    await finishInbound(inbound.id, { error: message });
-    return NextResponse.json({ error: "could not process booking" }, { status: 422 });
-  }
+  const r = await receiveBooking(await req.text());
+  return r.ok ? NextResponse.json(r) : NextResponse.json({ error: r.error }, { status: r.unreadable ? 400 : 422 });
 }

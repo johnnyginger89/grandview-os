@@ -12,13 +12,10 @@ export interface ProposalRow {
   /** online, phone, email, in_person or paper. */
   acceptedMethod: string | null;
   declineReason: string | null;
-}
-
-export interface ProposalOption {
-  id: string;
-  title: string;
-  /** Formatted, before GST. */
-  price: string;
+  /** End of the last day the customer can accept it. */
+  expiresAt: string | null;
+  /** Still sent or viewed, but past expiresAt (worked out on the server). */
+  expired: boolean;
 }
 
 /** Everything the editor needs for sending and the sent list. */
@@ -28,7 +25,6 @@ export interface ProposalProps {
   /** From the "Sending a proposal" template, with this customer's details filled in. */
   emailDraft: { subject: string; body: string };
   acceptName: string;
-  options: ProposalOption[];
   customerName: string;
   followUps: { count: number; lastAt: string | null };
   canSend: boolean;

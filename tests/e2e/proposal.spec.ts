@@ -1,9 +1,78 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
+import { backdateProposal, hasDatabase, NEEDS_DATABASE } from "./db";
 import { statePath } from "./helpers";
-import { addRoom, startBlankEstimate, writeInternalNote } from "./sales";
+import { addRoom, draftThreeThousandDollarEstimate, startBlankEstimate, writeInternalNote } from "./sales";
+
+/** Internal and cost data that must never reach a customer's page. */
+const SECRETS = ["laborCostPerHour", "billingRatePerHour", "targetMargin", "internalNotes", "rateSnapshot", "pricePerGallon", "materialMarkupPct", "minimumJobPrice", "prepFactor", "overrideHours", "markupPct", "productionRate", "SECRET-INTERNAL"];
+
+/** A date as the app prints it: "Nov 21, 2026" or "November 21, 2026". */
+const DAY = String.raw`[A-Z][a-z]+\.? \d{1,2}, \d{4}`;
+/** "November 21, 2026" and "Nov 21, 2026" are the same day. */
+const sameDay = (a: string, b: string) => a.slice(0, 3) === b.slice(0, 3) && a.replace(/^\D+/, "") === b.replace(/^\D+/, "");
+/** The estimate header's "· valid until <date>", shown while the open proposal can be accepted. */
+const validityInHeader = (page: Page) => page.getByText(new RegExp(`· valid until ${DAY}`));
+
+/** In the Send dialog: link only (no email), then close. Returns the link. */
+async function createLink(dialog: Locator) {
+  await dialog.getByText("Email it to the customer").click();
+  await dialog.getByRole("button", { name: "Create link" }).click();
+  const link = await dialog.getByLabel("Proposal link").inputValue();
+  await dialog.getByRole("button", { name: "Done" }).click();
+  return link;
+}
+
+async function signAs(cp: Page, name: string) {
+  await cp.getByLabel("Full name").fill(name);
+  const pad = cp.getByLabel(/Signature pad/);
+  await pad.scrollIntoViewIfNeeded();
+  const box = (await pad.boundingBox())!;
+  await cp.mouse.move(box.x + 20, box.y + 60);
+  await cp.mouse.down();
+  for (let i = 1; i <= 12; i++) await cp.mouse.move(box.x + 20 + i * 18, box.y + 60 + (i % 2 ? -20 : 20));
+  await cp.mouse.up();
+  await cp.getByText(/I agree to the Terms and Conditions/).click();
+  await cp.getByRole("button", { name: /^Accept – \$/ }).click();
+  await expect(cp.getByText("Accepted – thank you!").first()).toBeVisible();
+}
 
 test.describe("proposal", () => {
   test.use({ storageState: statePath("owner") });
+
+  test("sign now on this device: the customer signs on the office's screen, exactly as at home", async ({ page }) => {
+    test.slow(); // builds, sends and signs a job, then checks four pages
+    const customerName = await draftThreeThousandDollarEstimate(page, { internalNote: "SECRET-INTERNAL note for the office" });
+    const estimateUrl = page.url();
+    await page.getByRole("button", { name: "More ways to send" }).click();
+    const [tab] = await Promise.all([page.waitForEvent("popup"), page.getByRole("button", { name: "Sign now on this device" }).click()]);
+    await tab.waitForURL(/\/share\/p\/[A-Za-z0-9_-]{20,}\?sign=device$/);
+
+    // This browser is signed in, yet it shows the customer's page with signing switched on.
+    await expect(tab.getByRole("heading", { level: 1 })).toBeVisible();
+    await expect(tab.getByText(/Staff preview/)).toHaveCount(0);
+    await expect(tab.getByText(/Signing is disabled/)).toHaveCount(0);
+    await expect(tab.getByLabel("Full name")).toBeEnabled();
+    const html = await (await tab.request.get(tab.url())).text();
+    for (const secret of SECRETS) expect(html, `the customer's page must not contain ${secret}`).not.toContain(secret);
+
+    // Opened normally, the same link is still the read-only staff preview.
+    const plain = await page.context().newPage();
+    await plain.goto(tab.url().replace("?sign=device", ""));
+    await expect(plain.getByText("Staff preview: you're signed in, so this visit isn't counted as a customer view.")).toBeVisible();
+    await expect(plain.getByText("Signing is disabled while you're signed in as staff.")).toBeVisible();
+    await expect(plain.getByLabel("Full name")).toBeDisabled();
+    await plain.close();
+
+    await signAs(tab, "Device Customer [TEST DATA]");
+    await tab.close();
+
+    await page.goto(estimateUrl);
+    await expect(page.getByText("Accepted – locked")).toBeVisible();
+    await expect(page.locator("#proposals").getByText(/Signed by Device Customer \[TEST DATA\]/)).toBeVisible();
+    // The timeline records that it was signed in person, and on whose device.
+    await page.getByRole("link", { name: customerName }).first().click();
+    await expect(page.getByText(/accepted and signed by Device Customer \[TEST DATA\] in person, on Owner \(Dev\)'s device/)).toBeVisible();
+  });
 
   test("send, customer picks an upgrade and signs, project is created", async ({ page, browser }) => {
     // Build a small estimate
@@ -44,7 +113,7 @@ test.describe("proposal", () => {
     const cp = await customer.newPage();
     const res = await cp.goto(link);
     const html = (await res?.text()) ?? "";
-    for (const secret of ["laborCostPerHour", "billingRatePerHour", "targetMargin", "internalNotes", "rateSnapshot", "pricePerGallon", "materialMarkupPct", "minimumJobPrice", "prepFactor", "overrideHours", "markupPct", "productionRate", "SECRET-INTERNAL"]) {
+    for (const secret of SECRETS) {
       expect(html, `public page must not contain ${secret}`).not.toContain(secret);
     }
     await expect(cp.getByRole("heading", { level: 1 })).toContainText(/it's what's inside that counts/i);
@@ -59,18 +128,7 @@ test.describe("proposal", () => {
     await expect(cp.getByTestId("grand-total")).not.toHaveText(before);
     await expect(cp.getByText("Added", { exact: true })).toBeVisible();
 
-    // Sign
-    await cp.getByLabel("Full name").fill("Pat Customer");
-    const pad = cp.getByLabel(/Signature pad/);
-    await pad.scrollIntoViewIfNeeded();
-    const box = (await pad.boundingBox())!;
-    await cp.mouse.move(box.x + 20, box.y + 60);
-    await cp.mouse.down();
-    for (let i = 1; i <= 12; i++) await cp.mouse.move(box.x + 20 + i * 18, box.y + 60 + (i % 2 ? -20 : 20));
-    await cp.mouse.up();
-    await cp.getByText(/I agree to the Terms and Conditions/).click();
-    await cp.getByRole("button", { name: /^Accept – \$/ }).click();
-    await expect(cp.getByText("Accepted – thank you!").first()).toBeVisible();
+    await signAs(cp, "Pat Customer");
     await customer.close();
 
     // Staff side: project created, estimate locked
@@ -80,6 +138,58 @@ test.describe("proposal", () => {
     await page.getByText(/job #\d+ was created/).click();
     await expect(page.getByRole("heading", { name: /Proposal Test/ })).toBeVisible();
     await expect(page.getByText("Pat Customer")).toBeVisible();
+  });
+
+  test("a quote is valid from the day it's sent: the email, the estimate and the customer's copy agree", async ({ page, browser }) => {
+    await draftThreeThousandDollarEstimate(page);
+    const header = validityInHeader(page);
+    await expect(header, "a draft has no date yet").toHaveCount(0);
+
+    await page.getByRole("button", { name: "Send proposal" }).click();
+    const send = page.getByRole("dialog", { name: "Send proposal" });
+    const emailed = new RegExp(`This proposal is valid until (${DAY})\\.`).exec(await send.getByLabel("Email", { exact: true }).inputValue())?.[1];
+    expect(emailed, "the email states the date").toBeTruthy();
+    const link = await createLink(send);
+
+    const shown = new RegExp(`valid until (${DAY})`).exec(await header.innerText())![1];
+    expect(sameDay(emailed!, shown), `${emailed} / ${shown}`).toBe(true);
+    await expect(page.locator("#proposals").getByText(`Valid until ${shown}`)).toBeVisible();
+    const customer = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+    const cp = await customer.newPage();
+    await cp.goto(link);
+    await expect(cp.locator("#your-project").getByText(`Valid until ${shown}`)).toBeVisible();
+    await customer.close();
+  });
+
+  test("an expired proposal is flagged and can be sent again", async ({ page, browser }) => {
+    test.skip(!hasDatabase(), NEEDS_DATABASE);
+    await draftThreeThousandDollarEstimate(page);
+    await page.getByRole("button", { name: "Send proposal" }).click();
+    const link = await createLink(page.getByRole("dialog", { name: "Send proposal" }));
+    const header = validityInHeader(page);
+    const fromToday = new RegExp(`valid until (${DAY})`).exec(await header.innerText())![1];
+
+    // Time passes: the customer's link says so, and the estimate offers a fresh proposal.
+    await backdateProposal(link, { expired: true });
+    const customer = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+    const cp = await customer.newPage();
+    await cp.goto(link);
+    await expect(cp.getByText("This proposal has expired.")).toBeVisible();
+    await page.reload();
+    const flag = page.getByRole("region", { name: "Expired proposal" });
+    await expect(flag).toContainText(new RegExp(`Expired on ${DAY}\\. The customer can no longer accept this proposal\\.`));
+    await expect(page.locator("#proposals").getByText("expired", { exact: true })).toBeVisible();
+    await expect(header).toHaveCount(0);
+
+    await flag.getByRole("button", { name: "Send updated proposal" }).click();
+    const fresh = await createLink(page.getByRole("dialog", { name: "Send updated proposal" }));
+    expect(fresh).not.toBe(link);
+    await expect(flag).toBeHidden();
+    // Counted from today again, not from the first send.
+    await expect(header).toHaveText(new RegExp(`· valid until ${fromToday}`));
+    await cp.goto(fresh);
+    await expect(cp.getByRole("button", { name: /^Accept – \$/ })).toBeVisible();
+    await customer.close();
   });
 
   test("painters cannot see projects", async ({ browser }) => {

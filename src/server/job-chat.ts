@@ -10,6 +10,7 @@ import { outer } from "@/db/sql";
 import { can, ROLE_LABELS } from "@/lib/authz/permissions";
 import { dayRangeInstants, todayIso, type IsoDate } from "@/lib/calendar-date";
 import { calendarsFor, isWorkingDay } from "@/lib/schedule/working-days";
+import { businessHour } from "@/lib/time";
 import { audit } from "./audit";
 import { notify, notifyCollapsed, notifyLater } from "./notifications";
 import { getScheduleSettings } from "./schedule-settings";
@@ -466,7 +467,7 @@ const REMINDER_SETTING = "daily_update_reminders";
 
 /** The hour (0–23) in Vancouver. */
 export function vancouverHour(now: Date): number {
-  return Number(new Intl.DateTimeFormat("en-CA", { timeZone: "America/Vancouver", hour: "numeric", hourCycle: "h23" }).format(now));
+  return businessHour(now);
 }
 
 /**

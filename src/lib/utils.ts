@@ -1,15 +1,15 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+import { businessZone } from "./time";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-const TZ = "America/Vancouver";
-
 export function formatDate(value: Date | string | null | undefined, opts: Intl.DateTimeFormatOptions = { dateStyle: "medium" }) {
   if (!value) return "";
-  return new Intl.DateTimeFormat("en-CA", { timeZone: TZ, ...opts }).format(new Date(value));
+  const at = new Date(value);
+  return new Intl.DateTimeFormat("en-CA", { timeZone: businessZone(at), ...opts }).format(at);
 }
 
 export function formatDateTime(value: Date | string | null | undefined) {

@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { backdateProposal, hasDatabase, NEEDS_DATABASE } from "./db";
 import { statePath } from "./helpers";
 import { draftThreeThousandDollarEstimate } from "./sales";
 
@@ -43,6 +44,31 @@ test("follow up on a sent proposal from the estimate", async ({ page }) => {
 test("Home lists proposals to chase", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("region", { name: "Proposals to follow up" })).toBeVisible();
+});
+
+test("an expired proposal drops off Home and isn't offered for a follow-up", async ({ page }) => {
+  test.skip(!hasDatabase(), NEEDS_DATABASE);
+  const name = await draftThreeThousandDollarEstimate(page);
+  const estimate = page.url();
+  await page.getByRole("button", { name: "Send proposal" }).click();
+  await page.getByRole("button", { name: "Send proposal" }).last().click();
+  const link = await page.getByLabel("Proposal link").inputValue();
+  await page.getByRole("button", { name: "Done" }).click();
+
+  // Sent weeks ago and still valid: time to chase (the oldest come first on Home).
+  await backdateProposal(link, { sentDaysAgo: 29 });
+  await page.goto("/");
+  const chase = page.getByRole("region", { name: "Proposals to follow up" });
+  await expect(chase.getByText(name)).toBeVisible();
+
+  // Once it has expired the customer can't accept it, so there's nothing to chase.
+  await backdateProposal(link, { expired: true });
+  await page.reload();
+  await expect(chase).toBeVisible();
+  await expect(chase.getByText(name)).toHaveCount(0);
+  await page.goto(estimate);
+  await expect(page.getByRole("region", { name: "Expired proposal" })).toBeVisible();
+  await expect(page.locator("#proposals").getByRole("button", { name: "Follow up" })).toHaveCount(0);
 });
 
 test("crew can't load a follow-up draft", async ({ browser }) => {

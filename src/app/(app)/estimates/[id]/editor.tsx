@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import Link from "next/link";
 import { Ellipsis, Eye, History, Plus, Trash2, Undo2 } from "lucide-react";
 import { Popover, popoverItem } from "@/components/app-shell/popover";
@@ -13,14 +13,18 @@ import { cn, formatDate, formatDateTime } from "@/lib/utils";
 import { STATUS_TONE } from "../status";
 import { createRevisionAction, duplicateAction, restoreRevisionAction, saveEstimateAction, saveTemplateAction, setStatusAction, templatePartsAction } from "../actions";
 import { AddRoom, type NewSurface } from "./add-room";
+import { createAutosave, type WithSaved } from "./autosave";
 import { chip, NumInput, Section } from "./editor-parts";
 import type { FactorOption, MaterialOption, RateOption, Revision } from "./editor-types";
+import { useHideCosts } from "./hide-costs";
 import type { ProposalProps } from "./proposal-types";
 import { RoomCard, surfaceGroup, type ColourChoices, type RoomApi } from "./room-card";
-import { proposalStatusText, SendControls, SentProposals } from "./send-proposal";
+import { ExpiredNotice, proposalStatusText, SendControls, SentProposals, validUntilText } from "./send-proposal";
+import { changedSinceSent } from "./sent-notice";
 import { EstimateBar, TotalsPanel, type TotalsProps } from "./totals-panel";
 
-type SaveState = "saved" | "dirty" | "saving" | "error";
+type SaveState = "saved" | "dirty" | "saving" | "error" | "conflict";
+const SAVE_TEXT: Record<SaveState, string> = { saved: "All changes saved", dirty: "Unsaved changes", saving: "Saving…", error: "Save failed", conflict: "Not saved" };
 
 const uid = () => crypto.randomUUID();
 
@@ -52,7 +56,7 @@ export function EstimateEditor({
   materials,
   proposals,
 }: {
-  estimate: { id: string; number: number; status: string; revision: number; customerId: string; customerName: string; address: string | null; opportunityId: string | null; validUntil: string | null; updatedAt: string; project: { id: string; number: number | null } | null };
+  estimate: { id: string; number: number; status: string; revision: number; customerId: string; customerName: string; address: string | null; opportunityId: string | null; updatedAt: string; project: { id: string; number: number | null } | null };
   initialDoc: EstimateDoc;
   rates: RateOption[];
   factors: FactorOption[];
@@ -73,21 +77,25 @@ export function EstimateEditor({
 }) {
   const [doc, setDocState] = useState<EstimateDoc>(initialDoc);
   const [undoStack, setUndoStack] = useState<{ doc: EstimateDoc; label: string }[]>([]);
-  // What the server has; anything else on screen is unsaved.
-  const [savedDoc, setSavedDoc] = useState<EstimateDoc>(initialDoc);
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
+  // Saves carry the version this screen loaded, so a stale tab or phone can't overwrite newer work.
+  const [saver] = useState(() => createAutosave<EstimateDoc>({ doc: initialDoc, version: estimate.updatedAt, save: (d, version) => saveEstimateAction(estimate.id, d, version) }));
+  const autosave = useSyncExternalStore(saver.subscribe, saver.getState, saver.getState);
   const [toast, setToast] = useState<string | null>(null);
   const [openRooms, setOpenRooms] = useState<Set<string>>(() => new Set(initialDoc.areas.length ? [initialDoc.areas[0].id] : []));
   const [expandedLine, setExpandedLine] = useState<string | null>(null);
   const [crewSize, setCrewSize] = useState(3);
   const [addingRoom, setAddingRoom] = useState(canEdit && initialDoc.areas.length === 0 && initialDoc.lines.length === 0);
   const [sheet, setSheet] = useState<"totals" | "versions" | "template" | null>(null);
-  const docRef = useRef(doc);
-  useEffect(() => {
-    docRef.current = doc;
-  }, [doc]);
-  const saveState: SaveState = saveError ? "error" : saving ? "saving" : doc !== savedDoc ? "dirty" : "saved";
+  const [hideCosts] = useHideCosts();
+  // Compared here rather than taken from the saver, so an edit shows as unsaved in the same render.
+  const dirty = canEdit && doc !== autosave.saved;
+  const saveState: SaveState = autosave.conflict ? "conflict" : autosave.error ? "error" : autosave.saving ? "saving" : dirty ? "dirty" : "saved";
+  // Set when the user chooses to reload, so the browser doesn't ask about leaving unsaved changes.
+  const reloading = useRef(false);
+  const reload = () => {
+    reloading.current = true;
+    window.location.reload();
+  };
 
   const defaultFactor = useCallback((kind: string) => factors.find((f) => f.kind === kind && f.isDefault)?.value ?? "1", [factors]);
 
@@ -130,29 +138,18 @@ export function EstimateEditor({
     return () => clearTimeout(t);
   }, [toast]);
 
-  // Debounced autosave.
+  // Autosave, a moment after the last change.
   useEffect(() => {
-    if (!canEdit || doc === savedDoc) return;
-    const t = setTimeout(async () => {
-      const sending = docRef.current;
-      setSaving(true);
-      const r = await saveEstimateAction(estimate.id, sending);
-      setSaving(false);
-      if (r.ok) {
-        setSavedDoc(sending);
-        setSaveError(null);
-      } else setSaveError(r.error);
-    }, 1200);
-    return () => clearTimeout(t);
-  }, [doc, savedDoc, canEdit, estimate.id]);
+    if (canEdit) saver.edit(doc);
+  }, [saver, doc, canEdit]);
 
   useEffect(() => {
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (saveState === "dirty" || saveState === "saving") e.preventDefault();
+      if (!reloading.current && (dirty || autosave.saving)) e.preventDefault();
     };
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [saveState]);
+  }, [dirty, autosave.saving]);
 
   const calc = useMemo((): { result: EstimateResult | null; error: string | null } => {
     try {
@@ -281,6 +278,8 @@ export function EstimateEditor({
 
   // ---- rendering -------------------------------------------------------
   const ro = !canEdit;
+  // Logins without costing never see costs; "Hide costs" hides them from everyone else.
+  const costs = showCosting && !hideCosts;
   const standard = proposalText[doc.jobType] ?? proposalText.default ?? { preparation: "", areasExcluded: "" };
   const t = result?.totals;
   const staleRates = doc.lines.filter((l) => {
@@ -293,6 +292,10 @@ export function EstimateEditor({
   const general = doc.lines.filter((l) => !l.areaId);
   const lastHeight = [...doc.areas].reverse().find((a) => a.kind === "room" && a.height)?.height ?? null;
   const statusText = proposalStatusText(proposals.rows);
+  // From the open proposal: a draft has no date until it's sent.
+  const validity = validUntilText(proposals.rows);
+  const sentOn = changedSinceSent(estimate.status, proposals.rows, { version: autosave.version, dirty });
+  const withSaved: WithSaved = saver.withSaved;
   const totalsProps: TotalsProps = {
     doc,
     result,
@@ -353,7 +356,7 @@ export function EstimateEditor({
           <p className="mt-1 text-sm text-muted">
             <Link href={`/customers/${estimate.customerId}`} className="hover:text-text hover:underline">{estimate.customerName}</Link>
             {estimate.address ? ` · ${estimate.address}` : ""}
-            {estimate.validUntil ? ` · valid until ${formatDate(estimate.validUntil)}` : ""}
+            {validity ? ` · ${validity}` : ""}
             {statusText && <> · <a href="#proposals" className="text-brand hover:underline">{statusText}</a></>}
           </p>
           {estimate.project && (
@@ -363,21 +366,35 @@ export function EstimateEditor({
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <span className={cn("text-xs", saveState === "error" ? "text-danger" : "text-subtle")} role="status">
-            {ro ? (estimate.status === "accepted" ? "Accepted – locked" : "Read only") : saveState === "saved" ? "All changes saved" : saveState === "saving" ? "Saving…" : saveState === "dirty" ? "Unsaved changes" : "Save failed"}
+          <span className={cn("text-xs", saveState === "error" || saveState === "conflict" ? "text-danger" : "text-subtle")} role="status">
+            {ro ? (estimate.status === "accepted" ? "Accepted – locked" : "Read only") : SAVE_TEXT[saveState]}
           </span>
           {!ro && <Button size="sm" variant="ghost" disabled={!undoStack.length} onClick={undo} title="Undo (Ctrl+Z)"><Undo2 className="size-4" aria-hidden /> Undo</Button>}
           <a href={`/estimates/${estimate.id}/proposal-preview`} target="_blank" rel="noopener" className={buttonClass("secondary", "sm")}>
             <Eye className="size-4" aria-hidden /> Preview
           </a>
           <div className="hidden xl:block">
-            <SendControls estimateId={estimate.id} status={estimate.status} proposals={proposals} />
+            <SendControls estimateId={estimate.id} status={estimate.status} proposals={proposals} withSaved={withSaved} />
           </div>
-          <EstimateMenu estimateId={estimate.id} status={estimate.status} canEdit={canEdit} onVersions={() => setSheet("versions")} onSaveTemplate={() => setSheet("template")} />
+          <EstimateMenu estimateId={estimate.id} status={estimate.status} canEdit={canEdit} withSaved={withSaved} onVersions={() => setSheet("versions")} onSaveTemplate={() => setSheet("template")} />
         </div>
       </div>
-      <FormError message={saveError} />
+      <ExpiredNotice estimateId={estimate.id} proposals={proposals} withSaved={withSaved} />
+      {autosave.conflict ? (
+        // What's on screen stays put; only a reload brings in the newer copy.
+        <div role="alert" className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">
+          <span className="min-w-0 flex-1">{autosave.conflict}</span>
+          <Button size="sm" variant="secondary" onClick={reload}>Reload</Button>
+        </div>
+      ) : (
+        <FormError message={autosave.error} />
+      )}
       {calc.error && <FormError message={calc.error} />}
+      {sentOn && (
+        <p role="status" className="mb-3 rounded-md bg-warning-soft px-3 py-2 text-sm text-warning">
+          The customer still sees the version sent on {formatDate(sentOn)}. Send it again to update it.
+        </p>
+      )}
       {staleRates > 0 && !ro && (
         <p className="mb-3 rounded-md bg-warning-soft px-3 py-2 text-sm text-warning">
           {staleRates} line{staleRates > 1 ? "s use" : " uses"} an older version of a production rate. Prices stay as estimated unless you choose “Use current rate” on the line.
@@ -444,9 +461,13 @@ export function EstimateEditor({
                     <option value="subcontractor">Subcontractor</option><option value="equipment">Equipment</option><option value="material">Material</option><option value="other">Other</option>
                   </Select>
                   <Input disabled={ro} value={c.description} onChange={(e) => setCost(c.id, { description: e.target.value })} className="col-span-8 h-9 md:col-span-4" aria-label="Description" />
-                  <div className="col-span-4 md:col-span-2"><NumInput ariaLabel="Cost" disabled={ro} value={c.cost} placeholder="Cost" onCommit={(v) => setCost(c.id, { cost: v || "0" })} /></div>
-                  <div className="col-span-3 md:col-span-1"><NumInput ariaLabel="Markup %" disabled={ro} value={c.markupPct ? String(Number(c.markupPct) * 100) : ""} placeholder="mk%" onCommit={(v) => setCost(c.id, { markupPct: v ? String(Number(v) / 100) : null })} /></div>
-                  <span className="col-span-3 text-right font-medium tabular md:col-span-2">{r ? formatCAD(r.price) : "—"}</span>
+                  {costs && (
+                    <>
+                      <div className="col-span-4 md:col-span-2"><NumInput ariaLabel="Cost" disabled={ro} value={c.cost} placeholder="Cost" onCommit={(v) => setCost(c.id, { cost: v || "0" })} /></div>
+                      <div className="col-span-3 md:col-span-1"><NumInput ariaLabel="Markup %" disabled={ro} value={c.markupPct ? String(Number(c.markupPct) * 100) : ""} placeholder="mk%" onCommit={(v) => setCost(c.id, { markupPct: v ? String(Number(v) / 100) : null })} /></div>
+                    </>
+                  )}
+                  <span className={cn("text-right font-medium tabular", costs ? "col-span-3 md:col-span-2" : "col-span-10 md:col-span-5")}>{r ? formatCAD(r.price) : "—"}</span>
                   <div className="col-span-2 flex justify-end md:col-span-1">
                     {!ro && <button type="button" onClick={() => update((dd) => ({ ...dd, costItems: dd.costItems.filter((x) => x.id !== c.id) }), "Cost item removed")} className="grid size-11 place-items-center rounded-md text-subtle hover:bg-danger-soft hover:text-danger sm:size-8" aria-label="Remove cost item"><Trash2 className="size-3.5" aria-hidden /></button>}
                   </div>
@@ -461,7 +482,7 @@ export function EstimateEditor({
                 <Button size="sm" variant="ghost" onClick={() => addCostItem("other")}><Plus className="size-3.5" aria-hidden /> Other</Button>
               </div>
             )}
-            <p className="border-t border-border px-3 py-2 text-xs text-subtle">Leave markup blank to price these the same way as the rest of the estimate.</p>
+            {costs && <p className="border-t border-border px-3 py-2 text-xs text-subtle">Leave markup blank to price these the same way as the rest of the estimate.</p>}
           </Section>
 
           <Section title="Options the customer can add" summary={options.length ? `${options.length} · ${formatCAD(optionsValue)}` : "none yet"} defaultOpen={options.length > 0}>
@@ -538,13 +559,13 @@ export function EstimateEditor({
         </aside>
       </div>
 
-      <EstimateBar result={result} onOpen={() => setSheet("totals")} send={<SendControls estimateId={estimate.id} status={estimate.status} proposals={proposals} compact />} />
+      <EstimateBar result={result} onOpen={() => setSheet("totals")} send={<SendControls estimateId={estimate.id} status={estimate.status} proposals={proposals} withSaved={withSaved} compact />} />
 
       <Dialog open={sheet === "totals"} onClose={() => setSheet(null)} title="Totals" className="w-[min(28rem,calc(100vw-1rem))]">
         <TotalsPanel {...totalsProps} />
       </Dialog>
       <Dialog open={sheet === "versions"} onClose={() => setSheet(null)} title={<span className="flex items-center gap-1.5"><History className="size-4" aria-hidden /> Versions</span>} className="w-[min(36rem,calc(100vw-2rem))]">
-        <Revisions estimateId={estimate.id} revisions={revisions} current={t ? { price: t.price.toFixed(2), totalCost: t.totalCost.toFixed(2), hours: t.hours.toFixed(2), grossMargin: t.grossMargin.toFixed(4) } : null} canEdit={canEdit} showCosting={showCosting} />
+        <Revisions estimateId={estimate.id} revisions={revisions} current={t ? { price: t.price.toFixed(2), totalCost: t.totalCost.toFixed(2), hours: t.hours.toFixed(2), grossMargin: t.grossMargin.toFixed(4) } : null} canEdit={canEdit} showCosting={costs} withSaved={withSaved} />
       </Dialog>
       {sheet === "template" && <SaveTemplateDialog estimateId={estimate.id} onClose={() => setSheet(null)} onSaved={() => setToast("Saved as a template")} />}
 
@@ -558,10 +579,25 @@ export function EstimateEditor({
   );
 }
 
-function EstimateMenu({ estimateId, status, canEdit, onVersions, onSaveTemplate }: { estimateId: string; status: string; canEdit: boolean; onVersions: () => void; onSaveTemplate: () => void }) {
+function EstimateMenu({
+  estimateId,
+  status,
+  canEdit,
+  withSaved,
+  onVersions,
+  onSaveTemplate,
+}: {
+  estimateId: string;
+  status: string;
+  canEdit: boolean;
+  withSaved: WithSaved;
+  onVersions: () => void;
+  onSaveTemplate: () => void;
+}) {
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const act = (fn: () => Promise<{ ok: boolean; error?: string }>) => start(async () => { const r = await fn(); setError(r.ok ? null : (r.error ?? "Failed")); });
+  const setStatus = (to: string) => act(() => withSaved((version) => setStatusAction(estimateId, to, version)));
   return (
     <div className="flex items-center gap-2">
       <Popover label="Estimate menu" align="right" buttonClassName="grid size-9 place-items-center rounded-lg border border-border-strong bg-surface text-muted hover:bg-surface-2" button={<Ellipsis className="size-4" aria-hidden />}>
@@ -570,8 +606,8 @@ function EstimateMenu({ estimateId, status, canEdit, onVersions, onSaveTemplate 
             <button type="button" className={popoverItem} disabled={pending} onClick={() => { close(); act(() => duplicateAction(estimateId)); }}>Duplicate estimate</button>
             {canEdit && <button type="button" className={popoverItem} onClick={() => { close(); onSaveTemplate(); }}>Save as template</button>}
             <button type="button" className={popoverItem} onClick={() => { close(); onVersions(); }}>Versions</button>
-            {canEdit && status === "sent" && <button type="button" className={popoverItem} disabled={pending} onClick={() => { close(); act(() => setStatusAction(estimateId, "declined")); }}>Mark declined</button>}
-            {canEdit && status !== "draft" && status !== "accepted" && <button type="button" className={popoverItem} disabled={pending} onClick={() => { close(); act(() => setStatusAction(estimateId, "draft")); }}>Back to draft</button>}
+            {canEdit && status === "sent" && <button type="button" className={popoverItem} disabled={pending} onClick={() => { close(); setStatus("declined"); }}>Mark declined</button>}
+            {canEdit && status !== "draft" && status !== "accepted" && <button type="button" className={popoverItem} disabled={pending} onClick={() => { close(); setStatus("draft"); }}>Back to draft</button>}
           </>
         )}
       </Popover>
@@ -617,16 +653,33 @@ function SaveTemplateDialog({ estimateId, onClose, onSaved }: { estimateId: stri
   );
 }
 
-function Revisions({ estimateId, revisions, current, canEdit, showCosting }: { estimateId: string; revisions: Revision[]; current: Record<string, string> | null; canEdit: boolean; showCosting: boolean }) {
+function Revisions({
+  estimateId,
+  revisions,
+  current,
+  canEdit,
+  showCosting,
+  withSaved,
+}: {
+  estimateId: string;
+  revisions: Revision[];
+  current: Record<string, string> | null;
+  canEdit: boolean;
+  showCosting: boolean;
+  withSaved: WithSaved;
+}) {
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [reason, setReason] = useState("");
+  // Both work from the saved copy, so the latest changes are saved first.
+  const saveVersion = () => start(async () => { const r = await withSaved(() => createRevisionAction(estimateId, reason)); setError(r.ok ? null : r.error); if (r.ok) setReason(""); });
+  const restore = (revision: number) => start(async () => { const res = await withSaved(() => restoreRevisionAction(estimateId, revision)); if (res.ok) window.location.reload(); else setError(res.error); });
   return (
     <div className="space-y-3">
       {canEdit && (
         <div className="flex flex-wrap items-end gap-2">
           <Field label="What changed? (optional)" className="min-w-48 flex-1"><Input value={reason} maxLength={200} onChange={(e) => setReason(e.target.value)} /></Field>
-          <Button variant="secondary" disabled={pending} onClick={() => start(async () => { const r = await createRevisionAction(estimateId, reason); setError(r.ok ? null : r.error); if (r.ok) setReason(""); })}>Save a version</Button>
+          <Button variant="secondary" disabled={pending} onClick={saveVersion}>Save a version</Button>
         </div>
       )}
       {revisions.length === 0 ? (
@@ -645,7 +698,7 @@ function Revisions({ estimateId, revisions, current, canEdit, showCosting }: { e
                   <td className="px-2 py-1.5 text-right tabular">{formatCAD(r.totals.price)}</td>
                   {showCosting && <td className="px-2 py-1.5 text-right tabular">{formatPct(r.totals.grossMargin)}</td>}
                   <td className="px-2 py-1.5 text-right tabular">{formatNum(r.totals.hours, 1)}</td>
-                  <td className="px-2 py-1.5 text-right">{canEdit && <button type="button" disabled={pending} className="min-h-8 text-brand hover:underline" onClick={() => { if (confirm(`Go back to version ${r.revision}? The current one is saved as a new version first.`)) start(async () => { const res = await restoreRevisionAction(estimateId, r.revision); if (res.ok) window.location.reload(); else setError(res.error); }); }}>Restore</button>}</td>
+                  <td className="px-2 py-1.5 text-right">{canEdit && <button type="button" disabled={pending} className="min-h-8 text-brand hover:underline" onClick={() => { if (confirm(`Go back to version ${r.revision}? The current one is saved as a new version first.`)) restore(r.revision); }}>Restore</button>}</td>
                 </tr>
               ))}
             </tbody>

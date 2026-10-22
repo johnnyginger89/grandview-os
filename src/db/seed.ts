@@ -7,7 +7,7 @@
  * --dev-users is refused unless DATABASE_URL points at localhost.
  */
 import "dotenv/config";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { isLocalDatabase } from "./connection";
 import { db } from "./index";
 import * as s from "./schema";
@@ -26,6 +26,7 @@ import {
   RATES,
 } from "./seed-data";
 import { SCHEDULE_MESSAGE_TEMPLATES } from "./seed-schedule";
+import { planStarterSeed, readSeededStarters, SEEDED_STARTERS_KEY } from "./seed-starters";
 import { ROLES } from "./schema/auth";
 
 async function seedSettings() {
@@ -71,61 +72,88 @@ async function seedFactors() {
   await db.insert(s.factorOptions).values(FACTORS.map((f, i) => ({ ...f, position: i, isDefault: !!f.isDefault })));
 }
 
+/**
+ * Starter materials and rates go in at most once per database (see seed-starters.ts), so a
+ * deploy never brings back one the owner renamed, recoded or deleted.
+ */
 async function seedMaterialsAndRates() {
-  const ids = new Map<string, string>();
-  for (const m of MATERIALS) {
-    const { key, ...values } = m;
-    const found = await db.query.materials.findFirst({ where: (t, { and, eq }) => and(eq(t.manufacturer, m.manufacturer), eq(t.name, m.name)) });
-    if (found) {
-      ids.set(key, found.id);
-      continue;
-    }
-    const [row] = await db.insert(s.materials).values({ ...values, notes: "Starter price – confirm with supplier" }).returning();
-    await db.insert(s.materialPriceHistory).values({ materialId: row.id, pricePerGallon: row.pricePerGallon });
-    ids.set(key, row.id);
-  }
+  // One transaction, one run at a time: a run that fails halfway must not leave starter rows
+  // without the record (the next run would take them for the owner's), and two deploys at once
+  // must not both insert the starters.
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext('grandview-os:seed-starters'))`);
+    const stored = await tx.query.appSettings.findFirst({ where: eq(s.appSettings.key, SEEDED_STARTERS_KEY) });
+    const recorded = readSeededStarters(stored?.value);
+    if (stored && !recorded) console.warn(`[seed] ${SEEDED_STARTERS_KEY} is unreadable; treating it as not recorded yet`);
+    const existingMaterials = await tx.select({ id: s.materials.id, manufacturer: s.materials.manufacturer, name: s.materials.name }).from(s.materials);
+    const existingRates = await tx.select({ code: s.productionRates.code, proposalGroup: s.productionRates.proposalGroup }).from(s.productionRates);
+    const plan = planStarterSeed({ materials: MATERIALS, rates: RATES }, { materials: existingMaterials, rates: existingRates }, recorded);
 
-  for (const [i, r] of RATES.entries()) {
-    const found = await db.query.productionRates.findFirst({ where: (t, { eq }) => eq(t.code, r.code) });
-    if (found) {
-      // Fill proposal groups added after the rate was seeded; never overwrite the owner's.
-      if (r.proposalGroup && !found.proposalGroup) {
-        await db
-          .update(s.productionRates)
-          .set({ proposalGroup: r.proposalGroup })
-          .where(and(eq(s.productionRates.code, r.code), isNull(s.productionRates.proposalGroup)));
+    const ids = new Map<string, string>();
+    for (const m of MATERIALS) {
+      const { key, ...values } = m;
+      if (!plan.materials.includes(key)) {
+        const found = existingMaterials.find((e) => e.manufacturer === m.manufacturer && e.name === m.name);
+        if (found) ids.set(key, found.id);
+        continue;
       }
-      continue;
+      const [row] = await tx.insert(s.materials).values({ ...values, notes: "Starter price – confirm with supplier" }).returning();
+      await tx.insert(s.materialPriceHistory).values({ materialId: row.id, pricePerGallon: row.pricePerGallon });
+      ids.set(key, row.id);
     }
-    const [rate] = await db
-      .insert(s.productionRates)
-      .values({
-        code: r.code,
-        name: r.name,
-        category: r.category,
-        unit: r.unit,
-        basis: r.basis ?? "units_per_hour",
-        dimensionSource: r.dimensionSource ?? "manual",
-        proposalGroup: r.proposalGroup ?? null,
-        position: i,
-      })
-      .returning();
-    const [version] = await db
-      .insert(s.productionRateVersions)
-      .values({
-        rateId: rate.id,
-        version: 1,
-        productionRate: r.productionRate,
-        additionalCoatFactor: r.additionalCoatFactor ?? "1",
-        defaultCoats: r.defaultCoats,
-        materialId: r.material ? ids.get(r.material) : null,
-        materialWastePct: r.material ? "0.10" : "0",
-        otherCostPerUnit: r.otherCostPerUnit ?? "0",
-        changeNote: "Starter value",
-      })
-      .returning();
-    await db.update(s.productionRates).set({ currentVersionId: version.id }).where(eq(s.productionRates.id, rate.id));
-  }
+
+    // Fill proposal groups added after the rate was seeded; never overwrite the owner's.
+    for (const { code, proposalGroup } of plan.proposalGroups) {
+      await tx
+        .update(s.productionRates)
+        .set({ proposalGroup })
+        .where(and(eq(s.productionRates.code, code), isNull(s.productionRates.proposalGroup)));
+    }
+
+    for (const [i, r] of RATES.entries()) {
+      if (!plan.rates.includes(r.code)) continue;
+      // A starter material the owner renamed or deleted can't be linked; the rate goes in without one.
+      const materialId = r.material ? (ids.get(r.material) ?? null) : null;
+      const [rate] = await tx
+        .insert(s.productionRates)
+        .values({
+          code: r.code,
+          name: r.name,
+          category: r.category,
+          unit: r.unit,
+          basis: r.basis ?? "units_per_hour",
+          dimensionSource: r.dimensionSource ?? "manual",
+          proposalGroup: r.proposalGroup ?? null,
+          position: i,
+        })
+        .returning();
+      const [version] = await tx
+        .insert(s.productionRateVersions)
+        .values({
+          rateId: rate.id,
+          version: 1,
+          productionRate: r.productionRate,
+          additionalCoatFactor: r.additionalCoatFactor ?? "1",
+          defaultCoats: r.defaultCoats,
+          materialId,
+          materialWastePct: materialId ? "0.10" : "0",
+          otherCostPerUnit: r.otherCostPerUnit ?? "0",
+          changeNote: "Starter value",
+        })
+        .returning();
+      await tx.update(s.productionRates).set({ currentVersionId: version.id }).where(eq(s.productionRates.id, rate.id));
+    }
+
+    if (plan.recordChanged) {
+      await tx
+        .insert(s.appSettings)
+        .values({ key: SEEDED_STARTERS_KEY, value: plan.seeded })
+        .onConflictDoUpdate({ target: s.appSettings.key, set: { value: plan.seeded, updatedAt: new Date() } });
+    }
+    if (plan.materials.length || plan.rates.length) {
+      console.log(`  starter materials added: ${plan.materials.length}, starter rates added: ${plan.rates.length}`);
+    }
+  });
 }
 
 async function seedTemplates() {

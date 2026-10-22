@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { ChevronUp, ClipboardCopy, Eye, EyeOff } from "lucide-react";
 import { Button, Field, Select } from "@/components/ui";
 import type { EstimateDoc } from "@/lib/estimating/document";
@@ -8,39 +8,8 @@ import { labourSummary } from "@/lib/estimating/labour-summary";
 import { paintList, paintListText } from "@/lib/estimating/paint-list";
 import { d, formatCAD, formatNum, formatPct, marginToMarkup, priceForMargin } from "@/lib/money";
 import { cn } from "@/lib/utils";
-import { NumInput, Segmented } from "./editor-parts";
-
-const HIDE_KEY = "gv.estimate.hideCosts";
-const HIDE_EVENT = "gv:hide-costs";
-
-function readHide(): boolean {
-  try {
-    return localStorage.getItem(HIDE_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
-function subscribeHide(onChange: () => void) {
-  window.addEventListener(HIDE_EVENT, onChange);
-  return () => window.removeEventListener(HIDE_EVENT, onChange);
-}
-
-/** "Hide costs" for when the customer is looking at the screen; remembered on this device. */
-export function useHideCosts(): [boolean, (v: boolean) => void] {
-  const hide = useSyncExternalStore(subscribeHide, readHide, () => false);
-  return [
-    hide,
-    (v: boolean) => {
-      try {
-        localStorage.setItem(HIDE_KEY, v ? "1" : "0");
-      } catch {
-        // Storage blocked (private window): nothing to remember it in, so it stays as it was.
-      }
-      window.dispatchEvent(new Event(HIDE_EVENT));
-    },
-  ];
-}
+import { NumInput } from "./editor-parts";
+import { useHideCosts } from "./hide-costs";
 
 function Row({ label, value, strong, large, muted }: { label: ReactNode; value: ReactNode; strong?: boolean; large?: boolean; muted?: boolean }) {
   return (
@@ -79,7 +48,10 @@ export function TotalsCard({ doc, result, showCosting, hoursPerDay, crewSize, se
       <Row label={`Deposit (${formatPct(doc.settings.depositPct, 0)})`} value={formatCAD(t.deposit)} />
       {t.minimumAdjustment.gt(0) && <Row label="Minimum job price applied" value={`+${formatCAD(t.minimumAdjustment)}`} muted />}
       {t.discount.gt(0) && <Row label="Discount" value={`−${formatCAD(t.discount)}`} muted />}
-      {!t.overrideAdjustment.isZero() && <Row label="Final price set by hand" value={formatCAD(t.overrideAdjustment)} muted />}
+      {!hideCosts && !t.overrideAdjustment.isZero() && <Row label="Final price set by hand" value={formatCAD(t.overrideAdjustment)} muted />}
+      {doc.settings.finalPriceBeforeUpgrades && doc.settings.priceOverride && t.selectedOptionsPrice.gt(0) && (
+        <Row label="Upgrades on top of the final price" value={`+${formatCAD(t.selectedOptionsPrice)}`} muted />
+      )}
       <div className="my-2 border-t border-border" />
       <Row
         label={
@@ -193,9 +165,12 @@ function LabourTab({ doc, hoursPerDay, crewSize }: { doc: EstimateDoc; hoursPerD
   );
 }
 
-function PriceTab({ doc, result, ro, setSettings, setContractType }: TotalsProps) {
+function PriceTab({ doc, result, ro, setSettings }: TotalsProps) {
   const [target, setTarget] = useState("");
   const t = result?.totals;
+  const upgradesOnTop = !!doc.settings.finalPriceBeforeUpgrades;
+  // Under the new rule the final price covers the base job only, so price it from the base job's cost.
+  const marginBase = t ? (upgradesOnTop ? t.totalCost.minus(t.selectedOptionsCost) : t.totalCost) : null;
   return (
     <div className="space-y-4 p-4 text-sm">
       <div className="grid grid-cols-2 gap-3">
@@ -217,13 +192,15 @@ function PriceTab({ doc, result, ro, setSettings, setContractType }: TotalsProps
         <Field label="Minimum job $"><NumInput ariaLabel="Minimum job price" disabled={ro} value={doc.settings.minimumJobPrice} onCommit={(v) => setSettings({ minimumJobPrice: v || "0" })} /></Field>
         <Field label="Discount $"><NumInput ariaLabel="Discount" disabled={ro} value={doc.settings.discount} placeholder="0" onCommit={(v) => setSettings({ discount: v || null })} /></Field>
         <Field label="Deposit %"><NumInput ariaLabel="Deposit percent" disabled={ro} value={String(Number(doc.settings.depositPct) * 100)} onCommit={(v) => setSettings({ depositPct: String(Math.min(100, Number(v || 0)) / 100) })} /></Field>
-        <Field label="Final price $ (before GST)" className="col-span-2" hint="Leave blank to use the calculated price."><NumInput ariaLabel="Price override" disabled={ro} value={doc.settings.priceOverride} placeholder="—" onCommit={(v) => setSettings({ priceOverride: v || null })} /></Field>
-        <div className="col-span-2">
-          <p className="mb-1.5 text-sm font-medium">Contract</p>
-          <Segmented label="Contract type" disabled={ro} value={doc.contractType} options={[{ value: "fixed_price", label: "Fixed price" }, { value: "time_and_materials", label: "Time & materials" }]} onChange={setContractType} />
-        </div>
+        <Field
+          label="Final price $ (before GST)"
+          className="col-span-2"
+          hint={upgradesOnTop ? "Leave blank to use the calculated price. Upgrades the customer picks are added on top." : "Leave blank to use the calculated price. On this older estimate it already includes any upgrades the customer picks."}
+        >
+          <NumInput ariaLabel="Price override" disabled={ro} value={doc.settings.priceOverride} placeholder="—" onCommit={(v) => setSettings({ priceOverride: v || null })} />
+        </Field>
       </div>
-      {t && (
+      {t && marginBase && (
         <div className="border-t border-border pt-3">
           <p className="mb-2 font-medium">What price gives a margin of…</p>
           <div className="flex items-center gap-2">
@@ -233,10 +210,10 @@ function PriceTab({ doc, result, ro, setSettings, setContractType }: TotalsProps
           {target && Number(target) < 95 && (
             <div className="mt-2 space-y-1 text-muted">
               <p>
-                Price needed: <span className="font-medium text-text">{formatCAD(priceForMargin(t.totalCost, Number(target) / 100))}</span> (markup {formatPct(marginToMarkup(Number(target) / 100))})
+                Price needed{upgradesOnTop && t.selectedOptionsPrice.gt(0) ? " before upgrades" : ""}: <span className="font-medium text-text">{formatCAD(priceForMargin(marginBase, Number(target) / 100))}</span> (markup {formatPct(marginToMarkup(Number(target) / 100))})
               </p>
               {!ro && (
-                <Button size="sm" variant="secondary" onClick={() => setSettings({ priceOverride: priceForMargin(t.totalCost, Number(target) / 100).toDecimalPlaces(2).toFixed(2) })}>
+                <Button size="sm" variant="secondary" onClick={() => setSettings({ priceOverride: priceForMargin(marginBase, Number(target) / 100).toDecimalPlaces(2).toFixed(2) })}>
                   Set as final price
                 </Button>
               )}

@@ -7,6 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
+import { CHECKSUMS_FILE, migrationChecksum } from "../db/migration-checksums";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const posix = (p: string) => p.split(path.sep).join("/");
@@ -371,12 +372,25 @@ const DESTRUCTIVE: [RegExp, string][] = [
   [/\bdelete\s+from\b/i, "DELETE FROM"],
 ];
 
+/** Data backfills (0006 has one) predate the review rule. */
+const DATA_CHANGE_FROM_IDX = 14;
+
+function unreviewedDataChange(sql: string): boolean {
+  if (/^--\s*reviewed backfill:/im.test(sql)) return false;
+  return /(^|;)\s*update\s+"?\w+"?\s+set\b/im.test(stripSqlComments(sql));
+}
+
 function destructiveStatements(sql: string): string[] {
   const body = stripSqlComments(sql);
   const found = DESTRUCTIVE.filter(([re]) => re.test(body)).map(([, what]) => what);
   // A NOT NULL column without a default can't be added to a table that has rows.
   for (const m of body.matchAll(/\badd\s+column\s+("?[\w]+"?)([^;]*)/gi))
     if (/\bnot\s+null\b/i.test(m[2]) && !/\bdefault\b/i.test(m[2]) && !/\bgenerated\b/i.test(m[2])) found.push(`ADD COLUMN ${m[1]} NOT NULL without DEFAULT`);
+  // Live code may rely on a unique index or constraint (e.g. an ON CONFLICT target); replacing one in the same migration is fine.
+  for (const m of body.matchAll(/\bdrop\s+(constraint|index)\s+(?:if\s+exists\s+)?"?([\w.]+)"?/gi)) {
+    const readded = new RegExp(`\\b(add\\s+constraint|create\\s+(unique\\s+)?index(\\s+concurrently)?(\\s+if\\s+not\\s+exists)?)\\s+"?${m[2]}"?(\\s|$)`, "i");
+    if (!readded.test(body)) found.push(`DROP ${m[1].toUpperCase()} ${m[2]}`);
+  }
   return found;
 }
 
@@ -404,6 +418,9 @@ describe("migrations", () => {
     expect(destructiveStatements(`ALTER TABLE "x" ADD COLUMN "a" text NOT NULL;`)).toEqual([`ADD COLUMN "a" NOT NULL without DEFAULT`]);
     expect(destructiveStatements(`ALTER TABLE "x" ADD COLUMN "a" timestamp with time zone DEFAULT now() NOT NULL;`)).toEqual([]);
     expect(destructiveStatements(`-- we never DROP TABLE here\nCREATE INDEX "i" ON "x" ("a");`)).toEqual([]);
+    expect(destructiveStatements(`ALTER TABLE "x" DROP CONSTRAINT "x_a_unique";`)).toEqual(["DROP CONSTRAINT x_a_unique"]);
+    expect(destructiveStatements(`DROP INDEX "x_a_idx";`)).toEqual(["DROP INDEX x_a_idx"]);
+    expect(destructiveStatements(`ALTER TABLE "x" DROP CONSTRAINT "kind_chk";\nALTER TABLE "x" ADD CONSTRAINT "kind_chk" CHECK ("x"."kind" IN ('a','b'));`)).toEqual([]);
   });
 
   it(`migrations from ${String(ADDITIVE_FROM_IDX).padStart(4, "0")} on are additive only`, () => {
@@ -411,6 +428,29 @@ describe("migrations", () => {
       .filter((e) => e.idx >= ADDITIVE_FROM_IDX)
       .flatMap((e) => destructiveStatements(readFileSync(path.join(DRIZZLE, `${e.tag}.sql`), "utf8")).map((what) => `${e.tag}: ${what}`));
     expect(bad, "Migrations run before the new code is live: add tables, nullable or defaulted columns and indexes only").toEqual([]);
+  });
+
+  it("detects unreviewed data changes (self-test)", () => {
+    expect(unreviewedDataChange(`UPDATE "estimates" SET "x" = 1;`)).toBe(true);
+    expect(unreviewedDataChange(`-- reviewed backfill: fills the new column from the old one\nUPDATE "estimates" SET "x" = 1;`)).toBe(false);
+    expect(unreviewedDataChange(`ALTER TABLE "x" ADD COLUMN "updated_at" timestamp DEFAULT now() NOT NULL;`)).toBe(false);
+    expect(unreviewedDataChange(`CREATE TRIGGER t BEFORE UPDATE ON "x" FOR EACH ROW EXECUTE FUNCTION f();`)).toBe(false);
+  });
+
+  it(`migrations from ${String(DATA_CHANGE_FROM_IDX).padStart(4, "0")} on only change live data with a reviewed-backfill note`, () => {
+    const bad = journal.entries.filter((e) => e.idx >= DATA_CHANGE_FROM_IDX && unreviewedDataChange(readFileSync(path.join(DRIZZLE, `${e.tag}.sql`), "utf8"))).map((e) => e.tag);
+    expect(bad, 'An UPDATE runs against the live database during the build. Add a "-- reviewed backfill: <why it is safe>" line once it has been checked').toEqual([]);
+  });
+
+  it("migrations never change after they are created", () => {
+    const recorded = JSON.parse(readFileSync(path.join(DRIZZLE, CHECKSUMS_FILE), "utf8")) as Record<string, string>;
+    const missing = journal.entries.filter((e) => !recorded[e.tag]).map((e) => e.tag);
+    expect(missing, "Record the new migration's checksum: pnpm db:checksums (pnpm db:generate does it for you)").toEqual([]);
+    const changed = journal.entries.filter((e) => recorded[e.tag] !== migrationChecksum(readFileSync(path.join(DRIZZLE, `${e.tag}.sql`), "utf8"))).map((e) => e.tag);
+    expect(
+      changed,
+      `Production may already have run these, so edits would never reach it. Undo the edit and add a new migration. (Only if it was never deployed: delete its line from drizzle/${CHECKSUMS_FILE} and run pnpm db:checksums.)`,
+    ).toEqual([]);
   });
 });
 
@@ -484,6 +524,9 @@ const CREW_FACING = [
   "src/components/work-order/",
   "src/app/share/wo/",
   "src/app/(preview)/projects/[id]/work-orders/",
+  // Crews read job chat and fill in colour forms too.
+  "src/server/job-chat.ts",
+  "src/server/colour-selections.ts",
 ];
 const MONEY_OR_HOURS = [
   "contractPrice", "contractTotal", "depositRequired", "estimatedCost", "estimatedHours", "plannedHours",
@@ -542,6 +585,29 @@ describe("calendar days are formatted as calendar days", () => {
   it("schedule code never passes a date column to formatDate", () => {
     const bad = SOURCES.filter((s) => inPaths(s.file, SCHEDULE_UI) && DAY_FIELD_FORMAT.test(s.text)).map((s) => s.file);
     expect(bad, "Use formatIsoDate / shortDay / longDay for `date` columns").toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Rule (CLAUDE.md rule 10): Vancouver times go through businessZone(). BC stays on
+// UTC−7 from 2026-11-01 and older zone data doesn't know, so a bare
+// "America/Vancouver" handed to Intl shows times an hour early on those runtimes.
+// ---------------------------------------------------------------------------
+
+const ZONE_HELPERS = ["src/lib/time.ts"];
+const RAW_BUSINESS_ZONE = /timeZone\s*:\s*(?:"America\/Vancouver"|'America\/Vancouver'|BUSINESS_TZ\b)|\bat time zone 'America\/Vancouver'/;
+
+describe("Vancouver times go through businessZone()", () => {
+  it("detects a raw zone (self-test)", () => {
+    expect(RAW_BUSINESS_ZONE.test(`new Intl.DateTimeFormat("en-CA", { timeZone: "America/Vancouver" })`)).toBe(true);
+    expect(RAW_BUSINESS_ZONE.test(`toLocaleDateString("en-CA", { timeZone: BUSINESS_TZ })`)).toBe(true);
+    expect(RAW_BUSINESS_ZONE.test(`{ timeZone: businessZone(at), month: "short" }`)).toBe(false);
+    expect(RAW_BUSINESS_ZONE.test(`{ timeZone: "UTC" }`)).toBe(false);
+  });
+
+  it("no code hands America/Vancouver to Intl directly", () => {
+    const bad = SOURCES.filter((s) => !s.file.endsWith(".test.ts") && !inPaths(s.file, ZONE_HELPERS) && RAW_BUSINESS_ZONE.test(s.text)).map((s) => s.file);
+    expect(bad, "Use formatDate / businessDate / businessZone(instant) from src/lib").toEqual([]);
   });
 });
 

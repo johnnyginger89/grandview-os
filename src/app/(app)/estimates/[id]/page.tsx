@@ -7,10 +7,7 @@ import { requirePermission } from "@/lib/authz/guard";
 import { can } from "@/lib/authz/permissions";
 import { formatAddress } from "@/lib/utils";
 import { listRevisions, listTemplates, loadEstimate, recentColours } from "@/server/estimates";
-import { followUpHistory, listProposals, proposalEmailDraft, proposalUrl } from "@/server/proposals";
-import { calculateDoc } from "@/lib/estimating/document";
-import { formatCAD } from "@/lib/money";
-import type { ProposalOption } from "./proposal-types";
+import { followUpHistory, listProposals, proposalEmailDraft, proposalExpired, proposalUrl } from "@/server/proposals";
 import { listFactors, listMaterialOptions, listRates, toSnapshot } from "@/server/rates";
 import { getEstimatingPresets, getPricing, getProposalTemplate } from "@/server/settings";
 import { resolveJobType } from "@/lib/proposal-template/resolve";
@@ -29,6 +26,7 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
   const loaded = await loadEstimate(id);
   if (!loaded) notFound();
   const { estimate, doc } = loaded;
+  const now = new Date();
 
   const [customer, property, rates, factors, templates, revisions, pricing, proposalRows, contact, project, template, emailDraft, followUps, presets, recent, materials] = await Promise.all([
     db.query.customers.findFirst({ where: eq(customers.id, estimate.customerId) }),
@@ -42,21 +40,13 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
     db.query.contacts.findFirst({ where: and(eq(contacts.customerId, estimate.customerId), eq(contacts.isPrimary, true)) }),
     db.query.projects.findFirst({ where: eq(projects.estimateId, id), columns: { id: true, number: true } }),
     getProposalTemplate(),
-    proposalEmailDraft(id, user),
+    proposalEmailDraft(id, user, now),
     followUpHistory(id),
     getEstimatingPresets(),
     recentColours(),
     // $/gal goes to the browser only for logins that may see costs.
     can(user.role, "estimates.costing") ? listMaterialOptions() : [],
   ]);
-  // Optional upgrades and their prices, for "Mark as accepted".
-  const calc = calculateDoc(doc);
-  const priceOf = new Map<string, string>([...calc.lines.map((l) => [l.id, formatCAD(l.price)] as const), ...calc.costItems.map((c) => [c.id, formatCAD(c.price)] as const)]);
-  const areaName = new Map(doc.areas.map((a) => [a.id, a.name]));
-  const options: ProposalOption[] = [
-    ...doc.lines.filter((l) => l.isOptional).map((l) => ({ id: l.id, title: [l.areaId ? areaName.get(l.areaId) : null, l.customerDescription || l.rateSnapshot.customerLabel || l.description || l.rateSnapshot.name].filter(Boolean).join(" – "), price: priceOf.get(l.id) ?? "" })),
-    ...doc.costItems.filter((c) => c.isOptional).map((c) => ({ id: c.id, title: c.customerDescription || c.description, price: priceOf.get(c.id) ?? "" })),
-  ];
   const proposalText = Object.fromEntries(
     JOB_TYPE_KEYS.map((k) => {
       const r = resolveJobType(template, k);
@@ -80,7 +70,6 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
           customerName: customer?.displayName ?? "",
           address: property ? formatAddress(property) : null,
           opportunityId: estimate.opportunityId,
-          validUntil: estimate.validUntil?.toISOString() ?? null,
           updatedAt: estimate.updatedAt.toISOString(),
           project: project ? { id: project.id, number: project.number } : null,
         }}
@@ -104,11 +93,11 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
           defaultEmail: contact?.email ?? customer?.email ?? "",
           emailDraft: emailDraft ?? { subject: "", body: "" },
           acceptName: (contact ? [contact.firstName, contact.lastName].filter(Boolean).join(" ") : "") || customer?.displayName || "",
-          options,
           rows: proposalRows.map((p) => ({
             id: p.id, revision: p.revision, status: p.status, link: proposalUrl(p.token), sentTo: p.sentTo, sentAt: p.sentAt.toISOString(),
             firstViewedAt: p.firstViewedAt?.toISOString() ?? null, viewCount: p.viewCount, acceptedAt: p.acceptedAt?.toISOString() ?? null,
             acceptedName: p.acceptedName, acceptedMethod: p.acceptedMethod, declineReason: p.declineReason,
+            expiresAt: p.expiresAt?.toISOString() ?? null, expired: proposalExpired(p, now),
           })),
         }}
       />

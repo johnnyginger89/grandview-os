@@ -133,6 +133,8 @@ export const estimates = pgTable(
     depositPct: numeric("deposit_pct", { precision: 6, scale: 4 }).notNull(),
     discount: money("discount"),
     priceOverride: money("price_override"),
+    /** Selected upgrades add to the hand-set final price. False only on estimates made before this rule. */
+    finalPriceBeforeUpgrades: boolean("final_price_before_upgrades").notNull().default(false),
     // Cached totals for lists and dashboards; always recomputed by the engine on save.
     totalHours: qty("total_hours").notNull().default("0"),
     totalCost: money("total_cost").notNull().default("0"),

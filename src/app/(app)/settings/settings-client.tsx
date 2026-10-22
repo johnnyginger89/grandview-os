@@ -5,6 +5,7 @@ import { useActionState, useRef, useState, useTransition } from "react";
 import { Badge, Button, Card, CardHeader, Field, FormError, Input, Select, Table, Textarea, td, th } from "@/components/ui";
 import { ROLES } from "@/db/schema/auth";
 import { can, ROLE_LABELS } from "@/lib/authz/permissions";
+import { formatDate, formatDateTime } from "@/lib/utils";
 import { createUserAction, saveCompanyAction, saveListAction, savePricingAction, saveTemplateAction, updateUserAction } from "./actions";
 import { saveColourFormSettingsAction } from "./colour-form-settings-actions";
 import { connectCompanyCamAction, disconnectCompanyCamAction, disconnectGmailAction, syncGmailAction } from "./integration-actions";
@@ -81,7 +82,7 @@ export function PricingForm({ pricing }: { pricing: Record<string, string | numb
         <Field label="Minimum job price ($)"><Input name="minimumJobPrice" defaultValue={String(pricing.minimumJobPrice)} inputMode="decimal" /></Field>
         <Field label="Deposit (%)"><Input name="depositPct" defaultValue={pct("depositPct")} inputMode="decimal" /></Field>
         <Field label="GST (%)"><Input name="gstRate" defaultValue={pct("gstRate")} inputMode="decimal" /></Field>
-        <Field label="Estimates valid for (days)"><Input name="estimateValidDays" defaultValue={String(pricing.estimateValidDays)} inputMode="numeric" /></Field>
+        <Field label="Estimates valid for (days)" hint="Counted from the day each proposal is sent, up to the end of the last day"><Input name="estimateValidDays" defaultValue={String(pricing.estimateValidDays)} inputMode="numeric" /></Field>
         <Field label="Hours per crew day"><Input name="hoursPerCrewDay" defaultValue={String(pricing.hoursPerCrewDay)} inputMode="decimal" /></Field>
         <div className="flex items-center gap-3 sm:col-span-2"><Button type="submit" disabled={pending}>Save</Button><Saved state={state} /></div>
       </Card>
@@ -296,7 +297,7 @@ export function GmailSettings({
   const [state, setState] = useState<{ ok: boolean; error?: string } | null>(null);
   const [synced, setSynced] = useState<string | null>(null);
   const [pending, start] = useTransition();
-  const day = (iso: string | null) => (iso ? new Date(iso).toLocaleString("en-CA", { timeZone: "America/Vancouver", dateStyle: "medium", timeStyle: "short" }) : "");
+  const day = (iso: string | null) => formatDateTime(iso);
   return (
     <Card role="region" aria-label="Gmail">
       <CardHeader
@@ -399,7 +400,7 @@ export function CompanyCamSettings({ status }: { status: { connected: boolean; u
             <p>
               Connected{status.companyName ? ` to ${status.companyName}` : ""}
               {status.connectedByName ? ` by ${status.connectedByName}` : ""}
-              {status.connectedAt ? ` on ${new Date(status.connectedAt).toLocaleDateString("en-CA", { timeZone: "America/Vancouver", dateStyle: "medium" })}` : ""}.
+              {status.connectedAt ? ` on ${formatDate(status.connectedAt)}` : ""}.
             </p>
             <Button
               variant="secondary"

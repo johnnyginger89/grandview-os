@@ -1,11 +1,11 @@
 import { MessagesSquare } from "lucide-react";
 import { Card, CardHeader, LinkButton } from "@/components/ui";
 import { getCurrentUser } from "@/lib/authz/guard";
+import { businessZone } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { channelAccess, listMessages } from "@/server/job-chat";
 
-const TZ = "America/Vancouver";
-const when = (iso: string) => new Intl.DateTimeFormat("en-CA", { timeZone: TZ, month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(iso));
+const when = (iso: string) => new Intl.DateTimeFormat("en-CA", { timeZone: businessZone(iso), month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(iso));
 
 /** The job's chat on its page: the last few messages and a way in. */
 export async function ChatCard({ projectId, className }: { projectId: string; className?: string }) {

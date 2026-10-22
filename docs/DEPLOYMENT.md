@@ -148,11 +148,33 @@ isn't configured, and **Forgot password** won't send anything.
   backups kept for 7 days, and the project no longer pauses.
 - Optional: Point-in-Time Recovery (about $100/month) narrows possible data loss to minutes.
 
+## How changes reach the live site
+
+Every change goes through a pull request; nothing is pushed straight to `main`.
+
+1. The change is made on its own branch, with tests and a line in `CHANGELOG.md` under **Unreleased**.
+2. A pull request runs the automatic checks (GitHub → **Actions**, workflow `CI`): type check, lint,
+   unit tests including the architecture rules, the browser tests on a throwaway database, and the
+   change-log check. A red check means it doesn't go live.
+3. The owner reads the plain-English summary (with screenshots) and approves.
+4. **Merge** on GitHub. Vercel deploys `main`: migrations and starter settings first, then the app.
+5. Afterwards: `https://grandviewpainting.app/api/health` shows the new short commit code, and the
+   Unreleased lines in `CHANGELOG.md` move under a dated version.
+
+Database migrations run before the new code is live, so they only add things (checked by
+`src/server/architecture.test.ts`). A migration can't be edited once created; its checksum is
+recorded in `drizzle/migration-checksums.json` by `pnpm db:generate`.
+
+Branch protection (owner, once): GitHub → repository **Settings → Rules → Rulesets → New branch
+ruleset**, target `main`: require a pull request, require the status checks *Type check, lint, unit
+tests*, *Browser tests* and *Change log updated*, block force pushes. On a private repository this
+needs GitHub Pro.
+
 ## Rolling back
 
 Vercel → **Deployments** → pick the last good deployment → **⋯ → Instant Rollback**. Database
 changes only ever add things, so an older version keeps working. Don't delete database tables or
-columns by hand.
+columns by hand. Then fix forward with a new pull request.
 
 ## Data location
 

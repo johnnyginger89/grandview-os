@@ -5,6 +5,10 @@
  * typical of residential repaint work. They are meant to be replaced by
  * Grandview's own rates (imported from PaintScout) before real estimates
  * are sent. Every seeded rate carries the change note "Starter value".
+ *
+ * Each starter material and rate is inserted at most once per database,
+ * remembered by its key or code (seed-starters.ts). Changing a key or code
+ * makes it a new starter that every database, production included, gets once.
  */
 import type { Goals } from "@/lib/reporting/goals";
 import type { FactorKind } from "./schema/estimating";

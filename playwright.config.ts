@@ -5,10 +5,18 @@ import { defineConfig, devices } from "@playwright/test";
 const executablePath = process.env.PW_CHROMIUM_PATH ?? (existsSync("/opt/pw-browsers/chromium") ? "/opt/pw-browsers/chromium" : undefined);
 const launchOptions = executablePath ? { executablePath } : {};
 
+const ci = !!process.env.CI;
+
 export default defineConfig({
   testDir: "tests/e2e",
   timeout: 45_000,
   workers: 1,
+  // In CI a stray test.only must not shrink the run, and one retry separates a flaky test from a broken one.
+  forbidOnly: ci,
+  retries: ci ? 1 : 0,
+  reporter: ci ? [["list"], ["html", { open: "never" }]] : "list",
+  // Locally you start the app yourself (pnpm dev); CI starts the production build.
+  webServer: ci && !process.env.E2E_BASE_URL ? { command: "pnpm start", url: "http://localhost:3000/api/health", timeout: 120_000, stdout: "pipe" } : undefined,
   use: { baseURL: process.env.E2E_BASE_URL ?? "http://localhost:3000", screenshot: "only-on-failure", trace: "retain-on-failure", launchOptions },
   projects: [
     // Signs each role in once (the real login rate limit is 5/min) and saves the session.
