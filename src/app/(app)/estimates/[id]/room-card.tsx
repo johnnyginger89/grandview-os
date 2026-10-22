@@ -4,10 +4,11 @@ import { ChevronDown, ChevronRight, Copy, RotateCcw, SlidersHorizontal, Trash2 }
 import { Badge, Field, Input, Select, Textarea } from "@/components/ui";
 import { resolvedQuantity, type DocArea, type DocLine } from "@/lib/estimating/document";
 import { areaQuantities, quantityFromDimensions, UNIT_LABELS, type LineResult } from "@/lib/estimating/engine";
-import { d, formatCAD, formatNum, formatPct } from "@/lib/money";
+import { d, formatCAD, formatNum } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { NumInput, Segmented, Stepper } from "./editor-parts";
 import { FACTOR_FIELD, FACTOR_KINDS, type FactorOption, type MaterialOption, type RateOption, type SizeSource } from "./editor-types";
+import { costingNote, paintOptionLabel, useHideCosts } from "./hide-costs";
 
 export interface ColourChoices {
   /** Colours already on this estimate, with where they're used ("Living room walls"). */
@@ -434,7 +435,8 @@ function LineDetails({
   ro: boolean;
   api: RoomApi;
 }) {
-  const unit = UNIT_LABELS[line.rateSnapshot.unit];
+  const [hideCosts] = useHideCosts();
+  const costs = showCosting && !hideCosts;
   const group = surfaceGroup(line);
   const listId = `colours-${line.id}`;
   const painted = !!line.rateSnapshot.material && line.rateSnapshot.unit !== "hour";
@@ -513,7 +515,7 @@ function LineDetails({
               {!productOptions.some((m) => m.id === currentProduct) && <option value={currentProduct}>{line.rateSnapshot.material?.productName}</option>}
               {productOptions.map((m) => (
                 <option key={m.id} value={m.id}>
-                  {m.label} · {formatCAD(m.snapshot.pricePerGallon)}/gal
+                  {paintOptionLabel(m, costs)}
                 </option>
               ))}
             </Select>
@@ -582,7 +584,7 @@ function LineDetails({
 
       {showCosting && r && (
         <p className="text-xs text-muted">
-          Rate: {line.rateSnapshot.basis === "hours_per_unit" ? `${Number(line.rateSnapshot.productionRate)} h/${unit}` : `${Number(line.rateSnapshot.productionRate)} ${unit}/h`} (v{line.rateSnapshot.rateVersion ?? "–"}) · Labour {formatCAD(r.laborCost)} @ {formatCAD(r.laborRate)}/h · Paint {formatNum(r.gallons, 2)} gal {formatCAD(r.materialCost)} · Other {formatCAD(r.otherCost)} · Cost {formatCAD(r.cost)} · Margin {formatPct(r.margin)}
+          {costingNote(line, r, costs)}
           {outdated && !ro && (
             <button type="button" onClick={() => api.refreshRate(line.id)} className="ml-2 text-brand hover:underline">
               Use current rate (v{masterRate?.snapshot.rateVersion})

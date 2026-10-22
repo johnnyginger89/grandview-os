@@ -15,6 +15,7 @@ import { createRevisionAction, duplicateAction, restoreRevisionAction, saveEstim
 import { AddRoom, type NewSurface } from "./add-room";
 import { chip, NumInput, Section } from "./editor-parts";
 import type { FactorOption, MaterialOption, RateOption, Revision } from "./editor-types";
+import { useHideCosts } from "./hide-costs";
 import type { ProposalProps } from "./proposal-types";
 import { RoomCard, surfaceGroup, type ColourChoices, type RoomApi } from "./room-card";
 import { proposalStatusText, SendControls, SentProposals } from "./send-proposal";
@@ -83,6 +84,7 @@ export function EstimateEditor({
   const [crewSize, setCrewSize] = useState(3);
   const [addingRoom, setAddingRoom] = useState(canEdit && initialDoc.areas.length === 0 && initialDoc.lines.length === 0);
   const [sheet, setSheet] = useState<"totals" | "versions" | "template" | null>(null);
+  const [hideCosts] = useHideCosts();
   const docRef = useRef(doc);
   useEffect(() => {
     docRef.current = doc;
@@ -281,6 +283,8 @@ export function EstimateEditor({
 
   // ---- rendering -------------------------------------------------------
   const ro = !canEdit;
+  // Logins without costing never see costs; "Hide costs" hides them from everyone else.
+  const costs = showCosting && !hideCosts;
   const standard = proposalText[doc.jobType] ?? proposalText.default ?? { preparation: "", areasExcluded: "" };
   const t = result?.totals;
   const staleRates = doc.lines.filter((l) => {
@@ -444,9 +448,13 @@ export function EstimateEditor({
                     <option value="subcontractor">Subcontractor</option><option value="equipment">Equipment</option><option value="material">Material</option><option value="other">Other</option>
                   </Select>
                   <Input disabled={ro} value={c.description} onChange={(e) => setCost(c.id, { description: e.target.value })} className="col-span-8 h-9 md:col-span-4" aria-label="Description" />
-                  <div className="col-span-4 md:col-span-2"><NumInput ariaLabel="Cost" disabled={ro} value={c.cost} placeholder="Cost" onCommit={(v) => setCost(c.id, { cost: v || "0" })} /></div>
-                  <div className="col-span-3 md:col-span-1"><NumInput ariaLabel="Markup %" disabled={ro} value={c.markupPct ? String(Number(c.markupPct) * 100) : ""} placeholder="mk%" onCommit={(v) => setCost(c.id, { markupPct: v ? String(Number(v) / 100) : null })} /></div>
-                  <span className="col-span-3 text-right font-medium tabular md:col-span-2">{r ? formatCAD(r.price) : "—"}</span>
+                  {costs && (
+                    <>
+                      <div className="col-span-4 md:col-span-2"><NumInput ariaLabel="Cost" disabled={ro} value={c.cost} placeholder="Cost" onCommit={(v) => setCost(c.id, { cost: v || "0" })} /></div>
+                      <div className="col-span-3 md:col-span-1"><NumInput ariaLabel="Markup %" disabled={ro} value={c.markupPct ? String(Number(c.markupPct) * 100) : ""} placeholder="mk%" onCommit={(v) => setCost(c.id, { markupPct: v ? String(Number(v) / 100) : null })} /></div>
+                    </>
+                  )}
+                  <span className={cn("text-right font-medium tabular", costs ? "col-span-3 md:col-span-2" : "col-span-10 md:col-span-5")}>{r ? formatCAD(r.price) : "—"}</span>
                   <div className="col-span-2 flex justify-end md:col-span-1">
                     {!ro && <button type="button" onClick={() => update((dd) => ({ ...dd, costItems: dd.costItems.filter((x) => x.id !== c.id) }), "Cost item removed")} className="grid size-11 place-items-center rounded-md text-subtle hover:bg-danger-soft hover:text-danger sm:size-8" aria-label="Remove cost item"><Trash2 className="size-3.5" aria-hidden /></button>}
                   </div>
@@ -461,7 +469,7 @@ export function EstimateEditor({
                 <Button size="sm" variant="ghost" onClick={() => addCostItem("other")}><Plus className="size-3.5" aria-hidden /> Other</Button>
               </div>
             )}
-            <p className="border-t border-border px-3 py-2 text-xs text-subtle">Leave markup blank to price these the same way as the rest of the estimate.</p>
+            {costs && <p className="border-t border-border px-3 py-2 text-xs text-subtle">Leave markup blank to price these the same way as the rest of the estimate.</p>}
           </Section>
 
           <Section title="Options the customer can add" summary={options.length ? `${options.length} · ${formatCAD(optionsValue)}` : "none yet"} defaultOpen={options.length > 0}>
@@ -544,7 +552,7 @@ export function EstimateEditor({
         <TotalsPanel {...totalsProps} />
       </Dialog>
       <Dialog open={sheet === "versions"} onClose={() => setSheet(null)} title={<span className="flex items-center gap-1.5"><History className="size-4" aria-hidden /> Versions</span>} className="w-[min(36rem,calc(100vw-2rem))]">
-        <Revisions estimateId={estimate.id} revisions={revisions} current={t ? { price: t.price.toFixed(2), totalCost: t.totalCost.toFixed(2), hours: t.hours.toFixed(2), grossMargin: t.grossMargin.toFixed(4) } : null} canEdit={canEdit} showCosting={showCosting} />
+        <Revisions estimateId={estimate.id} revisions={revisions} current={t ? { price: t.price.toFixed(2), totalCost: t.totalCost.toFixed(2), hours: t.hours.toFixed(2), grossMargin: t.grossMargin.toFixed(4) } : null} canEdit={canEdit} showCosting={costs} />
       </Dialog>
       {sheet === "template" && <SaveTemplateDialog estimateId={estimate.id} onClose={() => setSheet(null)} onSaved={() => setToast("Saved as a template")} />}
 

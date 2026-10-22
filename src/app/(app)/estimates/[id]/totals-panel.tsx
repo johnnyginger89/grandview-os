@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { ChevronUp, ClipboardCopy, Eye, EyeOff } from "lucide-react";
 import { Button, Field, Select } from "@/components/ui";
 import type { EstimateDoc } from "@/lib/estimating/document";
@@ -9,38 +9,7 @@ import { paintList, paintListText } from "@/lib/estimating/paint-list";
 import { d, formatCAD, formatNum, formatPct, marginToMarkup, priceForMargin } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { NumInput } from "./editor-parts";
-
-const HIDE_KEY = "gv.estimate.hideCosts";
-const HIDE_EVENT = "gv:hide-costs";
-
-function readHide(): boolean {
-  try {
-    return localStorage.getItem(HIDE_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
-function subscribeHide(onChange: () => void) {
-  window.addEventListener(HIDE_EVENT, onChange);
-  return () => window.removeEventListener(HIDE_EVENT, onChange);
-}
-
-/** "Hide costs" for when the customer is looking at the screen; remembered on this device. */
-export function useHideCosts(): [boolean, (v: boolean) => void] {
-  const hide = useSyncExternalStore(subscribeHide, readHide, () => false);
-  return [
-    hide,
-    (v: boolean) => {
-      try {
-        localStorage.setItem(HIDE_KEY, v ? "1" : "0");
-      } catch {
-        // Storage blocked (private window): nothing to remember it in, so it stays as it was.
-      }
-      window.dispatchEvent(new Event(HIDE_EVENT));
-    },
-  ];
-}
+import { useHideCosts } from "./hide-costs";
 
 function Row({ label, value, strong, large, muted }: { label: ReactNode; value: ReactNode; strong?: boolean; large?: boolean; muted?: boolean }) {
   return (
@@ -79,7 +48,7 @@ export function TotalsCard({ doc, result, showCosting, hoursPerDay, crewSize, se
       <Row label={`Deposit (${formatPct(doc.settings.depositPct, 0)})`} value={formatCAD(t.deposit)} />
       {t.minimumAdjustment.gt(0) && <Row label="Minimum job price applied" value={`+${formatCAD(t.minimumAdjustment)}`} muted />}
       {t.discount.gt(0) && <Row label="Discount" value={`−${formatCAD(t.discount)}`} muted />}
-      {!t.overrideAdjustment.isZero() && <Row label="Final price set by hand" value={formatCAD(t.overrideAdjustment)} muted />}
+      {!hideCosts && !t.overrideAdjustment.isZero() && <Row label="Final price set by hand" value={formatCAD(t.overrideAdjustment)} muted />}
       {doc.settings.finalPriceBeforeUpgrades && doc.settings.priceOverride && t.selectedOptionsPrice.gt(0) && (
         <Row label="Upgrades on top of the final price" value={`+${formatCAD(t.selectedOptionsPrice)}`} muted />
       )}
