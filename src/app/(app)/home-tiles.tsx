@@ -1,4 +1,4 @@
-import { and, count, eq, gte, inArray, lte, sum } from "drizzle-orm";
+import { count, eq, inArray } from "drizzle-orm";
 import { BookOpen, Calculator, CalendarDays, ChartColumn, FileText, FolderKanban, Settings, Users, Workflow } from "lucide-react";
 import Link from "next/link";
 import type { ComponentType } from "react";
@@ -6,11 +6,11 @@ import { db } from "@/db";
 import { estimates, opportunities, pipelineStages, projects } from "@/db/schema";
 import { can } from "@/lib/authz/permissions";
 import { formatCAD } from "@/lib/money";
+import { jobsToday } from "@/server/jobs-today";
 import { getCompany } from "@/server/settings";
 import { ShareBookingTile } from "./share-booking-tile";
 
 const ACTIVE = ["need_to_schedule", "scheduled", "in_progress", "walk_through", "on_hold"] as const;
-const WORKING = ["scheduled", "in_progress", "walk_through"] as const;
 
 function Tile({ href, label, icon: Icon, badge }: { href: string; label: string; icon: ComponentType<{ className?: string }>; badge?: number }) {
   return (
@@ -26,25 +26,22 @@ function Tile({ href, label, icon: Icon, badge }: { href: string; label: string;
 export async function HomeTiles({ role }: { role: string }) {
   const now = new Date();
   const money = can(role, "financials.read");
-  const [[toContact], [openEstimates], [activeJobs], [toSchedule], [today], company] = await Promise.all([
+  const [[toContact], [openEstimates], [activeJobs], [toSchedule], today, company] = await Promise.all([
     can(role, "pipeline.read")
       ? db.select({ n: count() }).from(opportunities).innerJoin(pipelineStages, eq(pipelineStages.id, opportunities.stageId)).where(eq(pipelineStages.key, "new_lead"))
       : [{ n: 0 }],
     can(role, "estimates.read") ? db.select({ n: count() }).from(estimates).where(inArray(estimates.status, ["draft", "sent"])) : [{ n: 0 }],
     can(role, "projects.read_all") ? db.select({ n: count() }).from(projects).where(inArray(projects.status, [...ACTIVE])) : [{ n: 0 }],
     can(role, "schedule.read") ? db.select({ n: count() }).from(projects).where(eq(projects.status, "need_to_schedule")) : [{ n: 0 }],
-    db
-      .select({ n: count(), value: money ? sum(projects.contractPrice) : count() })
-      .from(projects)
-      .where(and(inArray(projects.status, [...WORKING]), lte(projects.startDate, now), gte(projects.endDate, now))),
+    jobsToday(now, { money }),
     getCompany(),
   ]);
 
-  const jobsToday = `${today.n} job${today.n === 1 ? "" : "s"} today`;
+  const jobs = `${today.count} job${today.count === 1 ? "" : "s"} today`;
   return (
     <section aria-label="Menu" className="mb-6 lg:hidden">
       <p className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted" data-testid="jobs-today">
-        {money ? `${formatCAD(today.value ?? 0)} (${jobsToday})` : jobsToday}
+        {money ? `${formatCAD(today.value ?? 0)} (${jobs})` : jobs}
       </p>
       <div className="grid grid-cols-2 gap-3">
         {can(role, "dashboard.view") && <Tile href="/performance" label="Performance" icon={ChartColumn} />}

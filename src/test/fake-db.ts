@@ -14,7 +14,7 @@ export type FakeOp = "select" | "insert" | "update" | "delete" | "execute";
 export interface FakeCall {
   op: FakeOp;
   table: string | null;
-  /** Arguments of each chained method, e.g. args.values[0], args.set[0]. */
+  /** Arguments of each chained method, e.g. args.values[0], args.set[0], args.select[0] (the selected fields). */
   args: Record<string, unknown[]>;
 }
 
@@ -31,8 +31,8 @@ export function createFakeDb() {
     return fallback(call);
   }
 
-  function chain(op: FakeOp, table?: unknown) {
-    const call: FakeCall = { op, table: tableName(table), args: {} };
+  function chain(op: FakeOp, table?: unknown, args: Record<string, unknown[]> = {}) {
+    const call: FakeCall = { op, table: tableName(table), args };
     calls.push(call);
     const proxy: object = new Proxy(
       {},
@@ -70,8 +70,8 @@ export function createFakeDb() {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db: any = {
-    select: () => chain("select"),
-    selectDistinct: () => chain("select"),
+    select: (...a: unknown[]) => chain("select", undefined, { select: a }),
+    selectDistinct: (...a: unknown[]) => chain("select", undefined, { selectDistinct: a }),
     insert: (t: unknown) => chain("insert", t),
     update: (t: unknown) => chain("update", t),
     delete: (t: unknown) => chain("delete", t),
