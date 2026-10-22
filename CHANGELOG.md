@@ -20,6 +20,8 @@ How to add an entry (for whoever makes the change, including the AI assistant):
 - Automatic checks before anything goes live: every change is type-checked, linted and run through the unit and browser tests on GitHub, and must add a line here. How releases work now is in `docs/DEPLOYMENT.md` ("How changes reach the live site").
 
 ### Fixed
+- **Times stay right from November 1.** British Columbia is staying on daylight time (UTC−7) all year and won't turn the clocks back on November 1, 2026. Servers or devices with out-of-date time-zone tables would have shown every time in the app an hour early from then on (crew bookings, start notices, the 4 pm reminder) and read typed times an hour off; the app now corrects for that itself.
+- Updates no longer bring back the sample rates and paints you've renamed, re-coded or deleted (with their made-up prices). A brand-new setup still starts with the samples.
 - Upgrades are never free: when you type a final price by hand, any upgrade the customer ticks now adds its own price on top. Estimates made before this change keep the old rule, so proposals already sent don't change. The minimum job price still covers the whole job, upgrades included (your call, question 7).
 
 ### Removed
