@@ -28,4 +28,6 @@ export interface ProposalProps {
   customerName: string;
   followUps: { count: number; lastAt: string | null };
   canSend: boolean;
+  /** No lead linked although the customer has an open one, so accepting won't mark a lead won. */
+  unlinkedLead: boolean;
 }

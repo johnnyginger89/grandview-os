@@ -10,9 +10,7 @@ import {
   estimates,
   inboundEmails,
   messageTemplates,
-  opportunities,
   outboundMessages,
-  pipelineStages,
   properties,
   proposals,
   type ProposalAcceptMethod,
@@ -27,7 +25,7 @@ import { toDb } from "@/lib/money";
 import { formatAddress, formatDate, renderTemplate } from "@/lib/utils";
 import { audit } from "./audit";
 import { assertCurrentVersion, EstimateLockedError, insertRevision, loadEstimate, lockEstimate, nextVersion, writeEstimateDoc } from "./estimates";
-import { moveStage, stageByKey } from "./leads";
+import { advanceToProposalSent, moveStage, stageByKey } from "./leads";
 import { currentDocuments, visibleDocuments } from "./media";
 import { notifyLater, notifyProposalEvent } from "./notifications";
 import { createSoldProject } from "./project-status";
@@ -300,17 +298,7 @@ export async function sendProposal(estimateId: string, raw: z.input<typeof sendP
     ),
   );
 
-  // Move the lead forward if it's still before "Proposal Sent".
-  if (estimate.opportunityId) {
-    const opp = await db
-      .select({ key: pipelineStages.key })
-      .from(opportunities)
-      .innerJoin(pipelineStages, eq(pipelineStages.id, opportunities.stageId))
-      .where(eq(opportunities.id, estimate.opportunityId));
-    if (opp[0] && ["new_lead", "contacted", "estimate_booked", "estimate_completed"].includes(opp[0].key)) {
-      await moveStage(estimate.opportunityId, (await stageByKey("proposal_sent")).id, user.id);
-    }
-  }
+  if (estimate.opportunityId) await advanceToProposalSent(estimate.opportunityId, user.id);
 
   const link = proposalUrl(token);
   let emailStatus: "sent" | "logged" | "failed" | "skipped" = "skipped";

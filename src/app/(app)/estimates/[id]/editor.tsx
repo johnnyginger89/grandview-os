@@ -17,6 +17,7 @@ import { createAutosave, type WithSaved } from "./autosave";
 import { chip, NumInput, Section } from "./editor-parts";
 import type { FactorOption, MaterialOption, RateOption, Revision } from "./editor-types";
 import { useHideCosts } from "./hide-costs";
+import { LeadCard, type LeadProps } from "./lead-card";
 import type { ProposalProps } from "./proposal-types";
 import { RoomCard, surfaceGroup, type ColourChoices, type RoomApi } from "./room-card";
 import { ExpiredNotice, proposalStatusText, SendControls, SentProposals, validUntilText } from "./send-proposal";
@@ -54,6 +55,7 @@ export function EstimateEditor({
   presets,
   recentColours,
   materials,
+  lead,
   proposals,
 }: {
   estimate: { id: string; number: number; status: string; revision: number; customerId: string; customerName: string; address: string | null; opportunityId: string | null; updatedAt: string; project: { id: string; number: number | null; canOpen: boolean } | null };
@@ -73,6 +75,7 @@ export function EstimateEditor({
   recentColours: string[];
   /** Paint products to swap onto a surface; only for logins that may see costs. */
   materials: MaterialOption[];
+  lead: LeadProps;
   proposals: ProposalProps;
 }) {
   const [doc, setDocState] = useState<EstimateDoc>(initialDoc);
@@ -403,6 +406,8 @@ export function EstimateEditor({
           {staleRates} line{staleRates > 1 ? "s use" : " uses"} an older version of a production rate. Prices stay as estimated unless you choose “Use current rate” on the line.
         </p>
       )}
+
+      <LeadCard estimateId={estimate.id} {...lead} />
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0 space-y-3">

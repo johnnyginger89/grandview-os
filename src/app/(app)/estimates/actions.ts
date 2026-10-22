@@ -5,6 +5,7 @@ import { z } from "zod";
 import { safeErrorMessage } from "@/lib/action-error";
 import { ESTIMATE_STATUSES } from "@/db/schema";
 import { assertPermission } from "@/lib/authz/guard";
+import { linkEstimateToLead, openLeadsFor, type LeadChoice } from "@/server/estimate-lead";
 import { searchCustomers } from "@/server/search";
 import {
   createEstimate,
@@ -237,4 +238,22 @@ export async function findCustomersAction(query: string): Promise<{ id: string; 
   await assertPermission("estimates.write");
   await assertPermission("customers.read");
   return searchCustomers(z.string().max(100).parse(query));
+}
+
+/** The customer's open leads, for the lead choice on New estimate. */
+export async function openLeadsAction(customerId: string): Promise<LeadChoice[]> {
+  await assertPermission("estimates.write");
+  return openLeadsFor(uuid.parse(customerId));
+}
+
+/** Link the estimate to one of its customer's open leads, or unlink it (null). */
+export async function linkLeadAction(estimateId: string, opportunityId: string | null): Promise<Result> {
+  try {
+    const user = await assertPermission("estimates.write");
+    await linkEstimateToLead(uuid.parse(estimateId), uuid.nullable().parse(opportunityId), user.id);
+    revalidatePath(`/estimates/${estimateId}`);
+    return { ok: true };
+  } catch (e) {
+    return err(e);
+  }
 }

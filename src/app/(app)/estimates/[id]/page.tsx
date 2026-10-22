@@ -6,6 +6,7 @@ import { contacts, customers, projects, properties } from "@/db/schema";
 import { requirePermission } from "@/lib/authz/guard";
 import { can } from "@/lib/authz/permissions";
 import { formatAddress } from "@/lib/utils";
+import { leadSummary, openLeadsFor } from "@/server/estimate-lead";
 import { listRevisions, listTemplates, loadEstimate, recentColours } from "@/server/estimates";
 import { followUpHistory, listProposals, proposalEmailDraft, proposalExpired, proposalUrl } from "@/server/proposals";
 import { listFactors, listMaterialOptions, listRates, toSnapshot } from "@/server/rates";
@@ -28,7 +29,8 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
   const { estimate, doc } = loaded;
   const now = new Date();
 
-  const [customer, property, rates, factors, templates, revisions, pricing, proposalRows, contact, project, template, emailDraft, followUps, presets, recent, materials] = await Promise.all([
+  const canEdit = can(user.role, "estimates.write");
+  const [customer, property, rates, factors, templates, revisions, pricing, proposalRows, contact, project, template, emailDraft, followUps, presets, recent, materials, lead, leadChoices] = await Promise.all([
     db.query.customers.findFirst({ where: eq(customers.id, estimate.customerId) }),
     estimate.propertyId ? db.query.properties.findFirst({ where: eq(properties.id, estimate.propertyId) }) : null,
     listRates(),
@@ -46,6 +48,9 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
     recentColours(),
     // $/gal goes to the browser only for logins that may see costs.
     can(user.role, "estimates.costing") ? listMaterialOptions() : [],
+    estimate.opportunityId ? leadSummary(estimate.opportunityId) : null,
+    // A sold estimate keeps its lead.
+    canEdit && estimate.status !== "accepted" ? openLeadsFor(estimate.customerId) : [],
   ]);
   const proposalText = Object.fromEntries(
     JOB_TYPE_KEYS.map((k) => {
@@ -80,15 +85,21 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
         templates={templates.map((t) => ({ id: t.id, name: t.name }))}
         revisions={revisions.map((r) => ({ revision: r.revision, reason: r.reason, totals: r.totals, createdAt: r.createdAt.toISOString() }))}
         hoursPerDay={pricing.hoursPerCrewDay}
-        canEdit={can(user.role, "estimates.write") && estimate.status !== "accepted"}
+        canEdit={canEdit && estimate.status !== "accepted"}
         showCosting={can(user.role, "estimates.costing")}
         proposalText={proposalText}
         canEditWording={can(user.role, "settings.manage")}
         presets={presets}
         recentColours={recent}
         materials={materials}
+        lead={{
+          lead: lead ? { ...lead, visitAt: lead.visitAt?.toISOString() ?? null } : null,
+          choices: leadChoices,
+          canOpenLead: can(user.role, "pipeline.read"),
+        }}
         proposals={{
-          canSend: can(user.role, "estimates.write") && estimate.status !== "accepted",
+          canSend: canEdit && estimate.status !== "accepted",
+          unlinkedLead: !estimate.opportunityId && leadChoices.length > 0,
           customerName: customer?.displayName ?? "",
           followUps,
           defaultEmail: contact?.email ?? customer?.email ?? "",

@@ -202,7 +202,7 @@ export function SendControls({ estimateId, status, proposals, withSaved, compact
       {copied && <span role="status" className="ml-2 text-xs text-success">Link copied</span>}
       {error && <span role="alert" className="ml-2 text-xs text-danger">{error}</span>}
       {dialog === "send" && <SendDialog estimateId={estimateId} proposals={proposals} withSaved={withSaved} onClose={() => setDialog(null)} />}
-      {dialog === "accept" && <AcceptDialog estimateId={estimateId} defaultName={proposals.acceptName} withSaved={withSaved} onClose={() => setDialog(null)} />}
+      {dialog === "accept" && <AcceptDialog estimateId={estimateId} defaultName={proposals.acceptName} unlinkedLead={proposals.unlinkedLead} withSaved={withSaved} onClose={() => setDialog(null)} />}
     </div>
   );
 }

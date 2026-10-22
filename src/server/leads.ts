@@ -520,6 +520,19 @@ export async function moveStage(opportunityId: string, stageId: string, userId: 
   await db.transaction((tx) => moveStageInTx(tx, opportunityId, stageId, userId, lostReason));
 }
 
+/** Stages a lead passes through before the customer has a proposal. */
+const BEFORE_PROPOSAL = ["new_lead", "contacted", "estimate_booked", "estimate_completed"];
+
+/** A proposal went out for this lead: a lead still before "Proposal sent" moves there, never backwards. */
+export async function advanceToProposalSent(opportunityId: string, userId: string | null): Promise<void> {
+  const [opp] = await db
+    .select({ key: pipelineStages.key })
+    .from(opportunities)
+    .innerJoin(pipelineStages, eq(pipelineStages.id, opportunities.stageId))
+    .where(eq(opportunities.id, opportunityId));
+  if (opp && BEFORE_PROPOSAL.includes(opp.key)) await moveStage(opportunityId, (await stageByKey("proposal_sent")).id, userId);
+}
+
 /** Lock leads in id order so two bulk edits can't deadlock each other. */
 function lockOpportunities(tx: Tx, ids: string[]) {
   return tx.select().from(opportunities).where(inArray(opportunities.id, ids)).orderBy(asc(opportunities.id)).for("update");

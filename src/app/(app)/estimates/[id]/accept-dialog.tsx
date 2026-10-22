@@ -31,7 +31,7 @@ export function acceptedText(p: ProposalRow) {
  * start ticked the way the customer's proposal would have them, and the total is worked out the
  * same way as on their page.
  */
-export function AcceptDialog({ estimateId, defaultName, withSaved, onClose }: { estimateId: string; defaultName: string; withSaved: WithSaved; onClose: () => void }) {
+export function AcceptDialog({ estimateId, defaultName, unlinkedLead = false, withSaved, onClose }: { estimateId: string; defaultName: string; unlinkedLead?: boolean; withSaved: WithSaved; onClose: () => void }) {
   const router = useRouter();
   const [name, setName] = useState(defaultName);
   const [method, setMethod] = useState<(typeof METHODS)[number]["value"] | "">("");
@@ -103,6 +103,11 @@ export function AcceptDialog({ estimateId, defaultName, withSaved, onClose }: { 
       }
     >
       <div className="space-y-4">
+        {unlinkedLead && (
+          <p role="note" className="rounded-md bg-warning-soft px-3 py-2 text-sm text-warning">
+            This estimate isn&apos;t linked to a lead, so no lead will be marked won. Cancel and use <strong>Link to lead</strong> at the top of the estimate first.
+          </p>
+        )}
         <Field label="Who accepted it?">
           <Input value={name} maxLength={120} onChange={(e) => setName(e.target.value)} data-autofocus />
         </Field>
