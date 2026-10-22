@@ -162,6 +162,29 @@ test.describe("work orders (owner)", () => {
     await page.reload();
   });
 
+  test("the project manager picked on the job is the office contact on the next version and joins the chat", async ({ page }) => {
+    await page.goto(projectPath);
+    const picker = page.getByLabel("Project manager", { exact: true });
+    await expect(picker).toHaveValue("");
+    await picker.selectOption({ label: "Project Manager (Dev)" });
+    await expect(page.getByRole("status").filter({ hasText: "Project manager saved" })).toBeVisible();
+    await page.reload();
+    await expect(page.getByLabel("Project manager", { exact: true }).locator("option:checked")).toHaveText("Project Manager (Dev)");
+
+    // Version 2 keeps what it said; the next version names the office contact.
+    await expect(row(page).getByText(/not issued yet: Job details/)).toBeVisible();
+    const preview = await row(page).getByRole("link", { name: "Preview" }).getAttribute("href");
+    await page.goto(preview!);
+    await expect(page.locator("dl").filter({ hasText: "Office contact" })).toContainText("Project Manager (Dev)");
+
+    await page.goto(projectPath);
+    await page.getByRole("region", { name: "Job chat" }).getByRole("link", { name: "Open chat" }).click();
+    await page.getByRole("button", { name: /^People in this chat/ }).click();
+    const members = page.getByRole("dialog", { name: "People in this chat" }).getByRole("list", { name: "Members" });
+    await expect(members).toContainText("Project Manager (Dev)");
+    await expect(members).toContainText("Project manager");
+  });
+
   test("a revoked link stops working at once", async ({ page, browser }) => {
     await page.goto(projectPath);
     page.once("dialog", (d) => d.accept());

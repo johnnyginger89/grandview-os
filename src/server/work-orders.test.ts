@@ -436,6 +436,24 @@ describe("listWorkOrders", () => {
     expect(JSON.stringify(dto)).not.toContain("tokenHash");
     expect(JSON.stringify(dto)).not.toContain(sha256(TOKEN));
   });
+
+  it("makes a newly chosen project manager the office contact from the next version", async () => {
+    sourceRows();
+    h.rows["select:work_orders"] = [woRow()];
+    await wo.issueWorkOrder({ id: WO }, ACTOR);
+    const issued = lastInsert("work_order_versions").view as WorkOrderView;
+    expect(issued.projectManager).toBeNull();
+
+    h.rows["select:projects"] = [project({ projectManagerId: "pm-1" })];
+    h.rows["select:user"] = [{ name: "[TEST DATA] Pat PM", phone: "604-555-0177" }];
+    h.rows["select:work_orders"] = [woRow({ status: "issued", currentVersion: 1 })];
+    h.rows["select:work_order_versions"] = [{ workOrderId: WO, version: 1, issuedAt: NOW, changeNote: null, issuedByName: "Owner", view: issued }];
+    const [dto] = await wo.listWorkOrders(PROJECT, NOW);
+    expect(dto.pendingChanges).toEqual(["details"]);
+
+    await wo.issueWorkOrder({ id: WO }, ACTOR);
+    expect(lastInsert("work_order_versions")).toMatchObject({ version: 2, view: { projectManager: { name: "[TEST DATA] Pat PM", phone: "604-555-0177" } } });
+  });
 });
 
 describe("crew access (/my-jobs)", () => {

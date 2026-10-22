@@ -11,11 +11,13 @@ import { can } from "@/lib/authz/permissions";
 import { businessDate, formatIsoDate, todayIso } from "@/lib/calendar-date";
 import { formatCAD, formatNum } from "@/lib/money";
 import { formatAddress, formatDate, formatDateTime, mapsUrl } from "@/lib/utils";
+import { projectManagerOptions } from "@/server/project-manager";
 import { isDoneStatus, listStatusEvents, type StatusEventRow } from "@/server/project-status";
 import { proposalUrl } from "@/server/proposals";
 import { PROJECT_STATUS_LABEL, PROJECT_STATUS_TONE } from "../status";
 import { ChatCard } from "./chat-card";
 import { ColoursCard } from "./colours-card";
+import { ProjectManagerPicker } from "./project-manager-picker";
 import { ProjectScheduleCard } from "./schedule-card";
 import { StatusControl, type StatusHistoryEntry } from "./status-control";
 import { WorkOrdersCard } from "./work-orders-card";
@@ -62,18 +64,27 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   const user = await requirePermission("projects.read_all");
   const p = await db.query.projects.findFirst({ where: eq(projects.id, id) });
   if (!p) notFound();
-  const [customer, property, proposal] = await Promise.all([
+  const [customer, property, proposal, managers] = await Promise.all([
     db.query.customers.findFirst({ where: eq(customers.id, p.customerId) }),
     p.propertyId ? db.query.properties.findFirst({ where: eq(properties.id, p.propertyId) }) : null,
     p.proposalId ? db.query.proposals.findFirst({ where: eq(proposals.id, p.proposalId), columns: { token: true, acceptedName: true, acceptedAt: true } }) : null,
+    projectManagerOptions(p.projectManagerId),
   ]);
   const showMoney = can(user.role, "financials.read") || can(user.role, "estimates.costing");
   const address = property ? formatAddress(property) : null;
+  const manager = managers.find((m) => m.id === p.projectManagerId);
   return (
     <>
       <PageHeader
         title={<span className="flex flex-wrap items-center gap-2">#{p.number} {p.name} <Badge tone={PROJECT_STATUS_TONE[p.status]}>{PROJECT_STATUS_LABEL[p.status]}</Badge></span>}
         description={address ? <a href={mapsUrl(address)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-brand hover:underline"><MapPin className="size-3.5" />{address}</a> : undefined}
+        actions={
+          can(user.role, "projects.write") ? (
+            <ProjectManagerPicker projectId={p.id} current={p.projectManagerId} options={managers} />
+          ) : (
+            <p className="text-sm text-muted">Project manager: {manager?.name ?? "none"}</p>
+          )
+        }
       />
       {showMoney && (
         <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">

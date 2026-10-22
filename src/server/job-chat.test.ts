@@ -66,6 +66,15 @@ describe("who can open a job's chat", () => {
     expect(await chat.channelAccess(PM, PROJECT)).toMatchObject({ member: true });
   });
 
+  it("tells the job's current project manager about new messages", async () => {
+    const told = () => new PgDialect().sqlToQuery(h.fake.find("select", "user").at(-1)!.args.where[0] as SQL).params;
+    await chat.channelMemberIds(PROJECT);
+    expect(told()).not.toContain("pm-1");
+    h.rows["select:projects"] = [project({ projectManagerId: "pm-1" })];
+    await chat.channelMemberIds(PROJECT);
+    expect(told()).toContain("pm-1");
+  });
+
   it("a painter only once booked on the job or added by hand, and never a cancelled one", async () => {
     expect(await chat.channelAccess(PAINTER, PROJECT)).toBeNull();
     h.rows["select:schedule_entries"] = [{ projectId: PROJECT }];
