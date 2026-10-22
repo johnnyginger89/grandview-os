@@ -13,6 +13,8 @@ test.describe.configure({ mode: "serial" });
 const COLOUR = "SW 7008 Alabaster";
 const FIRST = "Start in the living room.";
 const SECOND = "Start in the kitchen instead.";
+// Its own crew without the painter, so "painters kept out" holds whatever crews other files made.
+const CREW = `[TEST DATA] Work order crew ${Date.now()}`;
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 let projectPath = "";
@@ -34,6 +36,15 @@ test.describe("work orders (owner)", () => {
 
   test("selling the job creates its work order, someone is assigned, and it's issued", async ({ page, browser }) => {
     const name = await sellThreeThousandDollarJob(page, browser, { colour: COLOUR, internalNote: "SECRET-INTERNAL note for the office", size: { length: "15", width: "12" } });
+    await page.goto("/schedule/setup");
+    await page.getByRole("button", { name: "Add crew" }).click();
+    const crewForm = page.getByRole("form", { name: "Add crew" });
+    await crewForm.getByLabel("Name").fill(CREW);
+    await crewForm.getByLabel("Crew size").fill("1");
+    await crewForm.getByRole("checkbox", { name: "Crew Leader (Dev)" }).check();
+    await crewForm.getByRole("button", { name: "Save crew" }).click();
+    await expect(page.getByRole("table", { name: "Crews" }).getByText(CREW).first()).toBeVisible();
+
     await page.goto("/projects");
     await page.getByRole("link", { name: new RegExp(escape(name)) }).first().click();
     await expect(page).toHaveURL(/\/projects\/[0-9a-f-]{36}$/);
@@ -49,6 +60,7 @@ test.describe("work orders (owner)", () => {
     // Booking someone from the card is what assigns them.
     await card(page).getByRole("button", { name: "Assign someone" }).click();
     const assign = card(page).getByRole("form", { name: "Assign someone" });
+    await assign.getByLabel("Who").selectOption({ label: CREW });
     await assign.getByLabel("What they're doing").selectOption({ label: "Colour consult" });
     await assign.getByLabel("Working days").fill("1");
     await assign.getByRole("button", { name: "Add to schedule" }).click();

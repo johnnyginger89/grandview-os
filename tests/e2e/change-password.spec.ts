@@ -1,10 +1,14 @@
 import { expect, test } from "@playwright/test";
-import { DEV_PASSWORD, statePath } from "./helpers";
+import { DEV_PASSWORD, login } from "./helpers";
 
-/* Anyone can change their own password from the account menu. */
-test.use({ storageState: statePath("subcontractor") });
+/*
+ * Anyone can change their own password from the account menu. Changing it signs out every
+ * other session, so this uses its own login (crew leader), never a role other files share.
+ */
+test.use({ storageState: { cookies: [], origins: [] } });
 
 test("change your password, and back", async ({ page }) => {
+  await login(page, "crew-leader");
   await page.goto("/account/security");
   const change = async (from: string, to: string, again = to) => {
     await page.getByLabel("Current password").fill(from);
