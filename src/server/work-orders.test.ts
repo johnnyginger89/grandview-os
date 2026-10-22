@@ -437,6 +437,57 @@ describe("listWorkOrders", () => {
     expect(JSON.stringify(dto)).not.toContain(sha256(TOKEN));
   });
 
+  describe("the out-of-date flag", () => {
+    const HOUR = 3_600_000;
+    const PAINTING = (crewId: string, startDate: string) => ({ kind: "work", phaseLabel: null, startDate, endDate: startDate, crewId, crewName: crewId, worksSaturdays: false, crewNotes: null });
+    /** `latestJobChanges` asks for one `at` column; the view builder asks for the rows themselves. */
+    const latestOr = (at: Date | null, rows: unknown[]) => (c: FakeCall) => ("at" in ((c.args.select?.[0] as object) ?? {}) ? [{ at }] : rows);
+
+    async function issued(extra: Record<string, unknown> = {}): Promise<WorkOrderView> {
+      h.rows["select:work_orders"] = [woRow(extra)];
+      await wo.issueWorkOrder({ id: WO }, ACTOR);
+      const v = lastInsert("work_order_versions").view as WorkOrderView;
+      h.rows["select:work_orders"] = [woRow({ ...extra, status: "issued", currentVersion: 1 })];
+      h.rows["select:work_order_versions"] = [{ workOrderId: WO, version: 1, issuedAt: NOW, changeNote: null, issuedByName: "Owner", view: v }];
+      return v;
+    }
+
+    it("is raised when the customer signs colours after the version crews see", async () => {
+      sourceRows();
+      await issued();
+      const signed = [{ room: "Living room", surface: "Walls", colour: "Alabaster", code: "SW 7008", sheen: "Eggshell", lineId: null }];
+      h.rows["select:colour_selections"] = latestOr(new Date(NOW.getTime() + HOUR), [{ rows: signed }]);
+      const [dto] = await wo.listWorkOrders(PROJECT, NOW);
+      expect(dto.outOfDate).toEqual(["colours"]);
+      expect(dto.pendingChanges).toContain("colours");
+    });
+
+    it("is raised when a booking it lists changes, but not for another crew's booking", async () => {
+      sourceRows();
+      h.rows["select:schedule_entries"] = latestOr(null, [PAINTING(CREW_A, "2026-10-26"), PAINTING(CREW_B, "2026-10-26")]);
+      h.rows["select:crews"] = [{ name: "[TEST DATA] Niko" }];
+      await issued({ crewId: CREW_A });
+
+      const later = new Date(NOW.getTime() + HOUR);
+      h.rows["select:schedule_entries"] = latestOr(later, [PAINTING(CREW_A, "2026-10-26"), PAINTING(CREW_B, "2026-10-28")]);
+      expect((await wo.listWorkOrders(PROJECT, NOW))[0]).toMatchObject({ outOfDate: [], pendingChanges: [] });
+
+      h.rows["select:schedule_entries"] = latestOr(later, [PAINTING(CREW_A, "2026-10-27"), PAINTING(CREW_B, "2026-10-28")]);
+      expect((await wo.listWorkOrders(PROJECT, NOW))[0]).toMatchObject({ outOfDate: ["bookings"], pendingChanges: ["bookings"] });
+    });
+
+    it("goes by the dates alone when what would change can't be worked out, and never flags a draft", async () => {
+      sourceRows();
+      await issued();
+      h.rows["select:work_order_versions"] = [{ workOrderId: WO, version: 1, issuedAt: NOW, changeNote: null, issuedByName: "Owner", view: { old: true } }];
+      h.rows["select:schedule_entries"] = latestOr(new Date(NOW.getTime() + HOUR), []);
+      expect((await wo.listWorkOrders(PROJECT, NOW))[0]).toMatchObject({ outOfDate: ["bookings"], pendingChanges: null });
+
+      h.rows["select:work_orders"] = [woRow()];
+      expect((await wo.listWorkOrders(PROJECT, NOW))[0].outOfDate).toEqual([]);
+    });
+  });
+
   it("makes a newly chosen project manager the office contact from the next version", async () => {
     sourceRows();
     h.rows["select:work_orders"] = [woRow()];

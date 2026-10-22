@@ -5,7 +5,8 @@ import { sellThreeThousandDollarJob } from "./sales";
 /*
  * The colour selection form: the office fills it in from the signed estimate, sends the
  * customer a link, the customer ticks both notes and signs, and the colours land on the
- * job's readiness, its work order, the customer file and the colour consultant's phone.
+ * job's readiness, its work order (the issued one is flagged out of date until the office
+ * issues a new version), the customer file and the colour consultant's phone.
  */
 test.describe.configure({ mode: "serial" });
 
@@ -90,6 +91,12 @@ test.describe("colour form (owner)", () => {
     expect(link).toMatch(/\/share\/c\/[A-Za-z0-9_-]{43}$/);
     await ready.getByRole("button", { name: "Done" }).click();
     await expect(coloursCard(page).getByText("Sent to the customer")).toBeVisible();
+
+    // Issued before the customer signs, so the crew's copy is behind once they do.
+    await page.getByTestId("work-order").first().getByRole("button", { name: "Issue", exact: true }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Issue work order" }).click();
+    await expect(page.getByRole("region", { name: "Work orders" }).getByText("Version 1 issued.")).toBeVisible();
+    await expect(page.getByTestId("work-order-out-of-date")).toHaveCount(0);
   });
 
   test("the customer signs through the link, after ticking both notes", async ({ browser }) => {
@@ -128,6 +135,10 @@ test.describe("colour form (owner)", () => {
     await expect(page.getByRole("button", { name: "Change colours" })).toBeVisible();
     // Signing ticked off the colour consult.
     await expect(page.getByRole("list", { name: "Readiness checks" }).getByLabel("Colour consult")).toHaveValue("done");
+    // The issued work order doesn't change by itself: the office is told to issue a new version.
+    const flag = page.getByTestId("work-order").first().getByTestId("work-order-out-of-date");
+    await expect(flag).toContainText("Work order out of date: issue a new version");
+    await expect(flag).toContainText("The customer signed colours after version 1 was issued.");
 
     const preview = await page.getByTestId("work-order").first().getByRole("link", { name: "Preview" }).getAttribute("href");
     await page.goto(preview!);

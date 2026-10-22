@@ -5,6 +5,7 @@ import { Dialog } from "@/components/dialog";
 import { Badge, Button, buttonClass, Card, CardHeader, Field, FormError, Input, Select, Textarea, type Tone } from "@/components/ui";
 import { cn, formatDate, formatDateTime } from "@/lib/utils";
 import { daysLeft } from "@/lib/work-orders/links";
+import { outOfDateText } from "@/lib/work-orders/out-of-date";
 import { LINK_DAY_CHOICES, MAX_CHECKLIST_ITEMS, MAX_CHECKLIST_TEXT, MAX_LINK_DAYS } from "@/lib/work-orders/schemas";
 import { SECTION_LABEL, STATUS_LABEL, type NewWorkOrderDefaults, type WorkOrderDTO, type WorkOrderFieldsDTO, type WorkOrderLinkDTO } from "@/lib/work-orders/types";
 import { ScheduleBookingForm, type BookingFormSetup, type BookingFormWording } from "./schedule-card-booking";
@@ -277,6 +278,7 @@ function WorkOrderRow({
   const open = wo.status !== "cancelled";
   const activeLinks = wo.links.filter((l) => l.status === "active").length;
   const pending = wo.status === "issued" ? wo.pendingChanges : null;
+  const stale = wo.outOfDate.length > 0;
   return (
     <li className="border-t border-border p-4 first:border-t-0" data-testid="work-order">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -286,6 +288,7 @@ function WorkOrderRow({
             <span className="text-muted">·</span>
             <span>{wo.crewName ?? "All crews"}</span>
             <Badge tone={STATUS_TONE[wo.status]}>{STATUS_LABEL[wo.status]}</Badge>
+            {stale && <Badge tone="warning">Out of date</Badge>}
           </p>
           <p className="truncate text-sm text-muted">{wo.title}</p>
           <p className="mt-0.5 text-xs text-muted">
@@ -330,10 +333,21 @@ function WorkOrderRow({
         </div>
       </div>
 
-      {pending && pending.length > 0 && (
-        <p className="mt-3 rounded-md bg-warning-soft px-3 py-2 text-sm text-warning">
-          Changed since version {wo.currentVersion} and not issued yet: {sectionList(pending)}. Crews still see version {wo.currentVersion}.
-        </p>
+      {stale ? (
+        <div className="mt-3 rounded-md bg-warning-soft px-3 py-2 text-sm text-warning" data-testid="work-order-out-of-date">
+          <p className="font-semibold">Work order out of date: issue a new version</p>
+          <p>
+            {outOfDateText(wo.outOfDate, wo.currentVersion)}
+            {pending && pending.length > 0 ? ` Not issued yet: ${sectionList(pending)}.` : ""} Crews still see version {wo.currentVersion}.
+          </p>
+        </div>
+      ) : (
+        pending &&
+        pending.length > 0 && (
+          <p className="mt-3 rounded-md bg-warning-soft px-3 py-2 text-sm text-warning">
+            Changed since version {wo.currentVersion} and not issued yet: {sectionList(pending)}. Crews still see version {wo.currentVersion}.
+          </p>
+        )
       )}
 
       {(wo.status === "issued" || wo.links.length > 0) && (

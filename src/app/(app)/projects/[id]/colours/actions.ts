@@ -51,7 +51,7 @@ export async function signColoursAction(id: unknown, input: unknown): Promise<Co
     const r = await signColourSelectionOnDevice(idSchema.parse(id), z.unknown().parse(input), user);
     refresh(r.projectId, r.id);
     revalidatePath("/my-jobs");
-    return { ok: true, message: "Signed. The colours are on the job and its work order." };
+    return { ok: true, message: "Signed. The colours are on the job. They'll be on the work order when you issue a new version." };
   } catch (e) {
     return fail(e);
   }

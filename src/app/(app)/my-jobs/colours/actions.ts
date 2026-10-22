@@ -62,7 +62,7 @@ export async function signFieldColoursAction(entryId: unknown, selectionId: unkn
     await signColourSelectionOnDevice(c.id!, z.unknown().parse(input), c.user);
     revalidatePath(`/my-jobs/colours/${c.entry}`);
     revalidatePath(`/projects/${c.projectId}`);
-    return { ok: true, message: "Signed. The office and the work order have the colours now." };
+    return { ok: true, message: "Signed. The office has the colours now. They'll be on the work order when the office issues a new version." };
   } catch (e) {
     return fail(e);
   }

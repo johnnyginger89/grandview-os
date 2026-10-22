@@ -9,6 +9,7 @@ import type { EstimateDoc } from "@/lib/estimating/document";
 import { dateRangeLabel, jobTitle, kindLabel } from "@/lib/schedule/format";
 import { calendarsFor, countWorkingDays } from "@/lib/schedule/working-days";
 import { linkExpiresAt, linkStatus } from "@/lib/work-orders/links";
+import { outOfDateReasons } from "@/lib/work-orders/out-of-date";
 import {
   createLinkSchema,
   createWorkOrderSchema,
@@ -351,6 +352,15 @@ export async function newWorkOrderDefaults(projectId: string): Promise<NewWorkOr
   };
 }
 
+/** When the job's colours were last signed and its bookings last changed (a removal counts: it updates the row). */
+async function latestJobChanges(projectId: string): Promise<{ coloursSignedAt: Date | null; bookingsChangedAt: Date | null }> {
+  const [[colours], [bookings]] = await Promise.all([
+    db.select({ at: sql<Date | null>`max(${colourSelections.signedAt})`.mapWith(colourSelections.signedAt) }).from(colourSelections).where(eq(colourSelections.projectId, projectId)),
+    db.select({ at: sql<Date | null>`max(${scheduleEntries.updatedAt})`.mapWith(scheduleEntries.updatedAt) }).from(scheduleEntries).where(eq(scheduleEntries.projectId, projectId)),
+  ]);
+  return { coloursSignedAt: colours?.at ?? null, bookingsChangedAt: bookings?.at ?? null };
+}
+
 /** The project's work orders for the staff card, newest first. */
 export async function listWorkOrders(projectId: string, now: Date = new Date()): Promise<WorkOrderDTO[]> {
   const p = await loadProject(projectId);
@@ -359,7 +369,7 @@ export async function listWorkOrders(projectId: string, now: Date = new Date()):
   if (!rows.length) return [];
   const ids = rows.map((r) => r.id);
   const crewIds = [...new Set(rows.map((r) => r.crewId).filter((c): c is string => !!c))];
-  const [crewRows, versionRows, linkRows, property] = await Promise.all([
+  const [crewRows, versionRows, linkRows, property, latest] = await Promise.all([
     crewIds.length ? db.select({ id: crews.id, name: crews.name }).from(crews).where(inArray(crews.id, crewIds)) : Promise.resolve([]),
     db
       .select({ workOrderId: workOrderVersions.workOrderId, version: workOrderVersions.version, issuedAt: workOrderVersions.issuedAt, changeNote: workOrderVersions.changeNote, issuedByName: user.name })
@@ -384,6 +394,7 @@ export async function listWorkOrders(projectId: string, now: Date = new Date()):
       .where(inArray(workOrderLinks.workOrderId, ids))
       .orderBy(desc(workOrderLinks.createdAt)),
     propertyFor(p.propertyId),
+    latestJobChanges(p.id),
   ]);
   const crewName = new Map(crewRows.map((c) => [c.id, c.name]));
   const booked = await db
@@ -412,6 +423,7 @@ export async function listWorkOrders(projectId: string, now: Date = new Date()):
 
   return rows.map((wo) => {
     const versions = versionRows.filter((v) => v.workOrderId === wo.id);
+    const issuedAt = versions.find((v) => v.version === wo.currentVersion)?.issuedAt ?? null;
     const fields: WorkOrderFieldsDTO = {
       title: wo.title,
       crewId: wo.crewId,
@@ -430,7 +442,7 @@ export async function listWorkOrders(projectId: string, now: Date = new Date()):
       currentVersion: wo.currentVersion,
       crewId: wo.crewId,
       crewName: wo.crewId ? (crewName.get(wo.crewId) ?? "Crew removed") : null,
-      issuedAt: versions.find((v) => v.version === wo.currentVersion)?.issuedAt.toISOString() ?? null,
+      issuedAt: issuedAt?.toISOString() ?? null,
       fields,
       assigned: booked
         .filter((b) => !wo.crewId || b.crewId === wo.crewId)
@@ -450,6 +462,7 @@ export async function listWorkOrders(projectId: string, now: Date = new Date()):
           lastOpenedVersion: l.lastOpenedVersion,
         })),
       pendingChanges: pending.get(wo.id) ?? null,
+      outOfDate: wo.status === "issued" ? outOfDateReasons(issuedAt, latest, pending.get(wo.id) ?? null) : [],
     };
   });
 }
