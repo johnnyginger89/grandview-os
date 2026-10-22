@@ -542,6 +542,33 @@ export async function moveStage(opportunityId: string, stageId: string, userId: 
   await db.transaction((tx) => moveStageInTx(tx, opportunityId, stageId, userId, lostReason));
 }
 
+/** Stages a visit booking moves on to "Estimate booked", the same as a YouCanBook.me booking. */
+const BEFORE_VISIT = ["new_lead", "contacted", "follow_up"];
+
+/**
+ * The office books (or moves) the estimate visit, by phone or in person. It counts like a
+ * YouCanBook.me booking: the first booking is the visit-booked milestone, and a lead still
+ * waiting for a visit moves to "Estimate booked".
+ */
+export async function bookVisit(opportunityId: string, at: Date, userId: string): Promise<void> {
+  await db.transaction(async (tx) => {
+    const [opp] = await tx.select().from(opportunities).where(eq(opportunities.id, opportunityId)).for("update");
+    if (!opp) throw new Error("Lead not found");
+    const from = await tx.query.pipelineStages.findFirst({ where: eq(pipelineStages.id, opp.stageId) });
+    if (from?.kind !== "open") throw new Error("This lead is closed. Move it back to an open stage first.");
+    const now = new Date();
+    const patch = { estimateVisitAt: at, ...milestoneUpdates(opp, { newVisitAt: at }, now), updatedAt: now };
+    await tx.update(opportunities).set(patch).where(eq(opportunities.id, opp.id));
+    const when = formatDateTime(at);
+    await tx.insert(activities).values({ customerId: opp.customerId, opportunityId: opp.id, type: "booking", body: opp.estimateVisitAt ? `Estimate visit moved to ${when}` : `Estimate visit booked for ${when}`, createdBy: userId });
+    await audit({ actorId: userId, action: "lead.visit", entityType: "opportunity", entityId: opp.id, before: { estimateVisitAt: opp.estimateVisitAt?.toISOString() ?? null }, after: { estimateVisitAt: at.toISOString() } }, tx);
+    if (BEFORE_VISIT.includes(from.key)) {
+      const booked = await stageByKey("estimate_booked", tx);
+      await moveStageInTx(tx, opp.id, booked.id, userId, null, { opp: { ...opp, ...patch }, from, to: booked });
+    }
+  });
+}
+
 /** Stages a lead passes through before the customer has a proposal. */
 const BEFORE_PROPOSAL = ["new_lead", "contacted", "estimate_booked", "estimate_completed"];
 

@@ -1,8 +1,9 @@
 "use client";
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Send } from "lucide-react";
-import { Button, FormError, Select, Textarea } from "@/components/ui";
-import { addNoteAction, moveStageAction, previewBookingEmailAction, sendBookingLinkAction } from "../actions";
+import { Button, FormError, Input, Select, Textarea } from "@/components/ui";
+import { addNoteAction, bookVisitAction, moveStageAction, previewBookingEmailAction, sendBookingLinkAction } from "../actions";
 
 export function StageSelect({ opportunityId, stageId, stages, lostReasons }: { opportunityId: string; stageId: string; stages: { id: string; name: string; kind: string }[]; lostReasons: string[] }) {
   const [pending, start] = useTransition();
@@ -107,6 +108,40 @@ export function ActivityComposer({ opportunityId }: { opportunityId: string }) {
         <Button size="sm" disabled={pending || !text.trim()} onClick={() => save("note")}>Add note</Button>
         <Button size="sm" variant="secondary" disabled={pending || !text.trim()} onClick={() => save("call")}>Log call</Button>
       </div>
+    </div>
+  );
+}
+
+/** "Book visit" or "Reschedule": the estimate visit agreed by phone or in person. `current` is Vancouver wall clock. */
+export function VisitBooking({ opportunityId, current }: { opportunityId: string; current: string | null }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [at, setAt] = useState(current ?? "");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+  if (!open) {
+    return (
+      <button type="button" className="ml-2 text-xs text-brand hover:underline" onClick={() => setOpen(true)}>
+        {current ? "Reschedule" : "Book visit"}
+      </button>
+    );
+  }
+  const save = () =>
+    start(async () => {
+      const r = await bookVisitAction(opportunityId, at);
+      if (!r.ok) return setError(r.error);
+      setError(null);
+      setOpen(false);
+      router.refresh();
+    });
+  return (
+    <div className="mt-2 space-y-2">
+      <Input type="datetime-local" aria-label="Visit date and time" value={at} onChange={(e) => setAt(e.target.value)} />
+      <div className="flex gap-2">
+        <Button size="sm" disabled={pending || !at} onClick={save}>{current ? "Move visit" : "Book visit"}</Button>
+        <Button size="sm" variant="ghost" disabled={pending} onClick={() => setOpen(false)}>Cancel</Button>
+      </div>
+      <FormError message={error} />
     </div>
   );
 }

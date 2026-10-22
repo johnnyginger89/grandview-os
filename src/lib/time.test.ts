@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { businessHour, businessZone, parseBusinessDateTime, setStaleBcDataForTests, startOfBusinessMonth } from "./time";
+import { businessHour, businessWallClock, businessZone, parseBusinessDateTime, setStaleBcDataForTests, startOfBusinessMonth } from "./time";
 
 describe("business time zone", () => {
   it("reads bare wall-clock input as Vancouver time (PDT, UTC-7)", () => {
@@ -61,5 +61,15 @@ describe("British Columbia's permanent UTC−7", () => {
     expect(businessZone("2027-06-01T12:00:00Z")).toBe("Etc/GMT+7");
     setStaleBcDataForTests(false);
     expect(businessZone(new Date("2027-06-01T12:00:00Z"))).toBe("America/Vancouver");
+  });
+});
+
+describe("businessWallClock", () => {
+  it("writes an instant as Vancouver wall-clock time, the way a date-and-time box takes it", () => {
+    expect(businessWallClock(new Date("2026-01-15T18:30:00Z"))).toBe("2026-01-15T10:30");
+    expect(businessWallClock(new Date("2026-07-15T17:05:00Z"))).toBe("2026-07-15T10:05");
+    // BC stays on UTC−7 from November 2026.
+    expect(businessWallClock(new Date("2026-11-20T17:00:00Z"))).toBe("2026-11-20T10:00");
+    for (const s of ["2026-03-08T03:30", "2026-10-31T23:59", "2027-02-01T08:00"]) expect(businessWallClock(parseBusinessDateTime(s)!)).toBe(s);
   });
 });
