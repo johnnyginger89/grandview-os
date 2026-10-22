@@ -36,6 +36,7 @@ export function AcceptDialog({
   estimateId,
   defaultName,
   unlinkedLead = false,
+  otherQuotes = [],
   checks = { addressMissing: false, unpriced: [] },
   withSaved,
   onClose,
@@ -43,6 +44,7 @@ export function AcceptDialog({
   estimateId: string;
   defaultName: string;
   unlinkedLead?: boolean;
+  otherQuotes?: number[];
   checks?: Pick<ProposalProps, "addressMissing" | "unpriced">;
   withSaved: WithSaved;
   onClose: () => void;
@@ -120,6 +122,11 @@ export function AcceptDialog({
     >
       <div className="space-y-4">
         <BeforeSend proposals={checks} confirmed={confirmed} onConfirm={setConfirmed} verb="accept" />
+        {otherQuotes.length > 0 && (
+          <p role="note" className="rounded-md bg-surface-2 px-3 py-2 text-sm">
+            Accepting this closes the other {otherQuotes.length === 1 ? "quote" : "quotes"} on this lead ({otherQuotes.map((n) => `#${n}`).join(", ")}), so the customer can&apos;t sign {otherQuotes.length === 1 ? "it" : "them"} too.
+          </p>
+        )}
         {unlinkedLead && (
           <p role="note" className="rounded-md bg-warning-soft px-3 py-2 text-sm text-warning">
             This estimate isn&apos;t linked to a lead, so no lead will be marked won. Cancel and use <strong>Link to lead</strong> at the top of the estimate first.

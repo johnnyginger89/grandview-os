@@ -36,4 +36,6 @@ export interface ProposalProps {
   addressMissing: boolean;
   /** Surfaces in the job priced at $0, from what's on screen (the editor fills this in). */
   unpriced: UnpricedSurface[];
+  /** Other estimates on the same lead the customer could still sign; accepting this one closes them. */
+  otherQuotes: number[];
 }

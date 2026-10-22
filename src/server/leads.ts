@@ -6,11 +6,13 @@ import {
   activities,
   contacts,
   customers,
+  estimates,
   messageTemplates,
   opportunities,
   outboundMessages,
   pipelineStages,
   properties,
+  proposals,
   user,
   type LEAD_CHANNELS,
 } from "@/db/schema";
@@ -513,7 +515,27 @@ export async function moveStageInTx(
     createdBy: userId,
   });
   await audit({ actorId: userId, action: "lead.stage", entityType: "opportunity", entityId: opp.id, before: { stage: from?.key }, after: { stage: to.key } }, tx);
+  if (to.kind === "lost") await closeProposalsOfLostLead(tx, opp, userId);
   return "moved";
+}
+
+/**
+ * A lost lead's quotes stop accepting signatures, so a customer can't sign for a job the office
+ * has given up on. The estimates are locked first, as every change to their proposals does.
+ */
+async function closeProposalsOfLostLead(tx: Tx, opp: Opportunity, userId: string | null) {
+  const quotes = await tx.select({ id: estimates.id, number: estimates.number }).from(estimates).where(eq(estimates.opportunityId, opp.id)).orderBy(asc(estimates.id)).for("update");
+  if (!quotes.length) return;
+  const closed = await tx
+    .update(proposals)
+    .set({ status: "withdrawn" })
+    .where(and(inArray(proposals.estimateId, quotes.map((q) => q.id)), inArray(proposals.status, ["sent", "viewed"])))
+    .returning({ id: proposals.id, estimateId: proposals.estimateId });
+  for (const p of closed) {
+    const number = quotes.find((q) => q.id === p.estimateId)?.number;
+    await tx.insert(activities).values({ customerId: opp.customerId, opportunityId: opp.id, type: "estimate", body: `Proposal for estimate #${number} withdrawn: the lead was marked Lost`, createdBy: userId });
+    await audit({ actorId: userId, action: "proposal.withdraw", entityType: "proposal", entityId: p.id, after: { estimateId: p.estimateId, reason: "lead_lost" } }, tx);
+  }
 }
 
 export async function moveStage(opportunityId: string, stageId: string, userId: string | null, lostReason?: string | null): Promise<void> {

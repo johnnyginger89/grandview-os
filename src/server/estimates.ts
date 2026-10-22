@@ -17,6 +17,7 @@ import { calculateDoc, estimateDocSchema, resolvedQuantity, totalsToStrings, typ
 import type { EstimateResult } from "@/lib/estimating/engine";
 import { toDb } from "@/lib/money";
 import { audit } from "./audit";
+import { advanceToProposalSent } from "./leads";
 import { getRateSnapshot } from "./rates";
 import { getPricing } from "./settings";
 
@@ -356,7 +357,7 @@ const ALLOWED: Record<EstimateStatus, EstimateStatus[]> = {
  * the version on screen; the new version is returned.
  */
 export async function setEstimateStatus(id: string, status: EstimateStatus, userId: string, expectedUpdatedAt?: string | null) {
-  return db.transaction(async (tx) => {
+  const r = await db.transaction(async (tx) => {
     const est = await lockEstimate(tx, id);
     if (!est) throw new Error("Estimate not found");
     assertCurrentVersion(est, expectedUpdatedAt);
@@ -369,8 +370,11 @@ export async function setEstimateStatus(id: string, status: EstimateStatus, user
     await tx.update(estimates).set({ status, sentAt: status === "sent" ? now : est.sentAt, updatedAt: now }).where(eq(estimates.id, id));
     await tx.insert(activities).values({ customerId: est.customerId, opportunityId: est.opportunityId, type: "estimate", body: `Estimate #${est.number} marked ${status}`, createdBy: userId });
     await audit({ actorId: userId, action: "estimate.status", entityType: "estimate", entityId: id, before: { status: est.status }, after: { status } }, tx);
-    return { updatedAt: now.toISOString() };
+    return { updatedAt: now.toISOString(), opportunityId: est.opportunityId };
   });
+  // Sent without emailing is still sent, as far as the lead is concerned.
+  if (status === "sent" && r.opportunityId) await advanceToProposalSent(r.opportunityId, userId);
+  return { updatedAt: r.updatedAt };
 }
 
 export async function duplicateEstimate(id: string, userId: string) {

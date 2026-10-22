@@ -1,10 +1,10 @@
 import "server-only";
-import { and, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, ne } from "drizzle-orm";
 import { db } from "@/db";
-import { activities, estimates, opportunities, pipelineStages } from "@/db/schema";
+import { activities, estimates, opportunities, pipelineStages, proposals } from "@/db/schema";
 import { audit } from "./audit";
 import { lockEstimate } from "./estimates";
-import { advanceToProposalSent } from "./leads";
+import { advanceToProposalSent, moveStage, stageByKey } from "./leads";
 
 /*
  * Every estimate belongs to a lead, so the lead moves with it (proposal sent, won) and the sale
@@ -106,4 +106,26 @@ export async function linkEstimateToLead(estimateId: string, opportunityId: stri
   });
   // A proposal already out: the lead catches up, as if it had been sent with the link in place.
   if (linked?.sent) await advanceToProposalSent(linked.opportunityId, userId);
+}
+
+/**
+ * After a decline: the estimate's lead moves to Lost, for `reason` (one of Settings → Lists →
+ * Lost reasons). Its other open quotes close with it (see moveStageInTx).
+ */
+export async function markEstimateLeadLost(estimateId: string, reason: string, userId: string): Promise<void> {
+  const est = await db.query.estimates.findFirst({ where: eq(estimates.id, estimateId), columns: { opportunityId: true, status: true } });
+  if (!est?.opportunityId) throw new EstimateLeadError("This estimate isn't linked to a lead.");
+  if (est.status === "accepted") throw new EstimateLeadError("This estimate is sold, so its lead stays won.");
+  await moveStage(est.opportunityId, (await stageByKey("lost")).id, userId, reason);
+}
+
+/** Other estimates on the same lead with a proposal the customer could still sign, by number. */
+export async function otherOpenQuotes(estimateId: string, opportunityId: string): Promise<number[]> {
+  const rows = await db
+    .selectDistinct({ number: estimates.number })
+    .from(estimates)
+    .innerJoin(proposals, eq(proposals.estimateId, estimates.id))
+    .where(and(eq(estimates.opportunityId, opportunityId), ne(estimates.id, estimateId), inArray(proposals.status, ["sent", "viewed"])))
+    .orderBy(asc(estimates.number));
+  return rows.map((r) => r.number);
 }

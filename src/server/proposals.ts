@@ -1,6 +1,6 @@
 import "server-only";
 import { createHash, randomBytes } from "node:crypto";
-import { and, desc, eq, gte, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import {
@@ -615,6 +615,7 @@ async function acceptInTx(tx: Tx, p: ProposalRow, a: Acceptance, ctx: Acceptance
     .update(proposals)
     .set({ status: "superseded" })
     .where(and(eq(proposals.estimateId, p.estimateId), inArray(proposals.status, OPEN)));
+  await closeOtherQuotes(tx, ctx.estimate, a.markedBy?.id ?? null);
 
   const { estimate } = ctx;
   const inPerson = a.device ? ` in person, on ${a.device.name}'s device` : "";
@@ -665,6 +666,31 @@ async function acceptInTx(tx: Tx, p: ProposalRow, a: Acceptance, ctx: Acceptance
     tx,
   );
   return { project, totals };
+}
+
+/**
+ * The customer has chosen: other quotes on the same lead (alternatives, an older estimate) stop
+ * accepting signatures, so the job can't be sold twice. Their estimates are locked first.
+ */
+async function closeOtherQuotes(tx: Tx, sold: EstimateRow, actorId: string | null) {
+  if (!sold.opportunityId) return;
+  const others = await tx
+    .select({ id: estimates.id, number: estimates.number })
+    .from(estimates)
+    .where(and(eq(estimates.opportunityId, sold.opportunityId), ne(estimates.id, sold.id)))
+    .orderBy(asc(estimates.id))
+    .for("update");
+  if (!others.length) return;
+  const closed = await tx
+    .update(proposals)
+    .set({ status: "withdrawn" })
+    .where(and(inArray(proposals.estimateId, others.map((o) => o.id)), inArray(proposals.status, OPEN)))
+    .returning({ id: proposals.id, estimateId: proposals.estimateId });
+  for (const p of closed) {
+    const number = others.find((o) => o.id === p.estimateId)?.number;
+    await tx.insert(activities).values({ customerId: sold.customerId, opportunityId: sold.opportunityId, type: "estimate", body: `Proposal for estimate #${number} withdrawn: estimate #${sold.number} on the same lead was accepted`, createdBy: actorId });
+    await audit({ actorId, action: "proposal.withdraw", entityType: "proposal", entityId: p.id, after: { estimateId: p.estimateId, reason: "other_quote_accepted", acceptedEstimateId: sold.id } }, tx);
+  }
 }
 
 /** Once the sale is committed: the lead is won, the crew's work order started and the office told. */

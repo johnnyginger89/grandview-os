@@ -6,11 +6,11 @@ import { contacts, customers, projects, properties } from "@/db/schema";
 import { requirePermission } from "@/lib/authz/guard";
 import { can } from "@/lib/authz/permissions";
 import { formatAddress } from "@/lib/utils";
-import { leadSummary, openLeadsFor } from "@/server/estimate-lead";
+import { leadSummary, openLeadsFor, otherOpenQuotes } from "@/server/estimate-lead";
 import { listRevisions, listTemplates, loadEstimate, recentColours } from "@/server/estimates";
 import { followUpHistory, listProposals, proposalEmailDraft, proposalExpired, proposalUrl } from "@/server/proposals";
 import { listFactors, listMaterialOptions, listRates, toSnapshot } from "@/server/rates";
-import { getEstimatingPresets, getPricing, getProposalTemplate } from "@/server/settings";
+import { getEstimatingPresets, getList, getPricing, getProposalTemplate } from "@/server/settings";
 import { resolveJobType } from "@/lib/proposal-template/resolve";
 import { JOB_TYPE_KEYS } from "@/lib/proposal-template/schema";
 import { CompanyCamSection } from "@/components/companycam/companycam-section";
@@ -52,6 +52,11 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
     estimate.opportunityId ? leadSummary(estimate.opportunityId) : null,
     // A sold estimate keeps its lead.
     canEdit && estimate.status !== "accepted" ? openLeadsFor(estimate.customerId) : [],
+  ]);
+  const declinedProposal = proposalRows[0]?.status === "declined" ? proposalRows[0] : null;
+  const [lostReasons, otherQuotes] = await Promise.all([
+    estimate.opportunityId && can(user.role, "pipeline.write") ? getList("lost_reasons") : [],
+    estimate.opportunityId && estimate.status !== "accepted" ? otherOpenQuotes(estimate.id, estimate.opportunityId) : [],
   ]);
   const proposalText = Object.fromEntries(
     JOB_TYPE_KEYS.map((k) => {
@@ -98,11 +103,14 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
           lead: lead ? { ...lead, visitAt: lead.visitAt?.toISOString() ?? null } : null,
           choices: leadChoices,
           canOpenLead: can(user.role, "pipeline.read"),
+          declined: declinedProposal || estimate.status === "declined" ? { reason: declinedProposal?.declineReason ?? null } : null,
+          lostReasons,
         }}
         proposals={{
           canSend: canEdit && estimate.status !== "accepted",
           unlinkedLead: !estimate.opportunityId && leadChoices.length > 0,
           addressMissing: !estimate.propertyId,
+          otherQuotes,
           // Filled in by the editor from what's on screen.
           unpriced: [],
           customerName: customer?.displayName ?? "",

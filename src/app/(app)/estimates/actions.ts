@@ -5,7 +5,7 @@ import { z } from "zod";
 import { safeErrorMessage } from "@/lib/action-error";
 import { ESTIMATE_STATUSES } from "@/db/schema";
 import { assertPermission } from "@/lib/authz/guard";
-import { linkEstimateToLead, openLeadsFor, type LeadChoice } from "@/server/estimate-lead";
+import { linkEstimateToLead, markEstimateLeadLost, openLeadsFor, type LeadChoice } from "@/server/estimate-lead";
 import { searchCustomers } from "@/server/search";
 import {
   createEstimate,
@@ -257,6 +257,18 @@ export async function findCustomersAction(query: string): Promise<{ id: string; 
 export async function openLeadsAction(customerId: string): Promise<LeadChoice[]> {
   await assertPermission("estimates.write");
   return openLeadsFor(uuid.parse(customerId));
+}
+
+/** The customer said no: the estimate's lead moves to Lost, for one of the lost reasons. */
+export async function leadLostAction(estimateId: string, reason: string): Promise<Result> {
+  try {
+    const user = await assertPermission("pipeline.write");
+    await markEstimateLeadLost(uuid.parse(estimateId), z.string().trim().min(1, "Choose why it was lost").max(200).parse(reason), user.id);
+    revalidatePath(`/estimates/${estimateId}`);
+    return { ok: true };
+  } catch (e) {
+    return err(e);
+  }
 }
 
 /** Link the estimate to one of its customer's open leads, or unlink it (null). */
