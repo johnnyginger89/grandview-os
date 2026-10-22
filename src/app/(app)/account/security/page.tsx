@@ -26,7 +26,7 @@ export default async function SecurityPage() {
       <Card className="mt-4 max-w-xl">
         <CardHeader title="Password" />
         <div className="p-4">
-          <ChangePassword />
+          <ChangePassword hasTwoFactor={user.twoFactorEnabled} />
         </div>
       </Card>
     </>
