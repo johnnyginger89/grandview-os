@@ -77,7 +77,7 @@ function AccountMenu({ user }: { user: ShellUser }) {
             <p className="truncate text-xs text-muted">{user.roleLabel}</p>
           </div>
           <Link href="/account/security" onClick={close} className={cn(popoverItem, "mt-1.5")}>
-            <ShieldCheck className="size-4 text-muted" aria-hidden /> Account &amp; security
+            <ShieldCheck className="size-4 text-muted" aria-hidden /> Password &amp; security
           </Link>
           <button type="button" onClick={signOut} className={popoverItem}>
             <LogOut className="size-4 text-muted" aria-hidden /> Sign out

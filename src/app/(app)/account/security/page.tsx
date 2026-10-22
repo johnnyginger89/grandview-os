@@ -1,6 +1,7 @@
 import { Card, CardHeader, PageHeader } from "@/components/ui";
 import { needsMfaEnrollment, requireUser } from "@/lib/authz/guard";
 import { ROLE_LABELS } from "@/lib/authz/permissions";
+import { ChangePassword } from "./change-password";
 import { TwoFactorSetup } from "./two-factor-setup";
 
 export const metadata = { title: "Account security" };
@@ -20,6 +21,12 @@ export default async function SecurityPage() {
         <CardHeader title="Two-factor authentication" description="Use an authenticator app such as Google Authenticator, 1Password or Microsoft Authenticator." />
         <div className="p-4">
           <TwoFactorSetup enabled={user.twoFactorEnabled} />
+        </div>
+      </Card>
+      <Card className="mt-4 max-w-xl">
+        <CardHeader title="Password" />
+        <div className="p-4">
+          <ChangePassword />
         </div>
       </Card>
     </>
