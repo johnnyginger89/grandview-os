@@ -7,7 +7,7 @@ import { db } from "@/db";
 import { activities, contacts, customers, estimates, opportunities, pipelineStages, properties, user } from "@/db/schema";
 import { requirePermission } from "@/lib/authz/guard";
 import { can } from "@/lib/authz/permissions";
-import { formatCAD } from "@/lib/money";
+import { formatCAD, sumOf } from "@/lib/money";
 import { formatAddress, formatDate, formatDateTime, mapsUrl } from "@/lib/utils";
 import { listColourSelectionsForCustomer } from "@/server/colour-selections";
 import { AddContactForm, AddPropertyForm, EditCustomer } from "./customer-forms";
@@ -30,7 +30,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
   const canOpenJobs = can(me.role, "projects.read_all");
 
   const accepted = ests.filter((e) => e.status === "accepted");
-  const lifetime = accepted.reduce((s, e) => s + Number(e.totalPrice), 0);
+  const lifetime = sumOf(accepted.map((e) => e.totalPrice));
   const canWrite = can(me.role, "customers.write");
 
   return (

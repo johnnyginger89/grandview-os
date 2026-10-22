@@ -4,6 +4,7 @@
  * the authoritative save, so both always agree.
  */
 import { z } from "zod";
+import { d } from "@/lib/money";
 import {
   calculateEstimate,
   quantityFromDimensions,
@@ -17,6 +18,43 @@ import {
 
 const num = z.string().regex(/^-?\d*(\.\d+)?$/, "Enter a number");
 const optNum = num.nullable().optional().transform((v) => (v === "" || v === undefined ? null : v));
+
+// Price settings must fit their columns (percents numeric(6,4), money numeric(14,2)) so the
+// totals worked out before saving are the totals of what is stored, not of a rounded copy.
+const NUMBER_RE = /^-?\d*\.?\d+$/;
+const MONEY_LIMIT = "1e12";
+
+/** A percent stored as a fraction (0.2 = 20%): 0–100%, to hundredths of a percent. */
+function percentSettingProblem(value: string, label: string): string | null {
+  if (!NUMBER_RE.test(value)) return `${label} must be a number`;
+  const v = d(value);
+  if (v.lt(0) || v.gt(1)) return `${label} must be between 0% and 100%`;
+  if (v.decimalPlaces() > 4) return `${label} can have at most 2 decimal places`;
+  return null;
+}
+
+/** Dollars and cents, never negative. */
+function moneySettingProblem(value: string, label: string): string | null {
+  if (!NUMBER_RE.test(value)) return `${label} must be a number`;
+  const v = d(value);
+  if (v.lt(0)) return `${label} can't be negative`;
+  if (v.decimalPlaces() > 2) return `${label} can have at most 2 decimal places`;
+  if (v.gte(MONEY_LIMIT)) return `${label} is too large`;
+  return null;
+}
+
+const checked = (problem: (v: string) => string | null) =>
+  z.string().superRefine((v, ctx) => {
+    const message = problem(v);
+    if (message) ctx.addIssue({ code: "custom", message });
+  });
+const pct = (label: string) => checked((v) => percentSettingProblem(v, label));
+const money = (label: string) => checked((v) => moneySettingProblem(v, label));
+const optMoney = (label: string) =>
+  checked((v) => (v === "" ? null : moneySettingProblem(v, label)))
+    .nullable()
+    .optional()
+    .transform((v) => (v === "" || v === undefined ? null : v));
 
 export const rateSnapshotSchema = z.object({
   rateId: z.string().nullable().optional(),
@@ -51,15 +89,15 @@ export const rateSnapshotSchema = z.object({
 
 export const docSettingsSchema = z.object({
   pricingMethod: z.enum(["target_margin", "billing_rate"]),
-  laborCostPerHour: num,
-  billingRatePerHour: num,
-  targetMargin: num,
-  materialMarkupPct: num,
-  minimumJobPrice: num,
-  gstRate: num,
-  depositPct: num,
-  discount: optNum,
-  priceOverride: optNum,
+  laborCostPerHour: money("Labour cost"),
+  billingRatePerHour: money("Billing rate"),
+  targetMargin: pct("Target margin"),
+  materialMarkupPct: pct("Paint markup"),
+  minimumJobPrice: money("Minimum job price"),
+  gstRate: pct("GST"),
+  depositPct: pct("Deposit"),
+  discount: optMoney("Discount"),
+  priceOverride: optMoney("Final price"),
   /** Set once when the estimate is created; the server never takes it from the browser. */
   finalPriceBeforeUpgrades: z.boolean().optional(),
 });

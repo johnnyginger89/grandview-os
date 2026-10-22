@@ -1,11 +1,12 @@
 import "server-only";
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
-import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { outer } from "@/db/sql";
 import { colourSelections, contacts, crewMembers, crews, customers, projects, properties, proposals, scheduleEntries, user, workOrderLinks, workOrders, workOrderVersions } from "@/db/schema";
 import type { WorkOrderStatus } from "@/db/schema/work-orders";
 import type { EstimateDoc } from "@/lib/estimating/document";
+import { loadPage, type Paged } from "@/lib/paging";
 import { dateRangeLabel, jobTitle, kindLabel } from "@/lib/schedule/format";
 import { calendarsFor, countWorkingDays } from "@/lib/schedule/working-days";
 import { linkExpiresAt, linkStatus } from "@/lib/work-orders/links";
@@ -864,48 +865,56 @@ export interface WorkOrderListRow {
   updatedAt: string;
 }
 
-/** Every work order, newest first, for the Work orders page (staff with projects.read_all). */
-export async function listAllWorkOrders(opts: { status?: WorkOrderStatus } = {}, now: Date = new Date()): Promise<WorkOrderListRow[]> {
+/** Every work order, most recently changed first, a page at a time, for the Work orders page (staff with projects.read_all). */
+export async function listAllWorkOrders(opts: { status?: WorkOrderStatus; page?: number } = {}, now: Date = new Date()): Promise<Paged<WorkOrderListRow>> {
+  const where = opts.status ? eq(workOrders.status, opts.status) : undefined;
   const issuedAt = sql<Date | null>`(select max(${workOrderVersions.issuedAt}) from ${workOrderVersions}
     where ${workOrderVersions.workOrderId} = ${outer(workOrders.id)} and ${workOrderVersions.version} = ${outer(workOrders.currentVersion)})`;
   const activeLinks = sql<number>`(select count(*)::int from ${workOrderLinks}
     where ${workOrderLinks.workOrderId} = ${outer(workOrders.id)} and ${workOrderLinks.revokedAt} is null and ${workOrderLinks.expiresAt} > ${now})`;
-  const rows = await db
-    .select({
-      id: workOrders.id,
-      number: workOrders.number,
-      title: workOrders.title,
-      status: workOrders.status,
-      currentVersion: workOrders.currentVersion,
-      crewName: crews.name,
-      projectId: projects.id,
-      projectNumber: projects.number,
-      customerName: customers.displayName,
-      issuedAt,
-      activeLinks,
-      updatedAt: workOrders.updatedAt,
-    })
-    .from(workOrders)
-    .innerJoin(projects, eq(projects.id, workOrders.projectId))
-    .innerJoin(customers, eq(customers.id, projects.customerId))
-    .leftJoin(crews, eq(crews.id, workOrders.crewId))
-    .where(opts.status ? eq(workOrders.status, opts.status) : undefined)
-    .orderBy(desc(workOrders.updatedAt))
-    .limit(500);
-  return rows.map((r) => ({
-    id: r.id,
-    number: workOrderNumber(r.number),
-    title: r.title,
-    status: r.status,
-    currentVersion: r.currentVersion,
-    crewName: r.crewName,
-    projectId: r.projectId,
-    projectNumber: r.projectNumber,
-    customerName: r.customerName,
-    issuedAt: r.issuedAt ? new Date(r.issuedAt).toISOString() : null,
-    activeLinks: Number(r.activeLinks) || 0,
-    updatedAt: r.updatedAt.toISOString(),
-  }));
+  return loadPage(
+    opts.page ?? 1,
+    async () => (await db.select({ n: count() }).from(workOrders).where(where))[0]?.n ?? 0,
+    async (limit, offset) => {
+      const rows = await db
+        .select({
+          id: workOrders.id,
+          number: workOrders.number,
+          title: workOrders.title,
+          status: workOrders.status,
+          currentVersion: workOrders.currentVersion,
+          crewName: crews.name,
+          projectId: projects.id,
+          projectNumber: projects.number,
+          customerName: customers.displayName,
+          issuedAt,
+          activeLinks,
+          updatedAt: workOrders.updatedAt,
+        })
+        .from(workOrders)
+        .innerJoin(projects, eq(projects.id, workOrders.projectId))
+        .innerJoin(customers, eq(customers.id, projects.customerId))
+        .leftJoin(crews, eq(crews.id, workOrders.crewId))
+        .where(where)
+        .orderBy(desc(workOrders.updatedAt), desc(workOrders.number))
+        .limit(limit)
+        .offset(offset);
+      return rows.map((r) => ({
+        id: r.id,
+        number: workOrderNumber(r.number),
+        title: r.title,
+        status: r.status,
+        currentVersion: r.currentVersion,
+        crewName: r.crewName,
+        projectId: r.projectId,
+        projectNumber: r.projectNumber,
+        customerName: r.customerName,
+        issuedAt: r.issuedAt ? new Date(r.issuedAt).toISOString() : null,
+        activeLinks: Number(r.activeLinks) || 0,
+        updatedAt: r.updatedAt.toISOString(),
+      }));
+    },
+  );
 }
 
 /**

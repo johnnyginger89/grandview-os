@@ -136,6 +136,8 @@ const UNCACHED = [
   "src/server/jobs-today.ts",
   "src/server/goals.ts",
   "src/server/pipeline-list.ts",
+  "src/server/estimate-list.ts",
+  "src/server/project-list.ts",
   "src/server/project-status.ts",
   "src/lib/reporting/",
   "src/components/reporting/",

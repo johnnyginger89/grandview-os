@@ -31,6 +31,27 @@ export function formatPct(value: DecimalInput, places = 1): string {
   return `${d(value).times(100).toDecimalPlaces(places).toFixed(places)}%`;
 }
 
+/** A stored fraction as the percent for a number box: "0.55" → "55", "0.1425" → "14.25". */
+export function fractionToPercent(value: DecimalInput): string {
+  return d(value).times(100).toDecimalPlaces(2).toFixed();
+}
+
+/**
+ * A percent typed in a number box as the fraction to store: "14.3" → "0.143". Rounded to
+ * hundredths of a percent and kept between 0 and `max` percent; blank is 0.
+ */
+export function percentToFraction(percent: DecimalInput, max: DecimalInput = 100): string {
+  const p = Decimal.min(Decimal.max(d(percent).toDecimalPlaces(2), 0), d(max));
+  return p.div(100).toFixed();
+}
+
+/** Adds amounts exactly: 0.10 + 0.20 is 0.30, never 0.30000000000000004. */
+export function sumOf(values: Iterable<DecimalInput>): Decimal {
+  let total = new Decimal(0);
+  for (const v of values) total = total.plus(d(v));
+  return total;
+}
+
 export function formatNum(value: DecimalInput, places = 1): string {
   return d(value).toDecimalPlaces(places).toNumber().toLocaleString("en-CA", {
     maximumFractionDigits: places,
