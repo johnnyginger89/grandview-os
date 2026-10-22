@@ -629,7 +629,7 @@ function LinkDialog({ wo, defaultDays, onClose, onCreated }: { wo: WorkOrderDTO;
       open
       onClose={onClose}
       title={`Share ${wo.number}`}
-      description="Anyone with the link can see this work order (never prices or hours) until it expires or you turn it off."
+      description="Anyone with the link can see this work order, including any estimated hours but never prices, until it expires or you turn it off."
       footer={
         <>
           <Button variant="secondary" onClick={onClose} disabled={pending}>

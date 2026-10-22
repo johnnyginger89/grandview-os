@@ -88,6 +88,8 @@ test.describe("work orders (owner)", () => {
     await page.goto(projectPath);
     await row(page).getByRole("button", { name: "Create link" }).click();
     const dialog = page.getByRole("dialog");
+    // Crews see the estimated hours on purpose, so the dialog mustn't promise otherwise.
+    await expect(dialog).toContainText("including any estimated hours but never prices");
     await dialog.getByLabel("Who is it for?").fill("[TEST DATA] Niko's crew");
     await dialog.getByLabel("Link works for").selectOption("30");
     await dialog.getByRole("button", { name: "Create link" }).click();
