@@ -524,6 +524,9 @@ const CREW_FACING = [
   "src/components/work-order/",
   "src/app/share/wo/",
   "src/app/(preview)/projects/[id]/work-orders/",
+  // Crews read job chat and fill in colour forms too.
+  "src/server/job-chat.ts",
+  "src/server/colour-selections.ts",
 ];
 const MONEY_OR_HOURS = [
   "contractPrice", "contractTotal", "depositRequired", "estimatedCost", "estimatedHours", "plannedHours",

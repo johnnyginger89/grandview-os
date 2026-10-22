@@ -29,7 +29,8 @@ export default async function JobChatPage({ params, searchParams }: { params: Pr
         channel={{ projectId, number: access.project.number, title: access.project.title, status: access.project.status }}
         initial={page}
         members={people.members}
-        candidates={people.candidates}
+        // Only people who can add members need the list of everyone else; crews never get the staff list.
+        candidates={access.canManage ? people.candidates : []}
         canManage={access.canManage}
         startWithUpdate={update === "1"}
         jobHref={can(user.role, "projects.read_all") ? `/projects/${projectId}` : null}
