@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { expectNoAccess, statePath } from "./helpers";
+import { sellThreeThousandDollarJob } from "./sales";
 
 test.describe("signed out", () => {
   test("signed-out users are sent to login", async ({ page }) => {
@@ -46,5 +47,13 @@ test.describe("estimator", () => {
     // Estimators only see the Rates tab of Settings.
     await expect(page.getByRole("navigation", { name: "Settings tabs" }).getByRole("link")).toHaveCount(1);
     await expect(page.getByRole("button", { name: "New rate" })).toHaveCount(0);
+  });
+
+  test("a sold estimate doesn't send them to the job page they can't open", async ({ page, browser }) => {
+    await sellThreeThousandDollarJob(page, browser);
+    await page.reload();
+    await expect(page.getByText("Accepted – locked")).toBeVisible();
+    await expect(page.getByText("Sold. The office takes it from here.")).toBeVisible();
+    await expect(page.getByRole("link", { name: /Open the job/ })).toHaveCount(0);
   });
 });

@@ -111,6 +111,8 @@ test.describe("as the owner", () => {
     const accepted = await waitForNotice(page, `${name} accepted their proposal`);
     expect(accepted.body).toContain("$3,000.00 + GST");
     expect(accepted.body).toContain("The job has been created.");
+    // It says the job was created, so it opens the job.
+    expect(accepted.href).toMatch(/^\/projects\/[0-9a-f-]{36}$/);
     expect((await notices(page)).filter((n) => n.title === `${name} opened their proposal again`)).toHaveLength(0);
   });
 
@@ -131,18 +133,22 @@ test.describe("as an estimator", () => {
 
   test("the person who prepared it is told too, without the amount, and nobody else's notices leak", async ({ page, browser }) => {
     const name = await draftThreeThousandDollarEstimate(page);
+    const estimatePath = new URL(page.url()).pathname;
     const link = await createLink(page);
     await acceptOnline(browser, link);
 
     const accepted = await waitForNotice(page, `${name} accepted their proposal`);
     expect(accepted.body).toContain("The job has been created.");
     expect(accepted.body).not.toContain("$");
+    // Estimators can't open jobs, so theirs opens the estimate.
+    expect(accepted.href).toBe(estimatePath);
 
     // The owner hears about it with the amount.
     const owner = await browser.newContext({ storageState: statePath("owner") });
     const ownerPage = await owner.newPage();
     const ownerNotice = await waitForNotice(ownerPage, `${name} accepted their proposal`);
     expect(ownerNotice.body).toContain("$3,000.00 + GST");
+    expect(ownerNotice.href).toMatch(/^\/projects\/[0-9a-f-]{36}$/);
     // …and this estimator never sees the owner's own notices.
     const mine = await notices(page);
     expect(mine.some((n) => n.id === ownerNotice.id)).toBe(false);
