@@ -14,16 +14,50 @@ import {
   type EstimateStatus,
 } from "@/db/schema";
 import { calculateDoc, estimateDocSchema, resolvedQuantity, totalsToStrings, type EstimateDoc } from "@/lib/estimating/document";
+import type { EstimateResult } from "@/lib/estimating/engine";
 import { toDb } from "@/lib/money";
 import { audit } from "./audit";
 import { getRateSnapshot } from "./rates";
 import { getPricing } from "./settings";
+
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 export class EstimateLockedError extends Error {
   readonly expose = true;
   constructor() {
     super("This estimate has been accepted and is locked. Create a change order or a new revision instead.");
   }
+}
+
+/** The screen was working from an older copy: another device or tab saved, sent or accepted it since. */
+export class EstimateStaleError extends Error {
+  readonly expose = true;
+  constructor() {
+    super("This estimate was changed on another device or tab. Reload to see the latest.");
+  }
+}
+
+/**
+ * `updatedAt` is the estimate's version. Screens send back the one they loaded; a different
+ * stored version means someone else changed it first. Null means the caller doesn't track one.
+ */
+export function assertCurrentVersion(est: { updatedAt: Date }, expected: string | null | undefined) {
+  if (expected != null && new Date(expected).getTime() !== est.updatedAt.getTime()) throw new EstimateStaleError();
+}
+
+/** The next version: now, but always later than the current one, so a server clock running behind can't repeat a version. */
+export function nextVersion(est: { updatedAt: Date }, now = new Date()): Date {
+  return new Date(Math.max(now.getTime(), est.updatedAt.getTime() + 1));
+}
+
+/**
+ * Locks the estimate row for the rest of the transaction. Everything that writes an estimate
+ * (saves, sends, signatures, declines, status changes) takes this lock before touching its
+ * proposals or contents, so racing requests queue up and each sees what the one before did.
+ */
+export async function lockEstimate(tx: Tx, id: string) {
+  const [row] = await tx.select().from(estimates).where(eq(estimates.id, id)).for("update");
+  return row ?? null;
 }
 
 const JOB_TITLES: Record<string, string> = {
@@ -93,14 +127,11 @@ export async function createEstimate(
   return row;
 }
 
-export async function loadEstimate(id: string) {
-  const est = await db.query.estimates.findFirst({ where: eq(estimates.id, id) });
+/** The estimate and its document. Pass the transaction to read the copy that lockEstimate is holding. */
+export async function loadEstimate(id: string, q: typeof db | Tx = db) {
+  const est = await q.query.estimates.findFirst({ where: eq(estimates.id, id) });
   if (!est) return null;
-  const [areas, lines, costItems] = await Promise.all([
-    db.query.estimateAreas.findMany({ where: eq(estimateAreas.estimateId, id), orderBy: asc(estimateAreas.position) }),
-    db.query.estimateLines.findMany({ where: eq(estimateLines.estimateId, id), orderBy: asc(estimateLines.position) }),
-    db.query.estimateCostItems.findMany({ where: eq(estimateCostItems.estimateId, id), orderBy: asc(estimateCostItems.position) }),
-  ]);
+  const [areas, lines, costItems] = await loadParts(id, q);
   const doc: EstimateDoc = {
     title: est.title,
     jobType: est.jobType,
@@ -160,88 +191,123 @@ export async function loadEstimate(id: string) {
   return { estimate: est, doc };
 }
 
-/** Replace the estimate's contents with the editor document and refresh cached totals. */
-export async function saveEstimateDoc(id: string, raw: unknown) {
+async function loadParts(id: string, q: typeof db | Tx) {
+  const areas = () => q.query.estimateAreas.findMany({ where: eq(estimateAreas.estimateId, id), orderBy: asc(estimateAreas.position) });
+  const lines = () => q.query.estimateLines.findMany({ where: eq(estimateLines.estimateId, id), orderBy: asc(estimateLines.position) });
+  const costItems = () => q.query.estimateCostItems.findMany({ where: eq(estimateCostItems.estimateId, id), orderBy: asc(estimateCostItems.position) });
+  if (q === db) return Promise.all([areas(), lines(), costItems()]);
+  // A transaction has a single connection, so its queries go one at a time.
+  return [await areas(), await lines(), await costItems()] as const;
+}
+
+/**
+ * Replace the estimate's contents with the editor document and refresh cached totals.
+ * `expectedUpdatedAt` is the version the editor loaded or last saved: when another device or
+ * tab saved in between, the save is refused instead of overwriting their work.
+ */
+export async function saveEstimateDoc(id: string, raw: unknown, expectedUpdatedAt?: string | null) {
   const parsed = estimateDocSchema.parse(raw);
   return db.transaction(async (tx) => {
-    const est = await tx.query.estimates.findFirst({ where: eq(estimates.id, id) });
+    const est = await lockEstimate(tx, id);
     if (!est) throw new Error("Estimate not found");
     if (est.status === "accepted") throw new EstimateLockedError();
+    assertCurrentVersion(est, expectedUpdatedAt);
     // The pricing rule belongs to the estimate, never to what the browser sends.
     const doc = { ...parsed, settings: { ...parsed.settings, finalPriceBeforeUpgrades: est.finalPriceBeforeUpgrades } };
     const result = calculateDoc(doc); // throws on invalid math (e.g. zero production rate)
-
-    const areaIds = new Set(doc.areas.map((a) => a.id));
-    for (const a of doc.areas) if (a.parentId && !areaIds.has(a.parentId)) throw new Error("Area parent missing");
-    for (const l of doc.lines) if (l.areaId && !areaIds.has(l.areaId)) throw new Error("Line area missing");
-
-    await tx.delete(estimateLines).where(eq(estimateLines.estimateId, id));
-    await tx.delete(estimateCostItems).where(eq(estimateCostItems.estimateId, id));
-    await tx.delete(estimateAreas).where(eq(estimateAreas.estimateId, id));
-
-    // Parents before children so the self-reference is satisfied.
-    const ordered = [...doc.areas].sort((a, b) => Number(!!a.parentId) - Number(!!b.parentId));
-    if (ordered.length) {
-      await tx.insert(estimateAreas).values(
-        ordered.map((a) => ({ ...a, estimateId: id, position: doc.areas.indexOf(a), notes: a.notes ?? null, customerDescription: a.customerDescription ?? null })),
-      );
-    }
-    const areas = new Map(doc.areas.map((a) => [a.id, a]));
-    if (doc.lines.length) {
-      await tx.insert(estimateLines).values(
-        doc.lines.map((l, i) => ({
-          ...l,
-          estimateId: id,
-          position: i,
-          quantity: resolvedQuantity(l, l.areaId ? areas.get(l.areaId) : undefined),
-          customerDescription: l.customerDescription ?? null,
-          customerDetail: l.customerDetail ?? null,
-          colour: l.colour ?? null,
-          sheen: l.sheen ?? null,
-        })),
-      );
-    }
-    if (doc.costItems.length) {
-      await tx.insert(estimateCostItems).values(doc.costItems.map((c, i) => ({ ...c, estimateId: id, position: i, customerDescription: c.customerDescription ?? null })));
-    }
-    const t = result.totals;
-    await tx
-      .update(estimates)
-      .set({
-        title: doc.title,
-        jobType: doc.jobType,
-        contractType: doc.contractType,
-        internalNotes: doc.internalNotes ?? null,
-        customerNotes: doc.customerNotes ?? null,
-        poNumber: doc.poNumber ?? null,
-        areasExcluded: doc.areasExcluded ?? null,
-        preparationOverride: doc.preparationOverride ?? null,
-        ...doc.settings,
-        discount: doc.settings.discount ?? null,
-        priceOverride: doc.settings.priceOverride ?? null,
-        totalHours: toDb(t.hours, 4),
-        totalCost: toDb(t.totalCost),
-        totalPrice: toDb(t.price),
-        totalWithTax: toDb(t.total),
-        updatedAt: new Date(),
-      })
-      .where(eq(estimates.id, id));
-    return { totals: totalsToStrings(result), updatedAt: new Date().toISOString() };
+    const now = nextVersion(est);
+    await writeEstimateDoc(tx, id, doc, { result, now });
+    return { totals: totalsToStrings(result), updatedAt: now.toISOString() };
   });
 }
 
+/**
+ * Writes the document's areas, lines and extras over the estimate's and refreshes the cached
+ * totals; `set` adds columns to the same update. The caller holds the lock and checked the version.
+ */
+export async function writeEstimateDoc(
+  tx: Tx,
+  id: string,
+  doc: EstimateDoc,
+  opts: { result?: EstimateResult; now: Date; set?: Partial<typeof estimates.$inferInsert> },
+): Promise<EstimateResult> {
+  const result = opts.result ?? calculateDoc(doc);
+  const areaIds = new Set(doc.areas.map((a) => a.id));
+  for (const a of doc.areas) if (a.parentId && !areaIds.has(a.parentId)) throw new Error("Area parent missing");
+  for (const l of doc.lines) if (l.areaId && !areaIds.has(l.areaId)) throw new Error("Line area missing");
+
+  await tx.delete(estimateLines).where(eq(estimateLines.estimateId, id));
+  await tx.delete(estimateCostItems).where(eq(estimateCostItems.estimateId, id));
+  await tx.delete(estimateAreas).where(eq(estimateAreas.estimateId, id));
+
+  // Parents before children so the self-reference is satisfied.
+  const ordered = [...doc.areas].sort((a, b) => Number(!!a.parentId) - Number(!!b.parentId));
+  if (ordered.length) {
+    await tx.insert(estimateAreas).values(
+      ordered.map((a) => ({ ...a, estimateId: id, position: doc.areas.indexOf(a), notes: a.notes ?? null, customerDescription: a.customerDescription ?? null })),
+    );
+  }
+  const areas = new Map(doc.areas.map((a) => [a.id, a]));
+  if (doc.lines.length) {
+    await tx.insert(estimateLines).values(
+      doc.lines.map((l, i) => ({
+        ...l,
+        estimateId: id,
+        position: i,
+        quantity: resolvedQuantity(l, l.areaId ? areas.get(l.areaId) : undefined),
+        customerDescription: l.customerDescription ?? null,
+        customerDetail: l.customerDetail ?? null,
+        colour: l.colour ?? null,
+        sheen: l.sheen ?? null,
+      })),
+    );
+  }
+  if (doc.costItems.length) {
+    await tx.insert(estimateCostItems).values(doc.costItems.map((c, i) => ({ ...c, estimateId: id, position: i, customerDescription: c.customerDescription ?? null })));
+  }
+  const t = result.totals;
+  await tx
+    .update(estimates)
+    .set({
+      title: doc.title,
+      jobType: doc.jobType,
+      contractType: doc.contractType,
+      internalNotes: doc.internalNotes ?? null,
+      customerNotes: doc.customerNotes ?? null,
+      poNumber: doc.poNumber ?? null,
+      areasExcluded: doc.areasExcluded ?? null,
+      preparationOverride: doc.preparationOverride ?? null,
+      ...doc.settings,
+      discount: doc.settings.discount ?? null,
+      priceOverride: doc.settings.priceOverride ?? null,
+      totalHours: toDb(t.hours, 4),
+      totalCost: toDb(t.totalCost),
+      totalPrice: toDb(t.price),
+      totalWithTax: toDb(t.total),
+      updatedAt: opts.now,
+      ...opts.set,
+    })
+    .where(eq(estimates.id, id));
+  return result;
+}
+
 export async function createRevision(id: string, reason: string | null, userId: string) {
-  const loaded = await loadEstimate(id);
-  if (!loaded) throw new Error("Estimate not found");
-  const totals = totalsToStrings(calculateDoc(loaded.doc));
   return db.transaction(async (tx) => {
-    const [{ latest }] = await tx.select({ latest: max(estimateRevisions.revision) }).from(estimateRevisions).where(eq(estimateRevisions.estimateId, id));
-    const revision = (latest ?? 0) + 1;
-    await tx.insert(estimateRevisions).values({ estimateId: id, revision, reason, snapshot: loaded.doc, totals, createdBy: userId });
-    await tx.update(estimates).set({ revision }).where(eq(estimates.id, id));
-    await audit({ actorId: userId, action: "estimate.revision", entityType: "estimate", entityId: id, after: { revision, reason } }, tx);
-    return revision;
+    if (!(await lockEstimate(tx, id))) throw new Error("Estimate not found");
+    const loaded = await loadEstimate(id, tx);
+    return insertRevision(tx, id, loaded!.doc, reason, userId);
   });
+}
+
+/** Saves `doc` as the estimate's next numbered version, inside the caller's transaction (which holds the lock). */
+export async function insertRevision(tx: Tx, id: string, doc: EstimateDoc, reason: string | null, userId: string): Promise<number> {
+  const totals = totalsToStrings(calculateDoc(doc));
+  const [{ latest }] = await tx.select({ latest: max(estimateRevisions.revision) }).from(estimateRevisions).where(eq(estimateRevisions.estimateId, id));
+  const revision = (latest ?? 0) + 1;
+  await tx.insert(estimateRevisions).values({ estimateId: id, revision, reason, snapshot: doc, totals, createdBy: userId });
+  await tx.update(estimates).set({ revision }).where(eq(estimates.id, id));
+  await audit({ actorId: userId, action: "estimate.revision", entityType: "estimate", entityId: id, after: { revision, reason } }, tx);
+  return revision;
 }
 
 export async function listRevisions(id: string) {
@@ -264,14 +330,27 @@ const ALLOWED: Record<EstimateStatus, EstimateStatus[]> = {
   accepted: [],
 };
 
-export async function setEstimateStatus(id: string, status: EstimateStatus, userId: string) {
-  const est = await db.query.estimates.findFirst({ where: eq(estimates.id, id) });
-  if (!est) throw new Error("Estimate not found");
-  if (!ALLOWED[est.status].includes(status)) throw new Error(`Can't change an estimate from ${est.status} to ${status}`);
-  if (status === "sent") await createRevision(id, "Sent to customer", userId);
-  await db.update(estimates).set({ status, sentAt: status === "sent" ? new Date() : est.sentAt, updatedAt: new Date() }).where(eq(estimates.id, id));
-  await db.insert(activities).values({ customerId: est.customerId, opportunityId: est.opportunityId, type: "estimate", body: `Estimate #${est.number} marked ${status}`, createdBy: userId });
-  await audit({ actorId: userId, action: "estimate.status", entityType: "estimate", entityId: id, before: { status: est.status }, after: { status } });
+/**
+ * The office's status changes (Mark as sent, Mark declined, Back to draft), decided under the
+ * row lock so a signature arriving at the same moment can't be undone. `expectedUpdatedAt` is
+ * the version on screen; the new version is returned.
+ */
+export async function setEstimateStatus(id: string, status: EstimateStatus, userId: string, expectedUpdatedAt?: string | null) {
+  return db.transaction(async (tx) => {
+    const est = await lockEstimate(tx, id);
+    if (!est) throw new Error("Estimate not found");
+    assertCurrentVersion(est, expectedUpdatedAt);
+    if (!ALLOWED[est.status].includes(status)) throw new Error(`Can't change an estimate from ${est.status} to ${status}`);
+    const now = nextVersion(est);
+    if (status === "sent") {
+      const loaded = await loadEstimate(id, tx);
+      await insertRevision(tx, id, loaded!.doc, "Sent to customer", userId);
+    }
+    await tx.update(estimates).set({ status, sentAt: status === "sent" ? now : est.sentAt, updatedAt: now }).where(eq(estimates.id, id));
+    await tx.insert(activities).values({ customerId: est.customerId, opportunityId: est.opportunityId, type: "estimate", body: `Estimate #${est.number} marked ${status}`, createdBy: userId });
+    await audit({ actorId: userId, action: "estimate.status", entityType: "estimate", entityId: id, before: { status: est.status }, after: { status } }, tx);
+    return { updatedAt: now.toISOString() };
+  });
 }
 
 export async function duplicateEstimate(id: string, userId: string) {

@@ -5,9 +5,11 @@ import { Popover, popoverItem } from "@/components/app-shell/popover";
 import { Dialog } from "@/components/dialog";
 import { FollowUpDialog } from "@/components/proposals/follow-up-dialog";
 import { Badge, Button, Field, FormError, Input, Textarea, type Tone } from "@/components/ui";
+import { signOnDeviceLink } from "@/lib/sign-on-device";
 import { formatDate, formatDateTime } from "@/lib/utils";
 import { sendProposalAction, setStatusAction, withdrawProposalAction } from "../actions";
 import { AcceptDialog, acceptedText } from "./accept-dialog";
+import type { WithSaved } from "./autosave";
 import type { ProposalProps, ProposalRow } from "./proposal-types";
 
 const TONE: Record<string, Tone> = { sent: "info", viewed: "brand", expired: "warning", accepted: "success", declined: "danger", superseded: "neutral", withdrawn: "neutral" };
@@ -25,7 +27,7 @@ export function validUntilText(rows: ProposalRow[]): string | null {
 }
 
 /** The one Send dialog: the email from the template, checked and sent (or just a link). */
-export function SendDialog({ estimateId, proposals, onClose, title = "Send proposal" }: { estimateId: string; proposals: ProposalProps; onClose: () => void; title?: string }) {
+export function SendDialog({ estimateId, proposals, withSaved, onClose, title = "Send proposal" }: { estimateId: string; proposals: ProposalProps; withSaved: WithSaved; onClose: () => void; title?: string }) {
   const [to, setTo] = useState(proposals.defaultEmail);
   const [subject, setSubject] = useState(proposals.emailDraft.subject);
   const [body, setBody] = useState(proposals.emailDraft.body);
@@ -40,7 +42,8 @@ export function SendDialog({ estimateId, proposals, onClose, title = "Send propo
   const send = () =>
     start(async () => {
       setError(null);
-      const r = await sendProposalAction(estimateId, { to, message: note, email, subject, body });
+      // The latest changes are saved first: the customer gets what's on screen.
+      const r = await withSaved((version) => sendProposalAction(estimateId, { to, message: note, email, subject, body, expectedUpdatedAt: version }));
       if (!r.ok) return setError(r.error);
       const sent =
         r.emailStatus === "sent"
@@ -118,8 +121,11 @@ export function SendDialog({ estimateId, proposals, onClose, title = "Send propo
   );
 }
 
-/** Send proposal, with ▾ for the other ways a proposal goes out or comes back accepted. */
-export function SendControls({ estimateId, status, proposals, compact }: { estimateId: string; status: string; proposals: ProposalProps; compact?: boolean }) {
+/**
+ * Send proposal, with ▾ for the other ways a proposal goes out or comes back accepted. Each one
+ * saves the editor's latest changes first (`withSaved`), and stops if they can't be saved.
+ */
+export function SendControls({ estimateId, status, proposals, withSaved, compact }: { estimateId: string; status: string; proposals: ProposalProps; withSaved: WithSaved; compact?: boolean }) {
   const [dialog, setDialog] = useState<"send" | "accept" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -132,13 +138,15 @@ export function SendControls({ estimateId, status, proposals, compact }: { estim
     start(async () => {
       // Opened right away (before the request) so the browser doesn't block it as a pop-up.
       const tab = window.open("about:blank", "_blank");
-      const r = await sendProposalAction(estimateId, { to: "", message: "", email: false });
+      const r = await withSaved((version) => sendProposalAction(estimateId, { to: "", message: "", email: false, expectedUpdatedAt: version }));
       if (!r.ok) {
         tab?.close();
         return setError(r.error);
       }
-      if (tab) tab.location.href = r.link;
-      else window.location.href = r.link;
+      // The customer's own view with signing on, although this browser is signed in.
+      const link = signOnDeviceLink(r.link);
+      if (tab) tab.location.href = link;
+      else window.location.href = link;
     });
 
   return (
@@ -168,7 +176,7 @@ export function SendControls({ estimateId, status, proposals, compact }: { estim
                 disabled={pending}
                 onClick={() => {
                   close();
-                  if (confirm("Mark this estimate as sent without emailing anything? A revision is saved.")) start(async () => { const r = await setStatusAction(estimateId, "sent"); setError(r.ok ? null : r.error); });
+                  if (confirm("Mark this estimate as sent without emailing anything? A revision is saved.")) start(async () => { const r = await withSaved((version) => setStatusAction(estimateId, "sent", version)); setError(r.ok ? null : r.error); });
                 }}
               >
                 <Send className="size-4" aria-hidden /> Mark as sent without emailing
@@ -193,8 +201,8 @@ export function SendControls({ estimateId, status, proposals, compact }: { estim
       </Popover>
       {copied && <span role="status" className="ml-2 text-xs text-success">Link copied</span>}
       {error && <span role="alert" className="ml-2 text-xs text-danger">{error}</span>}
-      {dialog === "send" && <SendDialog estimateId={estimateId} proposals={proposals} onClose={() => setDialog(null)} />}
-      {dialog === "accept" && <AcceptDialog estimateId={estimateId} defaultName={proposals.acceptName} options={proposals.options} onClose={() => setDialog(null)} />}
+      {dialog === "send" && <SendDialog estimateId={estimateId} proposals={proposals} withSaved={withSaved} onClose={() => setDialog(null)} />}
+      {dialog === "accept" && <AcceptDialog estimateId={estimateId} defaultName={proposals.acceptName} withSaved={withSaved} onClose={() => setDialog(null)} />}
     </div>
   );
 }
@@ -211,7 +219,7 @@ export function proposalStatusText(rows: ProposalRow[]): string | null {
 }
 
 /** The open proposal ran out before the customer accepted: say so, and offer the Send dialog again. */
-export function ExpiredNotice({ estimateId, proposals }: { estimateId: string; proposals: ProposalProps }) {
+export function ExpiredNotice({ estimateId, proposals, withSaved }: { estimateId: string; proposals: ProposalProps; withSaved: WithSaved }) {
   const [sending, setSending] = useState(false);
   const open = openRow(proposals.rows);
   return (
@@ -229,7 +237,7 @@ export function ExpiredNotice({ estimateId, proposals }: { estimateId: string; p
         </section>
       )}
       {/* Outside the notice: once sent, the page refreshes and the notice goes, but the link stays on screen. */}
-      {sending && <SendDialog estimateId={estimateId} proposals={proposals} title="Send updated proposal" onClose={() => setSending(false)} />}
+      {sending && <SendDialog estimateId={estimateId} proposals={proposals} withSaved={withSaved} title="Send updated proposal" onClose={() => setSending(false)} />}
     </>
   );
 }

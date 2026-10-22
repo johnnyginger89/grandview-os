@@ -18,13 +18,6 @@ export interface ProposalRow {
   expired: boolean;
 }
 
-export interface ProposalOption {
-  id: string;
-  title: string;
-  /** Formatted, before GST. */
-  price: string;
-}
-
 /** Everything the editor needs for sending and the sent list. */
 export interface ProposalProps {
   rows: ProposalRow[];
@@ -32,7 +25,6 @@ export interface ProposalProps {
   /** From the "Sending a proposal" template, with this customer's details filled in. */
   emailDraft: { subject: string; body: string };
   acceptName: string;
-  options: ProposalOption[];
   customerName: string;
   followUps: { count: number; lastAt: string | null };
   canSend: boolean;

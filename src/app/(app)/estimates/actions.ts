@@ -10,18 +10,37 @@ import {
   createEstimate,
   createRevision,
   duplicateEstimate,
+  EstimateLockedError,
+  EstimateStaleError,
   restoreRevision,
   saveAsTemplate,
   saveEstimateDoc,
   setEstimateStatus,
   templateToDocParts,
 } from "@/server/estimates";
-import { acceptForCustomerSchema, acceptProposalForCustomer, followUpDraft, followUpSchema, sendProposal, sendProposalFollowUp, withdrawProposal } from "@/server/proposals";
+import {
+  acceptancePreview,
+  acceptForCustomerSchema,
+  acceptProposalForCustomer,
+  draftTotals,
+  followUpDraft,
+  followUpSchema,
+  sendProposal,
+  sendProposalFollowUp,
+  withdrawProposal,
+  type AcceptancePreview,
+  type ProposalTotals,
+} from "@/server/proposals";
 
-type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string };
+/** `conflict`: the screen is out of date (changed elsewhere, or accepted), so the editor stops saving and offers a reload. */
+type Failure = { ok: false; error: string; conflict?: boolean };
+type Result<T = object> = ({ ok: true } & T) | Failure;
 const uuid = z.string().uuid();
+/** The estimate version (updatedAt) the screen's copy is based on. */
+const version = z.string().datetime({ offset: true });
 
-function err(e: unknown): { ok: false; error: string } {
+function err(e: unknown): Failure {
+  if (e instanceof EstimateStaleError || e instanceof EstimateLockedError) return { ok: false, error: e.message, conflict: true };
   return { ok: false, error: safeErrorMessage(e) };
 }
 
@@ -56,10 +75,11 @@ export async function createEstimateAction(_: unknown, f: FormData): Promise<Res
   redirect(`/estimates/${id}`);
 }
 
-export async function saveEstimateAction(id: string, doc: unknown): Promise<Result<{ totals: Record<string, string>; updatedAt: string }>> {
+/** Autosave. `expectedUpdatedAt` is the version the editor's copy is based on; a stale one is refused. */
+export async function saveEstimateAction(id: string, doc: unknown, expectedUpdatedAt: string): Promise<Result<{ totals: Record<string, string>; updatedAt: string }>> {
   try {
     await assertPermission("estimates.write");
-    const r = await saveEstimateDoc(uuid.parse(id), doc);
+    const r = await saveEstimateDoc(uuid.parse(id), doc, version.parse(expectedUpdatedAt));
     return { ok: true, ...r };
   } catch (e) {
     return err(e);
@@ -88,13 +108,13 @@ export async function restoreRevisionAction(id: string, revision: number): Promi
   }
 }
 
-export async function setStatusAction(id: string, status: string): Promise<Result> {
+export async function setStatusAction(id: string, status: string, expectedUpdatedAt: string): Promise<Result<{ updatedAt: string }>> {
   try {
     const user = await assertPermission("estimates.write");
-    await setEstimateStatus(uuid.parse(id), z.enum(ESTIMATE_STATUSES).parse(status), user.id);
+    const r = await setEstimateStatus(uuid.parse(id), z.enum(ESTIMATE_STATUSES).parse(status), user.id, version.parse(expectedUpdatedAt));
     revalidatePath(`/estimates/${id}`);
     revalidatePath("/estimates");
-    return { ok: true };
+    return { ok: true, updatedAt: r.updatedAt };
   } catch (e) {
     return err(e);
   }
@@ -126,12 +146,36 @@ export async function templatePartsAction(templateId: string) {
   return templateToDocParts(uuid.parse(templateId));
 }
 
-export async function sendProposalAction(id: string, input: { to: string; message: string; email: boolean; subject?: string; body?: string }): Promise<Result<{ link: string; emailStatus: string; emailError?: string }>> {
+export async function sendProposalAction(
+  id: string,
+  input: { to: string; message: string; email: boolean; subject?: string; body?: string; expectedUpdatedAt?: string },
+): Promise<Result<{ link: string; emailStatus: string; emailError?: string; updatedAt: string }>> {
   try {
     const user = await assertPermission("estimates.write");
     const r = await sendProposal(uuid.parse(id), input, user);
     revalidatePath(`/estimates/${id}`);
-    return { ok: true, link: r.link, emailStatus: r.emailStatus, emailError: r.emailError };
+    return { ok: true, link: r.link, emailStatus: r.emailStatus, emailError: r.emailError, updatedAt: r.updatedAt };
+  } catch (e) {
+    return err(e);
+  }
+}
+
+/** "Mark as accepted": the upgrades, the customer's pre-selection and the totals, from the saved copy at the screen's version. */
+export async function acceptPreviewAction(estimateId: string, expectedUpdatedAt: string): Promise<Result<AcceptancePreview>> {
+  try {
+    await assertPermission("estimates.write");
+    return { ok: true, ...(await acceptancePreview(uuid.parse(estimateId), version.parse(expectedUpdatedAt))) };
+  } catch (e) {
+    return err(e);
+  }
+}
+
+/** Live totals in "Mark as accepted" as upgrades are ticked, worked out the same way as on the customer's page. */
+export async function acceptTotalsAction(estimateId: string, selectedIds: string[]): Promise<Result<{ totals: ProposalTotals }>> {
+  try {
+    await assertPermission("estimates.write");
+    const totals = await draftTotals(uuid.parse(estimateId), z.array(uuid).max(200).parse(selectedIds));
+    return totals ? { ok: true, totals } : { ok: false, error: "Estimate not found" };
   } catch (e) {
     return err(e);
   }

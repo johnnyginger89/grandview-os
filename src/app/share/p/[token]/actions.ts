@@ -2,6 +2,7 @@
 import { headers } from "next/headers";
 import { z } from "zod";
 import { safeErrorMessage } from "@/lib/action-error";
+import { getCurrentUser } from "@/lib/authz/guard";
 import { acceptProposal, declineProposal, previewTotals, recordProposalView } from "@/server/proposals";
 
 /** The customer's browser reports that they're looking at the proposal. */
@@ -21,7 +22,9 @@ export async function acceptAction(token: string, input: { name: string; email: 
   try {
     const h = await headers();
     const ip = h.get("x-vercel-forwarded-for") ?? h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
-    await acceptProposal(token, input, { ip, userAgent: h.get("user-agent") });
+    // A browser signed in as staff means the customer signed in person, on that person's device.
+    const staff = await getCurrentUser();
+    await acceptProposal(token, input, { ip, userAgent: h.get("user-agent"), staffDevice: staff ? { id: staff.id, name: staff.name } : null });
     return { ok: true as const };
   } catch (e) {
     // Customers get the plain message, without the field name.

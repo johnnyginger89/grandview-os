@@ -29,12 +29,36 @@ test("the proposal email is written from the template and can be edited before s
   await expect(page.locator("#proposals").getByText(/sent .* to sale-/)).toBeVisible();
 });
 
-test("Mark as accepted creates the job, locks the estimate and keeps the office note internal", async ({ page, browser }) => {
+test("Mark as accepted saves the latest edits, ticks the customer's pre-selected upgrades and shows the total", async ({ page, browser }) => {
   test.skip(!estimateUrl, "needs the estimate above");
   await page.goto(estimateUrl);
+  // Changed after sending: the office is told the customer still has the version that was sent.
+  const notice = page.getByText(/^The customer still sees the version sent on .+\. Send it again to update it\.$/);
+  await expect(notice).toHaveCount(0);
+  await page.getByLabel("Add item").first().selectOption({ label: "Ceilings – roll & cut" });
+  await expect(notice).toBeVisible();
+  await page.getByRole("button", { name: /Ceilings – roll & cut/ }).click();
+  await page.getByLabel("Override price").fill("500");
+  await page.getByText("Optional upgrade", { exact: true }).click();
+  await page.getByText("Pre-selected (in the total)").click();
+
+  // Straight to Mark as accepted, without waiting for the autosave: it saves first.
   await page.getByRole("button", { name: "More ways to send" }).click();
   await page.getByRole("button", { name: "Mark as accepted" }).click();
   const dialog = page.getByRole("dialog", { name: "Mark as accepted" });
+  const upgrade = dialog.getByRole("checkbox", { name: /Ceilings – roll & cut/ });
+  await expect(upgrade).toBeChecked();
+  const total = dialog.getByTestId("accept-total");
+  // $3,000 walls + $500 ceiling, 5% GST, 20% deposit: the same numbers as the customer's page.
+  await expect(total).toHaveText("$3,675.00");
+  await expect(dialog.getByText("$175.00")).toBeVisible();
+  await expect(dialog.getByTestId("accept-deposit")).toHaveText("$735.00");
+  await upgrade.uncheck();
+  await expect(total).toHaveText("$3,150.00");
+  await expect(dialog.getByTestId("accept-deposit")).toHaveText("$630.00");
+  await upgrade.check();
+  await expect(total).toHaveText("$3,675.00");
+
   await expect(dialog.getByLabel("Who accepted it?")).not.toHaveValue("");
   await dialog.getByLabel("Who accepted it?").fill("Phone Customer [TEST DATA]");
   // A method is required.
@@ -44,7 +68,8 @@ test("Mark as accepted creates the job, locks the estimate and keeps the office 
   await dialog.getByLabel("Note (optional)").fill("SECRET-OFFICE-NOTE wants a Monday start");
   await dialog.getByRole("button", { name: "Mark as accepted" }).click();
 
-  await expect(page).toHaveURL(/\/projects\/[0-9a-f-]{36}$/);
+  // Accepting creates the job and its work order before the job page opens.
+  await expect(page).toHaveURL(/\/projects\/[0-9a-f-]{36}$/, { timeout: 15_000 });
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Interior repaint");
   await expect(page.getByText("Need to schedule").first()).toBeVisible();
 
@@ -54,12 +79,13 @@ test("Mark as accepted creates the job, locks the estimate and keeps the office 
   const accepted = page.locator("#proposals").getByText(/Accepted by phone by Phone Customer \[TEST DATA\]/);
   await expect(accepted).toBeVisible();
 
-  // The customer's copy shows the acceptance but never the office note.
+  // The customer's copy shows the acceptance, at the total the office saw, but never the office note.
   const link = await page.locator("#proposals").getByRole("link", { name: "Open" }).first().getAttribute("href");
   const customer = await browser.newContext({ storageState: { cookies: [], origins: [] } });
   const cp = await customer.newPage();
   const res = await cp.goto(link!);
   await expect(cp.getByText("Accepted – thank you!").first()).toBeVisible();
+  await expect(cp.getByTestId("grand-total")).toHaveText("$3,675.00");
   expect(await res!.text()).not.toContain("SECRET-OFFICE-NOTE");
   await customer.close();
 });

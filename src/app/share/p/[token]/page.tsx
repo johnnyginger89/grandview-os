@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ProposalPresentation } from "@/components/proposal/presentation";
 import { getCurrentUser } from "@/lib/authz/guard";
+import { proposalPageMode } from "@/lib/sign-on-device";
 import { buildPresentation } from "@/server/proposal-presentation";
 import { getProposalForCustomer } from "@/server/proposals";
 import { acceptAction, declineAction, previewTotalsAction, recordViewAction } from "./actions";
@@ -11,17 +12,18 @@ export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = { title: "Your proposal", robots: { index: false, follow: false }, referrer: "no-referrer" };
 
-export default async function ProposalPage({ params }: { params: Promise<{ token: string }> }) {
+export default async function ProposalPage({ params, searchParams }: { params: Promise<{ token: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const { token } = await params;
   const staff = await getCurrentUser();
   const data = await getProposalForCustomer(token);
   if (!data) notFound();
-  const mode = staff ? "staff" : "customer";
+  // Staff get a read-only preview, unless they're handing the screen to the customer to sign.
+  const mode = proposalPageMode(!!staff, await searchParams);
   const presentation = await buildPresentation(data.view, { token, mode });
   return (
     <>
-      {/* Staff previews are never counted as the customer looking. */}
-      {mode === "customer" && <ViewBeacon record={recordViewAction.bind(null, token)} />}
+      {/* Staff screens are never counted as the customer looking. */}
+      {!staff && <ViewBeacon record={recordViewAction.bind(null, token)} />}
       <ProposalPresentation
         mode={mode}
         data={data}

@@ -35,8 +35,13 @@ vi.mock("./audit", () => ({ audit: async (e: { action: string }) => void h.audit
 vi.mock("@/lib/email", () => ({ sendEmail: async (m: { to: string; subject: string; text: string }) => (h.emails.push(m), { status: "logged", provider: "test" }) }));
 vi.mock("./estimates", () => ({
   loadEstimate: async () => (h.estimate ? { estimate: h.estimate, doc: DOC } : null),
-  createRevision: async () => ++h.revision,
-  saveEstimateDoc: async () => undefined,
+  lockEstimate: async () => h.estimate,
+  insertRevision: async () => ++h.revision,
+  // Versions are covered by proposals.test.ts; here the send time is the version.
+  assertCurrentVersion: () => undefined,
+  nextVersion: (_est: unknown, now = new Date()) => now,
+  writeEstimateDoc: async () => undefined,
+  EstimateLockedError: class extends Error {},
 }));
 vi.mock("./leads", () => ({ moveStage: async () => undefined, stageByKey: async () => ({ id: "stage" }) }));
 vi.mock("./media", () => ({ currentDocuments: async () => [], visibleDocuments: () => [] }));

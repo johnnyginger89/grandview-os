@@ -6,6 +6,7 @@
 import { createElement } from "react";
 import { renderToString } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import type { WithSaved } from "./autosave";
 import type { ProposalProps, ProposalRow } from "./proposal-types";
 
 vi.mock("../actions", () => {
@@ -24,12 +25,14 @@ const row = (extra: Partial<ProposalRow> = {}): ProposalRow => ({
   expiresAt: EXPIRES, expired: false, ...extra,
 });
 const props = (rows: ProposalRow[], extra: Partial<ProposalProps> = {}): ProposalProps => ({
-  rows, defaultEmail: "kim@example.com", emailDraft: { subject: "Your painting proposal", body: "Hi Kim" }, acceptName: "Kim Lee", options: [],
+  rows, defaultEmail: "kim@example.com", emailDraft: { subject: "Your painting proposal", body: "Hi Kim" }, acceptName: "Kim Lee",
   customerName: "[TEST DATA] Kim Lee", followUps: { count: 0, lastAt: null }, canSend: true, ...extra,
 });
 // React separates adjacent text with <!-- -->; drop it to read the text as shown.
 const text = (html: string) => html.replace(/<!-- -->/g, "");
-const notice = (p: ProposalProps) => text(renderToString(createElement(ExpiredNotice, { estimateId: "e1", proposals: p })));
+// Saving first isn't part of what's rendered here.
+const withSaved: WithSaved = (run) => run("2026-02-20T17:00:00.000Z");
+const notice = (p: ProposalProps) => text(renderToString(createElement(ExpiredNotice, { estimateId: "e1", proposals: p, withSaved })));
 const sent = (p: ProposalProps) => text(renderToString(createElement(SentProposals, { estimateId: "e1", proposals: p })));
 
 describe("estimate page: proposal validity", () => {
