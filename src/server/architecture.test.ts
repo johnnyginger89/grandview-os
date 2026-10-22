@@ -586,6 +586,29 @@ describe("calendar days are formatted as calendar days", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Rule (CLAUDE.md rule 10): Vancouver times go through businessZone(). BC stays on
+// UTC−7 from 2026-11-01 and older zone data doesn't know, so a bare
+// "America/Vancouver" handed to Intl shows times an hour early on those runtimes.
+// ---------------------------------------------------------------------------
+
+const ZONE_HELPERS = ["src/lib/time.ts"];
+const RAW_BUSINESS_ZONE = /timeZone\s*:\s*(?:"America\/Vancouver"|'America\/Vancouver'|BUSINESS_TZ\b)|\bat time zone 'America\/Vancouver'/;
+
+describe("Vancouver times go through businessZone()", () => {
+  it("detects a raw zone (self-test)", () => {
+    expect(RAW_BUSINESS_ZONE.test(`new Intl.DateTimeFormat("en-CA", { timeZone: "America/Vancouver" })`)).toBe(true);
+    expect(RAW_BUSINESS_ZONE.test(`toLocaleDateString("en-CA", { timeZone: BUSINESS_TZ })`)).toBe(true);
+    expect(RAW_BUSINESS_ZONE.test(`{ timeZone: businessZone(at), month: "short" }`)).toBe(false);
+    expect(RAW_BUSINESS_ZONE.test(`{ timeZone: "UTC" }`)).toBe(false);
+  });
+
+  it("no code hands America/Vancouver to Intl directly", () => {
+    const bad = SOURCES.filter((s) => !s.file.endsWith(".test.ts") && !inPaths(s.file, ZONE_HELPERS) && RAW_BUSINESS_ZONE.test(s.text)).map((s) => s.file);
+    expect(bad, "Use formatDate / businessDate / businessZone(instant) from src/lib").toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Rule (CLAUDE.md rule 8): customer email is human-initiated. Only known modules
 // send email, and start notices are sent only from server actions (a click after
 // a preview), never from the schedule service, its hooks or any automation.
