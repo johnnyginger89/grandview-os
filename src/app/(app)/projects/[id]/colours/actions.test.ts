@@ -9,7 +9,8 @@ vi.mock("@/lib/authz/guard", () => ({
   AuthorizationError: class extends Error {},
   assertPermission: async () => ({ id: "owner-1", role: "owner" }),
   getCurrentUser: async () => ({ id: "painter-1", role: "painter" }),
-  needsMfaEnrollment: () => false,
+  needsAccountSetup: () => false,
+  accountSetupMessage: () => "",
 }));
 vi.mock("@/server/colour-selections", () => ({
   cancelColourSelection: async () => ({ projectId: PROJECT }),
