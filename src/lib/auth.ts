@@ -9,6 +9,11 @@ import { sendEmail } from "@/lib/email";
 export const auth = betterAuth({
   appName: "Grandview OS",
   baseURL: process.env.BETTER_AUTH_URL,
+  // Other addresses the app answers on (e.g. the old *.vercel.app one during a domain switch).
+  trustedOrigins: (process.env.BETTER_AUTH_TRUSTED_ORIGINS ?? "")
+    .split(",")
+    .map((o) => o.trim().replace(/\/$/, ""))
+    .filter((o) => /^https:\/\/[a-z0-9.-]+$/i.test(o)),
   secret: process.env.BETTER_AUTH_SECRET,
   database: drizzleAdapter(db, {
     provider: "pg",
