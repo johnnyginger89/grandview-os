@@ -66,17 +66,27 @@ function zoneIndependentFixtures() {
     expect(() => businessDate(new Date(Number.NaN))).toThrow(RangeError);
   });
 
-  it("handles the autumn DST change (Nov 1 2026, 02:00 PDT → 01:00 PST)", () => {
-    expect(iso(isoToInstant("2026-11-01"))).toBe("2026-11-01T07:00:00.000Z");
-    expect(iso(isoToInstant("2026-11-02"))).toBe("2026-11-02T08:00:00.000Z");
-    expect(iso(isoToInstant("2026-12-01"))).toBe("2026-12-01T08:00:00.000Z");
-    // 01:30 happens twice; both are Nov 1.
-    expect(businessDate(new Date("2026-11-01T08:30:00Z"))).toBe("2026-11-01");
-    expect(businessDate(new Date("2026-11-01T09:30:00Z"))).toBe("2026-11-01");
-    expect(businessDate(new Date("2026-11-02T07:59:00Z"))).toBe("2026-11-01");
-    expect(businessDate(new Date("2026-11-02T08:00:00Z"))).toBe("2026-11-02");
-    const r = dayRangeInstants("2026-11-01", "2026-11-01");
+  it("handles the last autumn DST change (Nov 2 2025, 02:00 PDT → 01:00 PST)", () => {
+    expect(iso(isoToInstant("2025-11-02"))).toBe("2025-11-02T07:00:00.000Z");
+    expect(iso(isoToInstant("2025-11-03"))).toBe("2025-11-03T08:00:00.000Z");
+    expect(iso(isoToInstant("2025-12-01"))).toBe("2025-12-01T08:00:00.000Z");
+    // 01:30 happens twice; both are Nov 2.
+    expect(businessDate(new Date("2025-11-02T08:30:00Z"))).toBe("2025-11-02");
+    expect(businessDate(new Date("2025-11-02T09:30:00Z"))).toBe("2025-11-02");
+    expect(businessDate(new Date("2025-11-03T07:59:00Z"))).toBe("2025-11-02");
+    expect(businessDate(new Date("2025-11-03T08:00:00Z"))).toBe("2025-11-03");
+    const r = dayRangeInstants("2025-11-02", "2025-11-02");
     expect(r.end.getTime() - r.start.getTime()).toBe(25 * 3_600_000);
+  });
+
+  it("stays on UTC−7 from Nov 1 2026: British Columbia no longer falls back", () => {
+    expect(iso(isoToInstant("2026-11-01"))).toBe("2026-11-01T07:00:00.000Z");
+    expect(iso(isoToInstant("2026-11-02"))).toBe("2026-11-02T07:00:00.000Z");
+    expect(iso(isoToInstant("2027-01-15"))).toBe("2027-01-15T07:00:00.000Z");
+    expect(businessDate(new Date("2026-11-02T06:59:00Z"))).toBe("2026-11-01");
+    expect(businessDate(new Date("2026-11-02T07:00:00Z"))).toBe("2026-11-02");
+    const r = dayRangeInstants("2026-11-01", "2026-11-01");
+    expect(r.end.getTime() - r.start.getTime()).toBe(24 * 3_600_000);
   });
 
   it("handles the spring DST change (Mar 8 2026, 02:00 PST → 03:00 PDT)", () => {
@@ -91,7 +101,7 @@ function zoneIndependentFixtures() {
 
   it("converts wall-clock times on a day to instants", () => {
     expect(iso(isoToInstant("2026-10-14", "12:00"))).toBe("2026-10-14T19:00:00.000Z");
-    expect(iso(isoToInstant("2026-11-01", "12:00"))).toBe("2026-11-01T20:00:00.000Z");
+    expect(iso(isoToInstant("2026-11-01", "12:00"))).toBe("2026-11-01T19:00:00.000Z");
     expect(iso(isoToInstant("2026-10-31", "23:30"))).toBe("2026-11-01T06:30:00.000Z");
     expect(() => isoToInstant("2026-10-14", "24:00")).toThrow(RangeError);
     expect(() => isoToInstant("2026-10-14", "9:00")).toThrow(RangeError);

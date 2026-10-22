@@ -178,7 +178,9 @@ async function projectsSummary(c: QueryCtx): Promise<RawProjects> {
 async function monthlySeries(c: QueryCtx): Promise<RawMonthly[]> {
   const w = c.p.chartWindow;
   const value = c.money ? sql`sum(p.contract_price)::text` : sql`null::text`;
-  const month = (col: SQL) => sql`to_char(${col} at time zone ${BUSINESS_TZ}, 'YYYY-MM')`;
+  // Same correction as businessZone(): BC stays on UTC−7 from 2026-11-01 whatever the database's zone data says.
+  const local = (col: SQL) => sql`(case when ${col} >= '2026-11-01T09:00:00Z'::timestamptz then ${col} at time zone 'Etc/GMT+7' else ${col} at time zone ${BUSINESS_TZ} end)`;
+  const month = (col: SQL) => sql`to_char(${local(col)}, 'YYYY-MM')`;
   const out = await rows(sql`
     select 'sold' as k, ${month(sql`p.sold_at`)} as m, count(*)::int as n, ${value} as v
       from projects p where ${inR(sql`p.sold_at`, w)} group by 2

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { ColourForm, SignedCopy } from "@/components/colours/colour-form";
 import { requirePermission } from "@/lib/authz/guard";
 import { can } from "@/lib/authz/permissions";
+import { formatDate } from "@/lib/utils";
 import { getColourFormForStaff } from "@/server/colour-selections";
 import { saveColoursAction, signColoursAction } from "../actions";
 
@@ -24,7 +25,7 @@ export default async function StaffColourFormPage({ params }: { params: Promise<
       {open && canEdit && (
         <p className="mx-auto mb-4 max-w-4xl rounded-lg bg-info-soft px-4 py-3 text-sm text-info print:hidden">
           Fill in the colours with the customer, then hand them the device to tick the two notes and sign at the bottom. Or save it and send them a link from the job page.
-          {data.link?.sentAt ? ` A link was sent ${data.link.sentTo ? `to ${data.link.sentTo} ` : ""}on ${new Date(data.link.sentAt).toLocaleDateString("en-CA", { timeZone: "America/Vancouver", dateStyle: "medium" })}.` : ""}
+          {data.link?.sentAt ? ` A link was sent ${data.link.sentTo ? `to ${data.link.sentTo} ` : ""}on ${formatDate(data.link.sentAt, { dateStyle: "medium" })}.` : ""}
         </p>
       )}
       {data.signed ? (

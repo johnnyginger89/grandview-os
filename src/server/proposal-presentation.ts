@@ -13,6 +13,7 @@ import { parseProse, type Block } from "@/lib/proposal-template/prose";
 import { appliesToScopes, resolveJobType } from "@/lib/proposal-template/resolve";
 import { mediaRefs, type ImageRef, type ProposalTemplate } from "@/lib/proposal-template/schema";
 import { cleanupHeadline, fillTokens, statementSegments, type StatementSegment, type TokenValues } from "@/lib/proposal-template/tokens";
+import { businessZone } from "@/lib/time";
 import { currentDocuments, visibleDocuments, type CurrentDocument } from "./media";
 import { companyBlock, telHref, type CompanyInput, type ProposalViewV2 } from "./proposal-view";
 import { getCompany, getProposalTemplate } from "./settings";
@@ -99,7 +100,7 @@ function documentLabel(d: CurrentDocument): string {
   return `View ${t.charAt(0).toLowerCase()}${t.slice(1)} (${kind})`;
 }
 
-const monthYear = (at: Date) => new Intl.DateTimeFormat("en-CA", { month: "short", year: "numeric", timeZone: "America/Vancouver" }).format(at);
+const monthYear = (at: Date) => new Intl.DateTimeFormat("en-CA", { month: "short", year: "numeric", timeZone: businessZone(at) }).format(at);
 const calendarDay = (iso: string) => new Intl.DateTimeFormat("en-CA", { dateStyle: "medium", timeZone: "UTC" }).format(new Date(`${iso}T00:00:00Z`));
 
 export interface PresentationInput {

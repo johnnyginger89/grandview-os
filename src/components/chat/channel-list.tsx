@@ -1,15 +1,15 @@
 import Link from "next/link";
+import { businessZone } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import type { ChannelSummary } from "@/server/job-chat";
 
-const TZ = "America/Vancouver";
 function when(iso: string | null): string {
   if (!iso) return "";
   const d = new Date(iso);
-  const day = (x: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(x);
+  const day = (x: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: businessZone(x) }).format(x);
   return day(d) === day(new Date())
-    ? new Intl.DateTimeFormat("en-CA", { timeZone: TZ, hour: "numeric", minute: "2-digit" }).format(d)
-    : new Intl.DateTimeFormat("en-CA", { timeZone: TZ, month: "short", day: "numeric" }).format(d);
+    ? new Intl.DateTimeFormat("en-CA", { timeZone: businessZone(d), hour: "numeric", minute: "2-digit" }).format(d)
+    : new Intl.DateTimeFormat("en-CA", { timeZone: businessZone(d), month: "short", day: "numeric" }).format(d);
 }
 
 /** Every job chat the viewer can open, busiest first, with unread counts. */

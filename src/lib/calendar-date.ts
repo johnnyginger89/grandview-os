@@ -5,7 +5,7 @@
  * process time zone or on DST. Converting between a calendar day and an instant
  * always goes through America/Vancouver (`businessDate`, `isoToInstant`).
  */
-import { BUSINESS_TZ, parseBusinessDateTime } from "./time";
+import { businessZone, parseBusinessDateTime } from "./time";
 
 /** A Vancouver calendar day, "YYYY-MM-DD". */
 export type IsoDate = string;
@@ -74,7 +74,13 @@ export function dayOfWeek(s: IsoDate): number {
   return new Date(utcMs(parseIso(s))).getUTCDay();
 }
 
-const dayParts = new Intl.DateTimeFormat("en-US", { timeZone: BUSINESS_TZ, year: "numeric", month: "2-digit", day: "2-digit" });
+const dayFormats = new Map<string, Intl.DateTimeFormat>();
+const dayParts = (at: Date) => {
+  const zone = businessZone(at);
+  let f = dayFormats.get(zone);
+  if (!f) dayFormats.set(zone, (f = new Intl.DateTimeFormat("en-US", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit" })));
+  return f;
+};
 
 /**
  * The Vancouver calendar day an instant falls on. Strings with a zone are taken
@@ -83,7 +89,7 @@ const dayParts = new Intl.DateTimeFormat("en-US", { timeZone: BUSINESS_TZ, year:
 export function businessDate(instant: Date | string): IsoDate {
   const dt = instant instanceof Date ? instant : parseBusinessDateTime(instant);
   if (!dt || Number.isNaN(dt.getTime())) throw invalid("instant", instant);
-  const parts = dayParts.formatToParts(dt);
+  const parts = dayParts(dt).formatToParts(dt);
   const get = (t: string) => Number(parts.find((p) => p.type === t)?.value);
   return toIso({ y: get("year"), m: get("month"), d: get("day") });
 }

@@ -150,8 +150,12 @@ describe("the 4 pm reminder", () => {
 
   it("knows 4 pm in Vancouver in summer and winter", () => {
     expect(chat.vancouverHour(new Date("2026-07-15T23:30:00Z"))).toBe(16);
-    expect(chat.vancouverHour(new Date("2026-12-15T00:30:00Z"))).toBe(16);
-    expect(chat.vancouverHour(new Date("2026-12-14T23:30:00Z"))).toBe(15);
+    // The winter before British Columbia stayed on UTC−7 (PST, UTC−8)…
+    expect(chat.vancouverHour(new Date("2025-12-15T00:30:00Z"))).toBe(16);
+    expect(chat.vancouverHour(new Date("2025-12-14T23:30:00Z"))).toBe(15);
+    // …and from November 2026, UTC−7 all year.
+    expect(chat.vancouverHour(new Date("2026-12-14T23:30:00Z"))).toBe(16);
+    expect(chat.vancouverHour(new Date("2026-12-15T00:30:00Z"))).toBe(17);
   });
 
   it("does nothing outside 4 pm, or a second time the same day", async () => {

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState, useTransition } from "react";
 import { createCompanyCamAction, linkCompanyCamAction, searchCompanyCamAction, unlinkCompanyCamAction } from "@/app/(app)/companycam-actions";
 import { Button, Card, CardHeader, FormError, Input } from "@/components/ui";
+import { businessZone } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import type { CompanyCamPanel, CompanyCamProject } from "@/server/integrations/companycam";
 
@@ -13,8 +14,7 @@ import type { CompanyCamPanel, CompanyCamProject } from "@/server/integrations/c
  * through our own server; "Open in CompanyCam" needs a CompanyCam login.
  */
 
-const TZ = "America/Vancouver";
-const when = (iso: string | null) => (iso ? new Intl.DateTimeFormat("en-CA", { timeZone: TZ, month: "short", day: "numeric" }).format(new Date(iso)) : "");
+const when = (iso: string | null) => (iso ? new Intl.DateTimeFormat("en-CA", { timeZone: businessZone(iso), month: "short", day: "numeric" }).format(new Date(iso)) : "");
 
 export function CompanyCamCard({
   entity,

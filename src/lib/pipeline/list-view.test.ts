@@ -299,11 +299,18 @@ describe("applyFilters", () => {
     expect(applyFilters([late, next, early, none], f, ctx).map((r) => r.id)).toEqual([late.id, early.id]);
   });
 
-  it("handles the 25-hour day when DST ends", () => {
+  it("handles the 25-hour day when DST ended (Nov 2 2025)", () => {
+    const f = filters({ dateField: "created", from: "2025-11-02", to: "2025-11-02" });
+    const at = (iso: string) => row({ createdAt: iso });
+    const rows = [at("2025-11-02T06:59:59Z"), at("2025-11-02T07:00:00Z"), at("2025-11-03T07:59:59Z"), at("2025-11-03T08:00:00Z")];
+    expect(applyFilters(rows, f, ctx).map((r) => r.createdAt)).toEqual(["2025-11-02T07:00:00Z", "2025-11-03T07:59:59Z"]);
+  });
+
+  it("keeps 24-hour days from Nov 1 2026: British Columbia stays on UTC−7", () => {
     const f = filters({ dateField: "created", from: "2026-11-01", to: "2026-11-01" });
     const at = (iso: string) => row({ createdAt: iso });
-    const rows = [at("2026-11-01T06:59:59Z"), at("2026-11-01T07:00:00Z"), at("2026-11-02T07:59:59Z"), at("2026-11-02T08:00:00Z")];
-    expect(applyFilters(rows, f, ctx).map((r) => r.createdAt)).toEqual(["2026-11-01T07:00:00Z", "2026-11-02T07:59:59Z"]);
+    const rows = [at("2026-11-01T06:59:59Z"), at("2026-11-01T07:00:00Z"), at("2026-11-02T06:59:59Z"), at("2026-11-02T07:00:00Z")];
+    expect(applyFilters(rows, f, ctx).map((r) => r.createdAt)).toEqual(["2026-11-01T07:00:00Z", "2026-11-02T06:59:59Z"]);
   });
 
   it("combines with search", () => {
@@ -451,7 +458,9 @@ describe("days, staleness and follow-ups", () => {
 
   it("follow-ups are due at 9 a.m. Vancouver time", () => {
     expect(followUpInstant("2026-10-23").toISOString()).toBe("2026-10-23T16:00:00.000Z");
-    expect(followUpInstant("2026-11-02").toISOString()).toBe("2026-11-02T17:00:00.000Z");
+    expect(followUpInstant("2025-11-03").toISOString()).toBe("2025-11-03T17:00:00.000Z");
+    // UTC−7 all year from Nov 2026.
+    expect(followUpInstant("2026-11-02").toISOString()).toBe("2026-11-02T16:00:00.000Z");
   });
 });
 

@@ -94,12 +94,20 @@ describe("resolvePeriod: the worked examples (now = Oct 20 2026, 12:00 PDT)", ()
 });
 
 describe("resolvePeriod: edge cases", () => {
-  it("DST end: Nov 1 2026 midnight is still PDT, Dec 1 is PST", () => {
+  it("DST end (Nov 2025): Nov 1 midnight is still PDT, Dec 1 is PST", () => {
+    const nov = resolve({ preset: "this_month" }, new Date("2025-11-15T20:00:00Z"));
+    expect(nov.current.start.toISOString()).toBe("2025-11-01T07:00:00.000Z");
+    expect(nov.current.end.toISOString()).toBe("2025-11-16T08:00:00.000Z");
+    const dec = resolve({ preset: "last_month" }, new Date("2025-12-15T20:00:00Z"));
+    expect(iso(dec.current)).toEqual(["2025-11-01T07:00:00.000Z", "2025-12-01T08:00:00.000Z"]);
+  });
+
+  it("from Nov 2026 British Columbia stays on UTC−7", () => {
     const nov = resolve({ preset: "this_month" }, new Date("2026-11-15T20:00:00Z"));
     expect(nov.current.start.toISOString()).toBe("2026-11-01T07:00:00.000Z");
-    expect(nov.current.end.toISOString()).toBe("2026-11-16T08:00:00.000Z");
+    expect(nov.current.end.toISOString()).toBe("2026-11-16T07:00:00.000Z");
     const dec = resolve({ preset: "last_month" }, new Date("2026-12-15T20:00:00Z"));
-    expect(iso(dec.current)).toEqual(["2026-11-01T07:00:00.000Z", "2026-12-01T08:00:00.000Z"]);
+    expect(iso(dec.current)).toEqual(["2026-11-01T07:00:00.000Z", "2026-12-01T07:00:00.000Z"]);
   });
 
   it("DST start: March 2026 starts in PST and today ends in PDT", () => {

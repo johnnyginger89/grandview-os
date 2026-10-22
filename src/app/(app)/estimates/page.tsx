@@ -7,14 +7,15 @@ import { customers, estimates, proposals } from "@/db/schema";
 import { requirePermission } from "@/lib/authz/guard";
 import { can } from "@/lib/authz/permissions";
 import { formatCAD, formatPct, margin } from "@/lib/money";
+import { formatDate } from "@/lib/utils";
 import { getProposalTemplate } from "@/server/settings";
 import { STATUS_TONE } from "./status";
 
 export const metadata = { title: "Estimates" };
 
 const STATUSES = ["", "draft", "sent", "accepted", "declined"] as const;
-const monthOf = new Intl.DateTimeFormat("en-CA", { month: "long", year: "numeric", timeZone: "America/Vancouver" });
-const dayOf = new Intl.DateTimeFormat("en-CA", { weekday: "short", month: "short", day: "numeric", year: "numeric", timeZone: "America/Vancouver" });
+const monthOf = { format: (at: Date) => formatDate(at, { month: "long", year: "numeric" }) };
+const dayOf = { format: (at: Date) => formatDate(at, { weekday: "short", month: "short", day: "numeric", year: "numeric" }) };
 
 export default async function EstimatesPage({ searchParams }: { searchParams: Promise<{ status?: string; q?: string }> }) {
   const user = await requirePermission("estimates.read");

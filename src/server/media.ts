@@ -5,7 +5,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { DOCUMENT_PURPOSES, IMAGE_PURPOSES, media, tasks, type DocumentPurpose } from "@/db/schema";
 import { DOCUMENT_MAX_BYTES, IMAGE_MAX_BYTES, UPLOAD_CHUNK_BYTES } from "@/lib/media-limits";
-import { BUSINESS_TZ } from "@/lib/time";
+import { businessZone } from "@/lib/time";
 import { audit } from "./audit";
 import { MediaError, sanitizeFilename, typeForFilename, validateAndProcess } from "./media-validation";
 
@@ -185,7 +185,7 @@ export async function archiveDocument(id: string, userId: string) {
 
 /** Today's calendar date in the business time zone, as YYYY-MM-DD. */
 export function businessToday(now = new Date()): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: BUSINESS_TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+  return new Intl.DateTimeFormat("en-CA", { timeZone: businessZone(now), year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
 }
 
 function addDays(isoDay: string, days: number): string {

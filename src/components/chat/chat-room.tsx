@@ -6,6 +6,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, useTransitio
 import { Dialog } from "@/components/dialog";
 import { Badge, Button, FormError, Select } from "@/components/ui";
 import { resizePhoto } from "@/lib/chat/resize";
+import { businessZone } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import type { ChannelMember, MessageDTO } from "@/server/job-chat";
 
@@ -31,16 +32,15 @@ export interface ChatRoomProps {
   removeMember: (userId: string) => Promise<Result>;
 }
 
-const TZ = "America/Vancouver";
-const dayKey = (iso: string) => new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(new Date(iso));
-const timeOf = (iso: string) => new Intl.DateTimeFormat("en-CA", { timeZone: TZ, hour: "numeric", minute: "2-digit" }).format(new Date(iso));
+const dayKey = (iso: string) => new Intl.DateTimeFormat("en-CA", { timeZone: businessZone(iso) }).format(new Date(iso));
+const timeOf = (iso: string) => new Intl.DateTimeFormat("en-CA", { timeZone: businessZone(iso), hour: "numeric", minute: "2-digit" }).format(new Date(iso));
 function dayLabel(iso: string): string {
   const k = dayKey(iso);
   const today = dayKey(new Date().toISOString());
   const yesterday = dayKey(new Date(Date.now() - 86_400_000).toISOString());
   if (k === today) return "Today";
   if (k === yesterday) return "Yesterday";
-  return new Intl.DateTimeFormat("en-CA", { timeZone: TZ, weekday: "short", month: "short", day: "numeric" }).format(new Date(iso));
+  return new Intl.DateTimeFormat("en-CA", { timeZone: businessZone(iso), weekday: "short", month: "short", day: "numeric" }).format(new Date(iso));
 }
 const initials = (name: string | null) =>
   (name ?? "?")

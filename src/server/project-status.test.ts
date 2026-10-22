@@ -29,9 +29,9 @@ describe("planStatusChange", () => {
     expect(planStatusChange(base, "complete", {}, NOW)!.set.completedAt).toBe(NOW);
     const past = planStatusChange(base, "complete", { date: "2026-10-14" }, NOW)!;
     expect(past.set.completedAt?.toISOString()).toBe("2026-10-14T19:00:00.000Z");
-    // Noon after the DST change is 20:00Z, still Nov 1 locally.
+    // British Columbia stays on UTC−7 from Nov 1 2026, so noon is 19:00Z.
     const later = planStatusChange({ ...base, soldAt: new Date("2026-10-30T18:00:00Z") }, "complete", { date: "2026-11-01" }, new Date("2026-11-03T19:00:00Z"))!;
-    expect(later.set.completedAt?.toISOString()).toBe("2026-11-01T20:00:00.000Z");
+    expect(later.set.completedAt?.toISOString()).toBe("2026-11-01T19:00:00.000Z");
   });
 
   it("keeps the finish date between finished statuses", () => {
