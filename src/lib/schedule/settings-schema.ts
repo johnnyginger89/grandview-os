@@ -12,7 +12,11 @@ export const readinessCheckSchema = z.object({
   key: z.string().regex(/^[a-z0-9_]{2,40}$/, "Use 2–40 lowercase letters, digits or _"),
   label: z.string().trim().min(1).max(60),
   states: z.object({ todo: stateLabel, in_progress: stateLabel, done: stateLabel, not_needed: stateLabel }),
-  /** When a booking of this kind is created and the check is "todo", it becomes "in_progress" with that date. */
+  /**
+   * The check follows bookings of this kind: "in_progress" with the date while one is
+   * booked, back to "todo" when none is left ("done" and "not_needed" are never changed).
+   * A pressure wash shows as done once its last booked day has passed.
+   */
   linkedEntryKind: z.enum(SCHEDULE_ENTRY_KINDS).nullable().default(null),
 });
 export type ReadinessCheck = z.infer<typeof readinessCheckSchema>;

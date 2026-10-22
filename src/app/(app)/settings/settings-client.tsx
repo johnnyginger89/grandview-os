@@ -1,4 +1,5 @@
 "use client";
+import { Check, Copy } from "lucide-react";
 import { gmailConnectMessage } from "@/lib/gmail-connect-messages";
 import { submitWith } from "@/components/submit";
 import { useActionState, useRef, useState, useTransition } from "react";
@@ -6,7 +7,7 @@ import { Badge, Button, Card, CardHeader, Field, FormError, Input, Select, Table
 import { ROLES } from "@/db/schema/auth";
 import { can, ROLE_LABELS } from "@/lib/authz/permissions";
 import { formatDate, formatDateTime } from "@/lib/utils";
-import { createUserAction, saveCompanyAction, saveListAction, savePricingAction, saveTemplateAction, updateUserAction } from "./actions";
+import { createUserAction, resetTwoFactorAction, saveCompanyAction, saveListAction, savePricingAction, saveTemplateAction, setTemporaryPasswordAction, updateUserAction } from "./actions";
 import { saveColourFormSettingsAction } from "./colour-form-settings-actions";
 import { connectCompanyCamAction, disconnectCompanyCamAction, disconnectGmailAction, syncGmailAction } from "./integration-actions";
 import { saveWorkOrderSettingsAction } from "./work-order-settings-actions";
@@ -143,21 +144,61 @@ function TemplateEditor({ t }: { t: { id: string; name: string; subject: string;
   );
 }
 
-export function UsersPanel({ users, meId, isOwner }: { users: { id: string; name: string; email: string; role: string; active: boolean; mfa: boolean }[]; meId: string; isOwner: boolean }) {
+type UserRow = { id: string; name: string; email: string; role: string; active: boolean; mfa: boolean; mustChangePassword: boolean };
+
+export function UsersPanel({ users, meId, isOwner, canResetSignIn }: { users: UserRow[]; meId: string; isOwner: boolean; canResetSignIn: boolean }) {
   const [state, action, pending] = useActionState(createUserAction, null);
   const [rowError, setRowError] = useState<string | null>(null);
+  const [reset, setReset] = useState<{ name: string; email: string; tempPassword?: string } | null>(null);
   const [busy, start] = useTransition();
   // Only the owner can hand out roles that see company financials.
   const roles = ROLES.filter((r) => isOwner || !can(r, "financials.read"));
+  function temporaryPassword(u: UserRow) {
+    if (!confirm(`Set a temporary password for ${u.name}? They'll be signed out everywhere and must choose their own password when they sign in.`)) return;
+    start(async () => {
+      const r = await setTemporaryPasswordAction(u.id);
+      setRowError(r.ok ? null : r.error);
+      setReset(r.ok ? { name: r.name, email: r.email, tempPassword: r.tempPassword } : null);
+    });
+  }
+  function resetTwoStep(u: UserRow) {
+    if (!confirm(`Reset two-step sign-in for ${u.name}? They'll be signed out everywhere and set up their authenticator app again when they next sign in.`)) return;
+    start(async () => {
+      const r = await resetTwoFactorAction(u.id);
+      setRowError(r.ok ? null : r.error);
+      setReset(r.ok ? { name: r.name, email: u.email } : null);
+    });
+  }
   return (
     <div className="space-y-4">
+      {reset && (
+        <div role="status" className="max-w-2xl rounded-md bg-success-soft p-3 text-sm">
+          {reset.tempPassword ? (
+            <>
+              <p>
+                Temporary password for <strong>{reset.name}</strong> ({reset.email}): <code className="rounded bg-surface px-1.5 py-0.5 font-mono">{reset.tempPassword}</code>
+              </p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <CopyText text={reset.tempPassword} />
+                <span className="text-xs text-muted">Share it privately; it&apos;s shown only once. They&apos;ve been signed out and will choose their own password when they sign in.</span>
+              </div>
+            </>
+          ) : (
+            <p>Two-step sign-in reset for <strong>{reset.name}</strong>. They&apos;ve been signed out and will set up their authenticator app again when they next sign in.</p>
+          )}
+        </div>
+      )}
       <Card>
         <Table>
           <thead><tr><th className={th}>Name</th><th className={th}>Role</th><th className={`${th} hidden sm:table-cell`}>2FA</th><th className={th}>Status</th></tr></thead>
           <tbody>
             {users.map((u) => (
               <tr key={u.id}>
-                <td className={td}><p className="font-medium">{u.name}</p><p className="text-xs text-muted">{u.email}</p></td>
+                <td className={td}>
+                  <p className="font-medium">{u.name}</p>
+                  <p className="text-xs text-muted">{u.email}</p>
+                  {u.mustChangePassword && <Badge tone="warning" className="mt-1">Temporary password</Badge>}
+                </td>
                 <td className={td}>
                   {u.id === meId || (u.role === "owner" && !isOwner) ? ROLE_LABELS[u.role as keyof typeof ROLE_LABELS] : (
                     <Select aria-label={`Role for ${u.name}`} className="h-8 w-auto" defaultValue={u.role} disabled={busy} onChange={(e) => start(async () => { const r = await updateUserAction(u.id, { role: e.target.value }); setRowError(r.ok ? null : r.error); })}>
@@ -168,9 +209,22 @@ export function UsersPanel({ users, meId, isOwner }: { users: { id: string; name
                 <td className={`${td} hidden sm:table-cell`}>{u.mfa ? <Badge tone="success">On</Badge> : <Badge>Off</Badge>}</td>
                 <td className={td}>
                   {u.id === meId ? <Badge tone="success">You</Badge> : (
-                    <Button size="sm" variant={u.active ? "ghost" : "secondary"} disabled={busy} onClick={() => { if (!u.active || confirm(`Deactivate ${u.name}? They'll be signed out immediately.`)) start(async () => { const r = await updateUserAction(u.id, { active: !u.active }); setRowError(r.ok ? null : r.error); }); }}>
-                      {u.active ? "Deactivate" : "Reactivate"}
-                    </Button>
+                    <div className="flex flex-wrap gap-1">
+                      <Button size="sm" variant={u.active ? "ghost" : "secondary"} disabled={busy} onClick={() => { if (!u.active || confirm(`Deactivate ${u.name}? They'll be signed out immediately.`)) start(async () => { const r = await updateUserAction(u.id, { active: !u.active }); setRowError(r.ok ? null : r.error); }); }}>
+                        {u.active ? "Deactivate" : "Reactivate"}
+                      </Button>
+                      {/* Owner only: anyone who could do these could take over the login. */}
+                      {canResetSignIn && (
+                        <Button size="sm" variant="ghost" disabled={busy} aria-label={`Set temporary password for ${u.name}`} onClick={() => temporaryPassword(u)}>
+                          Set temporary password
+                        </Button>
+                      )}
+                      {canResetSignIn && u.mfa && (
+                        <Button size="sm" variant="ghost" disabled={busy} aria-label={`Reset two-step sign-in for ${u.name}`} onClick={() => resetTwoStep(u)}>
+                          Reset two-step
+                        </Button>
+                      )}
+                    </div>
                   )}
                 </td>
               </tr>
@@ -191,12 +245,31 @@ export function UsersPanel({ users, meId, isOwner }: { users: { id: string; name
           {state?.ok && state.tempPassword && (
             <div className="rounded-md bg-success-soft p-3 text-sm sm:col-span-2">
               Account created for <strong>{state.email}</strong>. Temporary password: <code className="rounded bg-surface px-1.5 py-0.5 font-mono">{state.tempPassword}</code>
-              <p className="mt-1 text-xs text-muted">Share it privately. It is shown only once; they should change it with “Forgot password”.</p>
+              <p className="mt-1 text-xs text-muted">Share it privately. It is shown only once; they&apos;ll choose their own password when they first sign in.</p>
             </div>
           )}
         </form>
       </Card>
     </div>
+  );
+}
+
+function CopyText({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      window.prompt("Copy this:", text);
+    }
+  }
+  return (
+    <Button size="sm" variant="secondary" onClick={copy}>
+      {copied ? <Check className="size-4" aria-hidden /> : <Copy className="size-4" aria-hidden />}
+      {copied ? "Copied" : "Copy"}
+    </Button>
   );
 }
 
@@ -289,10 +362,29 @@ export function ColourFormSettingsForm({ settings }: { settings: { changeWarning
 export function GmailSettings({
   status,
   result,
+  canConnect,
 }: {
-  status: { configured: boolean; connected: boolean; broken: boolean; email: string | null; connectedAt: string | null; connectedByName: string | null; lastSyncAt: string | null; lastResult: { checked: number; imported: number; error: string | null } | null; catchingUp: boolean; importedTotal: number; redirectUri: string | null };
+  status: {
+    configured: boolean;
+    connected: boolean;
+    broken: boolean;
+    email: string | null;
+    connectedAt: string | null;
+    connectedByName: string | null;
+    lastSyncAt: string | null;
+    lastResult: { checked: number; imported: number; error: string | null } | null;
+    catchingUp: boolean;
+    importedTotal: number;
+    redirectUri: string | null;
+    companyEmail: string | null;
+    companyDomain: string | null;
+    onCompanyDomain: boolean | null;
+    connectedByOwner: boolean | null;
+  };
   /** From Google's return trip: ?gmail=connected|denied|error&reason=… */
   result: { gmail?: string; reason?: string };
+  /** Owner only: password-reset emails go out through this mailbox. */
+  canConnect: boolean;
 }) {
   const [state, setState] = useState<{ ok: boolean; error?: string } | null>(null);
   const [synced, setSynced] = useState<string | null>(null);
@@ -308,7 +400,7 @@ export function GmailSettings({
       <div className="space-y-3 p-4 text-sm">
         {result.gmail === "connected" && <p role="status" className="rounded-md bg-success-soft px-3 py-2 text-success">Gmail is connected.</p>}
         {result.gmail === "denied" && <p className="rounded-md bg-warning-soft px-3 py-2 text-warning">Google sign-in was cancelled, so Gmail isn&apos;t connected.</p>}
-        {result.gmail === "error" && <FormError message={gmailConnectMessage(result.reason)} />}
+        {result.gmail === "error" && <FormError message={gmailConnectMessage(result.reason, status.companyDomain)} />}
         {!status.configured ? (
           <div className="space-y-2">
             <p className="font-medium">One-time setup in Google (about 10 minutes, signed in as info@):</p>
@@ -341,6 +433,12 @@ export function GmailSettings({
               <li>Only emails from an address saved on a customer or one of their contacts are copied in; everything else stays in Gmail only.</li>
             </ul>
             {status.lastResult?.error && <p className="rounded-md bg-warning-soft px-3 py-2 text-warning">The last check didn&apos;t work: {status.lastResult.error}</p>}
+            {(status.onCompanyDomain === false || status.connectedByOwner === false) && (
+              <p className="rounded-md bg-warning-soft px-3 py-2 text-warning">
+                {status.onCompanyDomain === false ? `${status.email} isn't on @${status.companyDomain}, the company email's domain. ` : "This mailbox wasn't connected by the owner. "}
+                Password-reset emails go out through it, so the owner should disconnect it and connect the company mailbox.
+              </p>
+            )}
             <div className="flex flex-wrap gap-2">
               <Button
                 variant="secondary"
@@ -355,26 +453,39 @@ export function GmailSettings({
               >
                 {pending ? "Checking…" : "Check for customer emails now"}
               </Button>
-              <Button
-                variant="ghost"
-                disabled={pending}
-                onClick={() => {
-                  if (window.confirm("Disconnect Gmail? Emails will stop going out from it until it's connected again.")) start(async () => setState(await disconnectGmailAction()));
-                }}
-              >
-                Disconnect
-              </Button>
+              {canConnect && (
+                <Button
+                  variant="ghost"
+                  disabled={pending}
+                  onClick={() => {
+                    if (window.confirm("Disconnect Gmail? Emails will stop going out from it until it's connected again.")) start(async () => setState(await disconnectGmailAction()));
+                  }}
+                >
+                  Disconnect
+                </Button>
+              )}
             </div>
+            {!canConnect && <p className="text-muted">Only the owner can connect or disconnect Gmail.</p>}
             {synced && <p role="status" className="text-success">{synced}</p>}
           </>
         ) : (
           <>
             {status.broken && <p className="rounded-md bg-warning-soft px-3 py-2 text-warning">Google stopped accepting the connection{status.email ? ` for ${status.email}` : ""}. Connect again; until then, emails can&apos;t go out.</p>}
-            <p className="text-muted">Sign in with the mailbox emails should come from (info@grandviewpainting.ca) and allow both Gmail permissions.</p>
-            {/* A full page visit: Google's sign-in isn't a request the app can make for you. */}
-            <a href="/api/integrations/google/start" className="inline-flex h-10 items-center rounded-lg bg-brand px-4 font-medium text-brand-contrast shadow-card hover:bg-brand-hover">
-              Connect Gmail
-            </a>
+            {!canConnect ? (
+              <p className="text-muted">Only the owner can connect Gmail.</p>
+            ) : !status.companyDomain ? (
+              <p className="text-muted">Add the company email in the Company tab first. Gmail can only be connected to a mailbox on the same domain.</p>
+            ) : (
+              <>
+                <p className="text-muted">
+                  Sign in with the company mailbox emails should come from ({status.companyEmail}) and allow both Gmail permissions. Only a mailbox on @{status.companyDomain} can be connected.
+                </p>
+                {/* A full page visit: Google's sign-in isn't a request the app can make for you. */}
+                <a href="/api/integrations/google/start" className="inline-flex h-10 items-center rounded-lg bg-brand px-4 font-medium text-brand-contrast shadow-card hover:bg-brand-hover">
+                  Connect Gmail
+                </a>
+              </>
+            )}
           </>
         )}
         <Saved state={state} />

@@ -2,6 +2,7 @@
 import type { WorkOrderStatus } from "@/db/schema/work-orders";
 import type { WorkOrderSection } from "@/server/work-order-view";
 import type { LinkStatus } from "./links";
+import type { OutOfDateReason } from "./out-of-date";
 
 export type { WorkOrderSection };
 
@@ -81,6 +82,8 @@ export interface WorkOrderDTO {
    * (instructions edited, bookings moved). Null when it can't be worked out.
    */
   pendingChanges: WorkOrderSection[] | null;
+  /** Colours signed or bookings changed since the current version was issued; empty when it's up to date. */
+  outOfDate: OutOfDateReason[];
 }
 
 export interface NewWorkOrderDefaults {

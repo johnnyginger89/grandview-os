@@ -56,7 +56,7 @@ export function EstimateEditor({
   materials,
   proposals,
 }: {
-  estimate: { id: string; number: number; status: string; revision: number; customerId: string; customerName: string; address: string | null; opportunityId: string | null; updatedAt: string; project: { id: string; number: number | null } | null };
+  estimate: { id: string; number: number; status: string; revision: number; customerId: string; customerName: string; address: string | null; opportunityId: string | null; updatedAt: string; project: { id: string; number: number | null; canOpen: boolean } | null };
   initialDoc: EstimateDoc;
   rates: RateOption[];
   factors: FactorOption[];
@@ -359,11 +359,14 @@ export function EstimateEditor({
             {validity ? ` · ${validity}` : ""}
             {statusText && <> · <a href="#proposals" className="text-brand hover:underline">{statusText}</a></>}
           </p>
-          {estimate.project && (
-            <Link href={`/projects/${estimate.project.id}`} className="mt-2 inline-block rounded-md bg-success-soft px-3 py-1.5 text-sm text-success hover:underline">
-              Accepted – job #{estimate.project.number} was created. Open the job →
-            </Link>
-          )}
+          {estimate.project &&
+            (estimate.project.canOpen ? (
+              <Link href={`/projects/${estimate.project.id}`} className="mt-2 inline-block rounded-md bg-success-soft px-3 py-1.5 text-sm text-success hover:underline">
+                Accepted – job #{estimate.project.number} was created. Open the job →
+              </Link>
+            ) : (
+              <p className="mt-2 inline-block rounded-md bg-success-soft px-3 py-1.5 text-sm text-success">Sold. The office takes it from here.</p>
+            ))}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <span className={cn("text-xs", saveState === "error" || saveState === "conflict" ? "text-danger" : "text-subtle")} role="status">

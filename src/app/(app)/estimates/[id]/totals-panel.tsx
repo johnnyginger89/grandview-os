@@ -6,7 +6,7 @@ import type { EstimateDoc } from "@/lib/estimating/document";
 import type { EstimateResult } from "@/lib/estimating/engine";
 import { labourSummary } from "@/lib/estimating/labour-summary";
 import { paintList, paintListText } from "@/lib/estimating/paint-list";
-import { d, formatCAD, formatNum, formatPct, marginToMarkup, priceForMargin } from "@/lib/money";
+import { d, formatCAD, formatNum, formatPct, fractionToPercent, marginToMarkup, percentToFraction, priceForMargin } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { NumInput } from "./editor-parts";
 import { useHideCosts } from "./hide-costs";
@@ -184,14 +184,14 @@ function PriceTab({ doc, result, ro, setSettings }: TotalsProps) {
         {doc.settings.pricingMethod === "billing_rate" ? (
           <>
             <Field label="Billing rate $/h"><NumInput ariaLabel="Billing rate per hour" disabled={ro} value={doc.settings.billingRatePerHour} onCommit={(v) => setSettings({ billingRatePerHour: v || "0" })} /></Field>
-            <Field label="Paint markup %"><NumInput ariaLabel="Material markup percent" disabled={ro} value={String(Number(doc.settings.materialMarkupPct) * 100)} onCommit={(v) => setSettings({ materialMarkupPct: String(Number(v || 0) / 100) })} /></Field>
+            <Field label="Paint markup %"><NumInput ariaLabel="Material markup percent" disabled={ro} value={fractionToPercent(doc.settings.materialMarkupPct)} onCommit={(v) => setSettings({ materialMarkupPct: percentToFraction(v) })} /></Field>
           </>
         ) : (
-          <Field label="Target margin %"><NumInput ariaLabel="Target margin percent" disabled={ro} value={String(Number(doc.settings.targetMargin) * 100)} onCommit={(v) => setSettings({ targetMargin: String(Math.min(95, Number(v || 0)) / 100) })} /></Field>
+          <Field label="Target margin %"><NumInput ariaLabel="Target margin percent" disabled={ro} value={fractionToPercent(doc.settings.targetMargin)} onCommit={(v) => setSettings({ targetMargin: percentToFraction(v, 95) })} /></Field>
         )}
         <Field label="Minimum job $"><NumInput ariaLabel="Minimum job price" disabled={ro} value={doc.settings.minimumJobPrice} onCommit={(v) => setSettings({ minimumJobPrice: v || "0" })} /></Field>
         <Field label="Discount $"><NumInput ariaLabel="Discount" disabled={ro} value={doc.settings.discount} placeholder="0" onCommit={(v) => setSettings({ discount: v || null })} /></Field>
-        <Field label="Deposit %"><NumInput ariaLabel="Deposit percent" disabled={ro} value={String(Number(doc.settings.depositPct) * 100)} onCommit={(v) => setSettings({ depositPct: String(Math.min(100, Number(v || 0)) / 100) })} /></Field>
+        <Field label="Deposit %"><NumInput ariaLabel="Deposit percent" disabled={ro} value={fractionToPercent(doc.settings.depositPct)} onCommit={(v) => setSettings({ depositPct: percentToFraction(v) })} /></Field>
         <Field
           label="Final price $ (before GST)"
           className="col-span-2"

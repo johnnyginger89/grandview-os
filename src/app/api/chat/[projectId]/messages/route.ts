@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { z } from "zod";
-import { getCurrentUser, needsMfaEnrollment } from "@/lib/authz/guard";
+import { getCurrentUser, needsAccountSetup } from "@/lib/authz/guard";
 import { safeErrorMessage } from "@/lib/action-error";
 import { isSameOrigin } from "@/lib/same-origin";
 import { ChatError, listMessages, markChannelRead, postMessage } from "@/server/job-chat";
@@ -17,7 +17,7 @@ const querySchema = z.object({
 
 async function viewer() {
   const user = await getCurrentUser();
-  return user && !needsMfaEnrollment(user) ? user : null;
+  return user && !needsAccountSetup(user) ? user : null;
 }
 
 /** A page of the job's chat (newest last), or what's new since `after`. `read=1` marks it read. */

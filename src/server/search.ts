@@ -10,6 +10,7 @@ import { can } from "@/lib/authz/permissions";
 import { likePattern, parseSearchQuery, type NumberKind, type ParsedQuery } from "@/lib/search/query";
 import type { SearchHit, SearchKind, SearchResult } from "@/lib/search/types";
 import { STATUS_LABEL as WORK_ORDER_STATUS_LABEL } from "@/lib/work-orders/types";
+import { reachColumn } from "@/server/customer-columns";
 import { getProposalTemplate } from "@/server/settings";
 
 // Never cache: what comes back depends on the viewer's role. No money in any result.
@@ -58,32 +59,36 @@ function everyWord(q: ParsedQuery, columns: (p: string) => (SQL | undefined)[], 
 const numberWanted = (q: ParsedQuery, kind: NumberKind) => (q.number && (q.number.kind === kind || q.number.kind === "any") ? q.number.value : null);
 const explicitNumber = (q: ParsedQuery, kind: NumberKind) => (q.number && q.number.kind === kind ? q.number.value : null);
 
+/**
+ * A customer matches when every word is in their name, email, one of their addresses or
+ * contacts, or the search is (part of) one of their phone numbers. The Customers list
+ * searches the same way.
+ */
+export function customerMatches(q: ParsedQuery): SQL | undefined {
+  return everyWord(
+    q,
+    (p) => [
+      ilike(customers.displayName, p),
+      ilike(customers.email, p),
+      sql`exists (select 1 from ${properties} where ${properties.customerId} = ${outer(customers.id)}
+        and (${properties.street} ilike ${p} or ${properties.city} ilike ${p} or ${properties.postalCode} ilike ${p} or ${properties.unit} ilike ${p} or ${properties.label} ilike ${p}))`,
+      sql`exists (select 1 from ${contacts} where ${contacts.customerId} = ${outer(customers.id)}
+        and (concat_ws(' ', ${contacts.firstName}, ${contacts.lastName}) ilike ${p} or ${contacts.email} ilike ${p}))`,
+    ],
+    (d) => sql`(${digitsOf(customers.phone)} like ${`%${d}%`} or exists (select 1 from ${contacts} where ${contacts.customerId} = ${outer(customers.id)}
+      and (${digitsOf(contacts.phone)} like ${`%${d}%`} or ${digitsOf(contacts.phone2)} like ${`%${d}%`})))`,
+  );
+}
+
 async function findCustomers(q: ParsedQuery, limit: number): Promise<SearchHit[]> {
   const address = sql<string | null>`(
     select concat_ws(', ', nullif(${properties.street}, ''), nullif(${properties.city}, ''))
     from ${properties} where ${properties.customerId} = ${outer(customers.id)}
     order by ${properties.createdAt} limit 1)`;
   const rows = await db
-    .select({ id: customers.id, name: customers.displayName, type: customers.type, email: customers.email, phone: customers.phone, address })
+    .select({ id: customers.id, name: customers.displayName, type: customers.type, email: reachColumn("email"), phone: reachColumn("phone"), address })
     .from(customers)
-    .where(
-      and(
-        isNull(customers.archivedAt),
-        everyWord(
-          q,
-          (p) => [
-            ilike(customers.displayName, p),
-            ilike(customers.email, p),
-            sql`exists (select 1 from ${properties} where ${properties.customerId} = ${outer(customers.id)}
-              and (${properties.street} ilike ${p} or ${properties.city} ilike ${p} or ${properties.postalCode} ilike ${p} or ${properties.unit} ilike ${p} or ${properties.label} ilike ${p}))`,
-            sql`exists (select 1 from ${contacts} where ${contacts.customerId} = ${outer(customers.id)}
-              and (concat_ws(' ', ${contacts.firstName}, ${contacts.lastName}) ilike ${p} or ${contacts.email} ilike ${p}))`,
-          ],
-          (d) => sql`(${digitsOf(customers.phone)} like ${`%${d}%`} or exists (select 1 from ${contacts} where ${contacts.customerId} = ${outer(customers.id)}
-            and (${digitsOf(contacts.phone)} like ${`%${d}%`} or ${digitsOf(contacts.phone2)} like ${`%${d}%`})))`,
-        ),
-      ),
-    )
+    .where(and(isNull(customers.archivedAt), customerMatches(q)))
     .orderBy(desc(sql`${customers.displayName} ilike ${`${q.tokens[0].replace(/[\\%_]/g, (c) => `\\${c}`)}%`}`), desc(customers.updatedAt))
     .limit(limit);
   return rows.map((r) => ({

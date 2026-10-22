@@ -473,7 +473,8 @@ export function vancouverHour(now: Date): number {
 /**
  * At 4 pm Vancouver time: for each crew booked on a job today (a working day for that
  * crew), if nobody in the crew has posted today's update in the job's chat, remind the
- * crew lead (or everyone in the crew when there's no lead). Runs once a day.
+ * crew lead (or everyone in the crew when there's no lead). Runs once a day. Jobs on
+ * hold are skipped: the crew shouldn't be on site.
  */
 export async function sendDailyUpdateReminders(now: Date = new Date(), opts: { force?: boolean } = {}): Promise<{ ran: boolean; reminded: number }> {
   if (!opts.force && vancouverHour(now) !== 16) return { ran: false, reminded: 0 };
@@ -497,7 +498,7 @@ export async function sendDailyUpdateReminders(now: Date = new Date(), opts: { f
         sql`${scheduleEntries.endDate} >= ${today}`,
         inArray(scheduleEntries.kind, [...UPDATE_KINDS]),
         eq(crews.active, true),
-        notInArray(projects.status, ["cancelled", "closed", "complete", "invoiced"]),
+        notInArray(projects.status, ["cancelled", "closed", "complete", "invoiced", "on_hold"]),
       ),
     );
   if (!booked.length) return { ran: true, reminded: 0 };

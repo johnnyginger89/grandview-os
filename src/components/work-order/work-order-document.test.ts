@@ -39,7 +39,7 @@ const doc: EstimateDoc = {
   costItems: [{ id: uuid(5), kind: "subcontractor", description: "Hidden 4321.09", customerDescription: null, cost: "4321.09", markupPct: "0.2", overridePrice: null, isOptional: false, optionSelected: false }],
 };
 
-function view(extra: { specialInstructions?: string | null; phone?: boolean; show?: { hours: boolean; paint: boolean } } = {}): WorkOrderView {
+function view(extra: { specialInstructions?: string | null; phone?: boolean; show?: { hours: boolean; paint: boolean }; builtBefore1990?: boolean } = {}): WorkOrderView {
   return buildWorkOrderView({
     workOrder: {
       number: 7001, title: "Interior repaint", specialInstructions: extra.specialInstructions === undefined ? "Start upstairs.\n- Dog in the yard" : extra.specialInstructions,
@@ -52,7 +52,7 @@ function view(extra: { specialInstructions?: string | null; phone?: boolean; sho
     template: DEFAULT_PROPOSAL_TEMPLATE,
     company: { name: "Grandview Painting Ltd.", displayName: "Grandview Painting", phone: "604-555-0199" },
     customer: { name: "[TEST DATA] Kim Lee", phone: "604-555-0100" },
-    property: { street: "1 Example St", unit: null, city: "Surrey", province: "BC", postalCode: "V3S 0A1", accessNotes: null },
+    property: { street: "1 Example St", unit: null, city: "Surrey", province: "BC", postalCode: "V3S 0A1", accessNotes: null, builtBefore1990: extra.builtBefore1990 },
     crew: null,
     bookings: [{ kind: "work", phaseLabel: null, startDate: "2026-10-26", endDate: "2026-10-30", workDays: 5, crewId: uuid(6), crewName: "[TEST DATA] Niko", crewNotes: null }],
     projectManager: { name: "[TEST DATA] Pat PM", phone: "604-555-0150" },
@@ -97,6 +97,15 @@ describe("WorkOrderDocument", () => {
     expect(html).toContain('href="tel:6045550150"');
     expect(html).toContain('href="tel:6045550199"');
     expect(render({ view: view({ phone: true }), office: OFFICE })).toContain('href="tel:6045550100"');
+  });
+
+  it("warns at the top of the job details when the property was built before 1990", () => {
+    const warning = "Built before 1990: assume lead paint and asbestos may be present. Follow safe work practices.";
+    const out = render({ view: view({ builtBefore1990: true }), office: OFFICE });
+    expect(text(out)).toContain(warning);
+    const details = out.slice(out.indexOf('data-section="details"'), out.indexOf('data-section="bookings"'));
+    expect(text(details).indexOf(warning)).toBeLessThan(text(details).indexOf("Interior repaint"));
+    expect(text(html)).not.toContain("Built before 1990");
   });
 
   it("highlights changed sections and says when something was removed", () => {

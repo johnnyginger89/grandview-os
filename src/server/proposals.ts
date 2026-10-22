@@ -20,6 +20,7 @@ import {
 } from "@/db/schema";
 import { MESSAGE_TEMPLATES } from "@/db/seed-data";
 import { endOfBusinessDay } from "@/lib/calendar-date";
+import { customerReach, followUpAddress } from "@/lib/customer-reach";
 import { sendEmail } from "@/lib/email";
 import { calculateDoc, estimateDocSchema, type EstimateDoc } from "@/lib/estimating/document";
 import { toDb } from "@/lib/money";
@@ -775,13 +776,14 @@ export async function followUpDraft(proposalId: string, sender: { name: string }
   const p = await openProposal(proposalId, now);
   const estimate = await db.query.estimates.findFirst({ where: eq(estimates.id, p.estimateId) });
   if (!estimate) throw new ProposalError("Estimate not found");
-  const [customer, contact, company, t, last] = await Promise.all([
+  const [customer, people, company, t, last] = await Promise.all([
     db.query.customers.findFirst({ where: eq(customers.id, estimate.customerId) }),
-    db.query.contacts.findFirst({ where: and(eq(contacts.customerId, estimate.customerId), eq(contacts.isPrimary, true)) }),
+    db.query.contacts.findMany({ where: eq(contacts.customerId, estimate.customerId) }),
     getCompany(),
     db.query.messageTemplates.findFirst({ where: eq(messageTemplates.key, "proposal_follow_up") }),
     lastProposalEmail(p.estimateId),
   ]);
+  const contact = people.find((c) => c.isPrimary);
   const fallback = MESSAGE_TEMPLATES.find((x) => x.key === "proposal_follow_up")!;
   const vars = {
     first_name: contact?.firstName?.trim() || customer?.displayName.split(" ")[0] || "there",
@@ -795,7 +797,9 @@ export async function followUpDraft(proposalId: string, sender: { name: string }
   const body = renderTemplate(t?.body || fallback.body, vars).replace(/\n{3,}/g, "\n\n").trim();
   // Same subject as the proposal email, so it reads as one conversation in the customer's inbox too.
   const subject = last?.subject ? reply(last.subject) : renderTemplate(t?.subject || fallback.subject, vars).trim();
-  return { to: p.sentTo ?? contact?.email ?? customer?.email ?? "", subject, body };
+  // Back to the address the proposal went to while it's still on file; a corrected one wins.
+  const to = followUpAddress(p.sentTo, [customer?.email, ...people.map((c) => c.email)], customerReach(customer, contact).email);
+  return { to: to ?? "", subject, body };
 }
 
 /** Sends the follow-up the user checked, as a reply in the proposal's email conversation. */

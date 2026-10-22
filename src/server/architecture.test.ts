@@ -133,14 +133,18 @@ const UNCACHED = [
   "src/app/(app)/search/",
   "src/app/(app)/layout.tsx",
   "src/server/dashboard.ts",
+  "src/server/jobs-today.ts",
   "src/server/goals.ts",
   "src/server/pipeline-list.ts",
+  "src/server/estimate-list.ts",
+  "src/server/project-list.ts",
   "src/server/project-status.ts",
   "src/lib/reporting/",
   "src/components/reporting/",
   "src/app/(app)/performance/",
   "src/app/(app)/month-snapshot.tsx",
   "src/app/(app)/page.tsx",
+  "src/app/(app)/home-tiles.tsx",
   "src/app/(app)/leads/",
   "src/app/(app)/projects/",
   "src/app/(app)/settings/",
@@ -617,7 +621,16 @@ describe("Vancouver times go through businessZone()", () => {
 // a preview), never from the schedule service, its hooks or any automation.
 // ---------------------------------------------------------------------------
 
-const EMAIL_SENDERS = ["src/lib/email.ts", "src/lib/auth.ts", "src/server/leads.ts", "src/server/proposals.ts", "src/server/start-notices.ts", "src/server/colour-selections.ts"];
+const EMAIL_SENDERS = [
+  "src/lib/email.ts",
+  "src/lib/auth.ts",
+  "src/server/leads.ts",
+  "src/server/proposals.ts",
+  "src/server/start-notices.ts",
+  "src/server/colour-selections.ts",
+  // Security alert to the owner's own address after /recover is used; never a customer.
+  "src/server/owner-recovery.ts",
+];
 
 function callsOf(s: Source, name: string): string[] {
   const sf = ast(s);

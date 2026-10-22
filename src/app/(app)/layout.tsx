@@ -23,7 +23,7 @@ const NAV: (NavItem & { permission: Permission })[] = [
 ];
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const user = await requireUser({ allowMfaPending: true });
+  const user = await requireUser({ allowSetupPending: true });
   const myJobs = await canOpenMyJobs(user);
   const homeTabs = HOME_TABS.filter((t) => can(user.role, t.permission)).map(({ href, label }) => ({ href, label }));
 

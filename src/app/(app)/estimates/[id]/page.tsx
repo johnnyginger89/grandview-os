@@ -71,7 +71,8 @@ export default async function EstimatePage({ params }: { params: Promise<{ id: s
           address: property ? formatAddress(property) : null,
           opportunityId: estimate.opportunityId,
           updatedAt: estimate.updatedAt.toISOString(),
-          project: project ? { id: project.id, number: project.number } : null,
+          // Only people who can open the job page get a link to it.
+          project: project ? { id: project.id, number: project.number, canOpen: can(user.role, "projects.read_all") } : null,
         }}
         initialDoc={doc}
         rates={rates.filter((r) => r.version).map((r) => ({ id: r.rate.id, code: r.rate.code, category: r.rate.category, dimensionSource: r.rate.dimensionSource, snapshot: toSnapshot(r) }))}

@@ -52,7 +52,7 @@ export function ColoursPanel({
     <Card id="colours" className={cn("scroll-mt-[calc(var(--app-top)+1rem)]", className)} role="region" aria-label="Colours">
       <CardHeader
         title="Colours"
-        description="The customer's colours, signed off. They show on the work order and in the customer file."
+        description="The customer's colours, signed off. They go in the customer file, and on the work order when you issue a new version."
         action={
           canEdit && !open ? (
             <Button size="sm" variant={signed ? "secondary" : "primary"} onClick={begin} disabled={pending}>

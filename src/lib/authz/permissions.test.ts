@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { can, canManageAccount, isFieldRole, PERMISSIONS, permissionsFor } from "./permissions";
+import { ROLES } from "@/db/schema/auth";
+import { can, canConnectMailbox, canManageAccount, canResetSignIn, isFieldRole, PERMISSIONS, permissionsFor } from "./permissions";
 
 describe("permission matrix", () => {
   it("keeps money away from field roles and administrators", () => {
@@ -17,6 +18,16 @@ describe("permission matrix", () => {
     expect(canManageAccount("admin", "estimator")).toBe(true);
     expect(canManageAccount("operations_manager", "operations_manager")).toBe(false);
     expect(canManageAccount("owner", "operations_manager")).toBe(true);
+  });
+
+  it("keeps sign-in resets and the company mailbox with the owner, though admins share the permissions", () => {
+    expect(can("admin", "users.manage") && can("admin", "settings.manage")).toBe(true);
+    for (const role of ROLES) {
+      expect(canResetSignIn(role), role).toBe(role === "owner");
+      expect(canConnectMailbox(role), role).toBe(role === "owner");
+    }
+    expect(canResetSignIn(null)).toBe(false);
+    expect(canConnectMailbox("nobody")).toBe(false);
   });
 });
 

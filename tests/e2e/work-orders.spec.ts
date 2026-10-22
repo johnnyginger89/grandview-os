@@ -5,8 +5,9 @@ import { sellThreeThousandDollarJob } from "./sales";
 /*
  * Crew work orders (spec-work-orders §5): made automatically when the job is sold,
  * someone assigned from the card, issued, shared by link with labour hours and paint
- * to order but no money anywhere, a new version with a highlighted change, revoke,
- * and painters kept out. The steps share one job, so the file runs in order.
+ * to order but no money anywhere, a new version with a highlighted change, the job's
+ * project manager as office contact, the "out of date" flag after a booking change,
+ * revoke, and painters kept out. The steps share one job, so the file runs in order.
  */
 test.describe.configure({ mode: "serial" });
 
@@ -88,6 +89,8 @@ test.describe("work orders (owner)", () => {
     await page.goto(projectPath);
     await row(page).getByRole("button", { name: "Create link" }).click();
     const dialog = page.getByRole("dialog");
+    // Crews see the estimated hours on purpose, so the dialog mustn't promise otherwise.
+    await expect(dialog).toContainText("including any estimated hours but never prices");
     await dialog.getByLabel("Who is it for?").fill("[TEST DATA] Niko's crew");
     await dialog.getByLabel("Link works for").selectOption("30");
     await dialog.getByRole("button", { name: "Create link" }).click();
@@ -158,6 +161,53 @@ test.describe("work orders (owner)", () => {
     await crew.context.close();
 
     await page.reload();
+  });
+
+  test("the project manager picked on the job is the office contact on the next version and joins the chat", async ({ page }) => {
+    await page.goto(projectPath);
+    const picker = page.getByLabel("Project manager", { exact: true });
+    await expect(picker).toHaveValue("");
+    await picker.selectOption({ label: "Project Manager (Dev)" });
+    await expect(page.getByRole("status").filter({ hasText: "Project manager saved" })).toBeVisible();
+    await page.reload();
+    await expect(page.getByLabel("Project manager", { exact: true }).locator("option:checked")).toHaveText("Project Manager (Dev)");
+
+    // Version 2 keeps what it said; the next version names the office contact.
+    await expect(row(page).getByText(/not issued yet: Job details/)).toBeVisible();
+    const preview = await row(page).getByRole("link", { name: "Preview" }).getAttribute("href");
+    await page.goto(preview!);
+    await expect(page.locator("dl").filter({ hasText: "Office contact" })).toContainText("Project Manager (Dev)");
+
+    await page.goto(projectPath);
+    await page.getByRole("region", { name: "Job chat" }).getByRole("link", { name: "Open chat" }).click();
+    await page.getByRole("button", { name: /^People in this chat/ }).click();
+    const members = page.getByRole("dialog", { name: "People in this chat" }).getByRole("list", { name: "Members" });
+    await expect(members).toContainText("Project Manager (Dev)");
+    await expect(members).toContainText("Project manager");
+  });
+
+  test("a booking change after issuing flags the work order out of date until a new version is issued", async ({ page }) => {
+    await page.goto(projectPath);
+    await expect(row(page).getByTestId("work-order-out-of-date")).toHaveCount(0);
+    await card(page).getByRole("button", { name: "Assign someone" }).click();
+    const assign = card(page).getByRole("form", { name: "Assign someone" });
+    // This file's crew: the first one listed may have the painter in it, who must stay off this job.
+    await assign.getByLabel("Who").selectOption({ label: CREW });
+    await assign.getByLabel("What they're doing").selectOption({ label: "Pressure wash" });
+    await assign.getByLabel("Working days").fill("1");
+    await assign.getByRole("button", { name: "Add to schedule" }).click();
+    await expect(row(page).getByTestId("work-order-assigned")).toContainText("Pressure wash ·");
+
+    const flag = row(page).getByTestId("work-order-out-of-date");
+    await expect(flag).toContainText("Work order out of date: issue a new version");
+    await expect(flag).toContainText("Bookings changed after version 2 was issued.");
+    await expect(row(page).getByText("Out of date", { exact: true })).toBeVisible();
+
+    // Nothing is issued by itself: the office issues the new version.
+    await row(page).getByRole("button", { name: "Issue new version" }).click();
+    await page.getByRole("dialog", { name: "Issue version 3" }).getByRole("button", { name: "Issue version 3" }).click();
+    await expect(card(page).getByText("Version 3 issued.")).toBeVisible();
+    await expect(row(page).getByTestId("work-order-out-of-date")).toHaveCount(0);
   });
 
   test("a revoked link stops working at once", async ({ page, browser }) => {

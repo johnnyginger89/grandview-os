@@ -32,10 +32,10 @@ async function main() {
 
   const ctx = await auth.$context;
   const password = randomBytes(15).toString("base64url");
-  const u = await ctx.internalAdapter.createUser({ email, name, emailVerified: true, role: "owner" }, { method: "admin" });
+  const u = await ctx.internalAdapter.createUser({ email, name, emailVerified: true, role: "owner", mustChangePassword: true }, { method: "admin" });
   await ctx.internalAdapter.linkAccount({ userId: u.id, providerId: "credential", accountId: u.id, password: await ctx.password.hash(password) });
   await db.insert(auditLog).values({ actorId: u.id, action: "setup.cli_owner", entityType: "user", entityId: u.id, after: { email } });
-  console.log(`\nOwner created: ${email}\nTemporary password (shown once): ${password}\nSign in, then change it with "Forgot password" and set up two-factor authentication.`);
+  console.log(`\nOwner created: ${email}\nTemporary password (shown once): ${password}\nSign in with it: you'll be asked to choose your own password, then set up two-factor authentication.`);
 }
 
 main()

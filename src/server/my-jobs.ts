@@ -51,6 +51,7 @@ export interface FieldJobRow {
   province: string | null;
   postalCode: string | null;
   accessNotes: string | null;
+  builtBefore1990: boolean | null;
   projectTypes: string[] | null;
   /** Filled for lead crews only. */
   contactFirstName?: string | null;
@@ -86,6 +87,7 @@ export function toFieldJobView(row: FieldJobRow, opts: { isLead: boolean; today:
     section,
     crewName: row.crewName,
     tentative: isTentative(row.kind, row.confirmation ?? "none"),
+    onHold: row.projectStatus === "on_hold",
     projectNumber: row.projectNumber ?? 0,
     jobTitle: jobTitle(row.projectName, row.estimateTitle),
     customerName: row.customerName,
@@ -93,6 +95,7 @@ export function toFieldJobView(row: FieldJobRow, opts: { isLead: boolean; today:
     address,
     mapsUrl: address ? mapsUrl(address) : null,
     accessNotes: row.accessNotes?.trim() || null,
+    builtBefore1990: row.builtBefore1990 === true,
     crewNotes: row.crewNotes?.trim() || null,
     contact: opts.isLead && phone ? { name: contactName, phone } : null,
   };
@@ -137,6 +140,7 @@ export async function listFieldJobs(viewer: { id: string }, now: Date = new Date
       province: properties.province,
       postalCode: properties.postalCode,
       accessNotes: properties.accessNotes,
+      builtBefore1990: properties.builtBefore1990,
       projectTypes: opportunities.projectTypes,
     })
     .from(scheduleEntries)
@@ -203,6 +207,7 @@ export async function listFieldJobs(viewer: { id: string }, now: Date = new Date
       province: r.province,
       postalCode: r.postalCode,
       accessNotes: r.accessNotes,
+      builtBefore1990: r.builtBefore1990,
       projectTypes: r.projectTypes,
       contactFirstName: c?.firstName ?? null,
       contactLastName: c?.lastName ?? null,

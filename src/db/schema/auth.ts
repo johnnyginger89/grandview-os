@@ -24,6 +24,8 @@ export const user = pgTable("user", {
   active: boolean("active").notNull().default(true),
   phone: text("phone"),
   twoFactorEnabled: boolean("two_factor_enabled").default(false),
+  /** The password was set by someone else (a new login, or the owner's reset): replace it before anything else. */
+  mustChangePassword: boolean("must_change_password").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

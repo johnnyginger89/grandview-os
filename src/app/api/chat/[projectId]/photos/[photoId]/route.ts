@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { getCurrentUser, needsMfaEnrollment } from "@/lib/authz/guard";
+import { getCurrentUser, needsAccountSetup } from "@/lib/authz/guard";
 import { photoFile } from "@/server/job-chat";
 
 export const runtime = "nodejs";
@@ -10,7 +10,7 @@ const notFound = () => new Response("Not found", { status: 404, headers: { "Cach
 /** A job photo, only for people in that job's chat. Private cache: never stored by shared caches. */
 export async function GET(req: NextRequest, ctx: { params: Promise<{ projectId: string; photoId: string }> }) {
   const user = await getCurrentUser();
-  if (!user || needsMfaEnrollment(user)) return notFound();
+  if (!user || needsAccountSetup(user)) return notFound();
   const { projectId, photoId } = await ctx.params;
   const variant = req.nextUrl.searchParams.get("size") === "thumb" ? "thumb" : "full";
   const file = await photoFile(user, projectId, photoId, variant);

@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { z } from "zod";
-import { getCurrentUser, needsMfaEnrollment } from "@/lib/authz/guard";
+import { getCurrentUser, needsAccountSetup } from "@/lib/authz/guard";
 import { MAX_QUERY_LENGTH } from "@/lib/search/query";
 import { canSearch, globalSearch } from "@/server/search";
 
@@ -13,7 +13,7 @@ const NO_STORE = { "Cache-Control": "private, no-store", "X-Content-Type-Options
 /** The search box in the top bar. Signed-in office staff only; results never include money. */
 export async function GET(req: NextRequest) {
   const user = await getCurrentUser();
-  if (!user || needsMfaEnrollment(user)) return Response.json({ error: "Please sign in again." }, { status: 401, headers: NO_STORE });
+  if (!user || needsAccountSetup(user)) return Response.json({ error: "Please sign in again." }, { status: 401, headers: NO_STORE });
   if (!canSearch(user.role)) return Response.json({ error: "Search isn't available for your account." }, { status: 403, headers: NO_STORE });
   const parsed = querySchema.safeParse({ q: req.nextUrl.searchParams.get("q") ?? undefined });
   if (!parsed.success) return Response.json({ error: "That search is too long." }, { status: 400, headers: NO_STORE });

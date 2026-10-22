@@ -4,7 +4,7 @@ import { after } from "next/server";
 import webpush from "web-push";
 import { z } from "zod";
 import { db } from "@/db";
-import { appSettings, customers, estimates, notifications, proposals, pushSubscriptions, user } from "@/db/schema";
+import { appSettings, customers, estimates, notifications, projects, proposals, pushSubscriptions, user } from "@/db/schema";
 import type { Role } from "@/db/schema/auth";
 import { can } from "@/lib/authz/permissions";
 import { formatCAD } from "@/lib/money";
@@ -166,7 +166,8 @@ export type ProposalEvent = "viewed" | "accepted" | "declined";
 /**
  * Tells the office when a customer opens, accepts or declines a proposal: the owner,
  * admins and operations managers, plus whoever prepared the estimate. Amounts only
- * go to people allowed to see company financials. Never throws.
+ * go to people allowed to see company financials, and an acceptance links to the new
+ * job for people who can open jobs. Never throws.
  */
 export async function notifyProposalEvent(event: ProposalEvent, proposalId: string, opts: { reopened?: boolean; actorId?: string | null } = {}): Promise<void> {
   try {
@@ -181,10 +182,12 @@ export async function notifyProposalEvent(event: ProposalEvent, proposalId: stri
         acceptedTotals: proposals.acceptedTotals,
         acceptedName: proposals.acceptedName,
         acceptedMethod: proposals.acceptedMethod,
+        projectId: projects.id,
       })
       .from(proposals)
       .innerJoin(estimates, eq(estimates.id, proposals.estimateId))
       .innerJoin(customers, eq(customers.id, estimates.customerId))
+      .leftJoin(projects, eq(projects.estimateId, estimates.id))
       .where(eq(proposals.id, proposalId));
     if (!row) return;
 
@@ -197,11 +200,19 @@ export async function notifyProposalEvent(event: ProposalEvent, proposalId: stri
     if (event === "accepted") {
       const total = (row.acceptedTotals as Record<string, string> | null)?.price;
       const how = row.acceptedMethod && row.acceptedMethod !== "online" ? ` – marked accepted for them` : "";
-      const withMoney = recipients.filter((u) => can(u.role, "financials.read")).map((u) => u.id);
-      const without = recipients.filter((u) => !can(u.role, "financials.read")).map((u) => u.id);
       const title = `${who} accepted their proposal${how}`;
-      await notify(withMoney, { ...base, title, body: `Estimate #${row.number}${job}${total ? ` · ${formatCAD(total)} + GST` : ""}. The job has been created.` });
-      await notify(without, { ...base, title, body: `Estimate #${row.number}${job}. The job has been created.` });
+      // The link opens the new job for people who can open jobs; the rest get the estimate.
+      const groups = new Map<string, { ids: string[]; notice: NewNotification }>();
+      for (const u of recipients) {
+        const amount = total && can(u.role, "financials.read") ? ` · ${formatCAD(total)} + GST` : "";
+        const href = row.projectId && can(u.role, "projects.read_all") ? `/projects/${row.projectId}` : base.href;
+        const body = `Estimate #${row.number}${job}${amount}. The job has been created.`;
+        const key = `${href} ${body}`;
+        const group = groups.get(key) ?? { ids: [], notice: { ...base, title, body, href } };
+        group.ids.push(u.id);
+        groups.set(key, group);
+      }
+      for (const { ids, notice } of groups.values()) await notify(ids, notice);
       return;
     }
     const title = event === "viewed" ? (opts.reopened ? `${who} opened their proposal again` : `${who} opened their proposal`) : `${who} declined their proposal`;

@@ -1,11 +1,16 @@
 "use client";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button, Field, FormError, Input } from "@/components/ui";
 import { authClient } from "@/lib/auth-client";
 import { setPasswordWithCodeAction } from "./actions";
 
-/** Change your own password; other devices are signed out so an old password stops working everywhere. */
-export function ChangePassword({ hasTwoFactor }: { hasTwoFactor: boolean }) {
+/**
+ * Change your own password; other devices are signed out so an old password stops working everywhere.
+ * `required`: signed in with a temporary password, so the rest of the app opens once this is done.
+ */
+export function ChangePassword({ hasTwoFactor, required = false }: { hasTwoFactor: boolean; required?: boolean }) {
+  const router = useRouter();
   const [forgot, setForgot] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
@@ -22,6 +27,7 @@ export function ChangePassword({ hasTwoFactor }: { hasTwoFactor: boolean }) {
     setDone(false);
     if (newPassword.length < 12) return setError("The new password needs at least 12 characters.");
     if (newPassword !== String(f.get("again") ?? "")) return setError("The two new passwords don't match.");
+    if (!forgot && newPassword === currentPassword) return setError("Choose a new password, different from your current one.");
     setPending(true);
     if (forgot) {
       const r = await setPasswordWithCodeAction({ code, newPassword });
@@ -34,16 +40,17 @@ export function ChangePassword({ hasTwoFactor }: { hasTwoFactor: boolean }) {
     }
     form.reset();
     setDone(true);
+    if (required) router.refresh();
   }
 
   return (
-    <form onSubmit={submit} className="space-y-3">
+    <form method="post" onSubmit={submit} className="space-y-3">
       {forgot ? (
         <Field label="6-digit code from your authenticator app" hint="Instead of your current password.">
           <Input name="code" inputMode="numeric" autoComplete="one-time-code" maxLength={6} pattern="\d{6}" required />
         </Field>
       ) : (
-        <Field label="Current password">
+        <Field label="Current password" hint={required ? "The temporary password you were given." : undefined}>
           <Input name="current" type="password" autoComplete="current-password" required />
         </Field>
       )}

@@ -61,7 +61,7 @@ export function TwoFactorSetup({ enabled }: { enabled: boolean }) {
           <p className="mb-2 text-xs font-medium">Backup codes (each works once)</p>
           <div className="grid grid-cols-2 gap-1 font-mono text-xs">{backupCodes.map((c) => <span key={c}>{c}</span>)}</div>
         </div>
-        <form onSubmit={verify} className="flex items-end gap-2">
+        <form method="post" onSubmit={verify} className="flex items-end gap-2">
           <Field label="6-digit code" className="flex-1"><Input name="code" inputMode="numeric" autoComplete="one-time-code" required /></Field>
           <Button type="submit">Turn on</Button>
         </form>
@@ -71,7 +71,7 @@ export function TwoFactorSetup({ enabled }: { enabled: boolean }) {
   }
 
   return (
-    <form onSubmit={start} className="space-y-3">
+    <form method="post" onSubmit={start} className="space-y-3">
       <Field label="Confirm your password to begin"><Input name="password" type="password" autoComplete="current-password" required /></Field>
       <FormError message={error} />
       <Button type="submit">Set up two-factor authentication</Button>

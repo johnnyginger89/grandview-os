@@ -159,6 +159,33 @@ describe("starting a form", () => {
   });
 });
 
+describe("a corrected customer email or phone", () => {
+  const before = { email: "kim@example.com", phone: "604-555-0100" };
+
+  it("reaches open forms still showing the old one, and leaves a value typed for the job", async () => {
+    h.rows["select:colour_selections"] = [
+      { id: SEL, client },
+      { id: OLD, client: { ...client, email: "tenant@example.com", phone: "(604) 555 0100" } },
+    ];
+    expect(await c.carryReachToOpenForms(h.fake.db, uuid(30), before, { email: "kim.lee@example.com", phone: "604-555-0199" })).toBe(2);
+    expect(sets("colour_selections")).toEqual([
+      expect.objectContaining({ client: { ...client, email: "kim.lee@example.com", phone: "604-555-0199" } }),
+      expect.objectContaining({ client: { ...client, email: "tenant@example.com", phone: "604-555-0199" } }),
+    ]);
+  });
+
+  it("fills in an email the customer didn't have, and skips forms with nothing to change", async () => {
+    h.rows["select:colour_selections"] = [{ id: SEL, client: { ...client, email: "" } }, { id: OLD, client: { ...client, email: "tenant@example.com" } }];
+    expect(await c.carryReachToOpenForms(h.fake.db, uuid(30), { ...before, email: null }, { ...before, email: "kim@example.com" })).toBe(1);
+    expect(sets("colour_selections")).toEqual([expect.objectContaining({ client: { ...client, email: "kim@example.com" } })]);
+  });
+
+  it("doesn't look when nothing changed", async () => {
+    expect(await c.carryReachToOpenForms(h.fake.db, uuid(30), before, { email: "KIM@example.com", phone: "604-555-0100" })).toBe(0);
+    expect(h.fake.calls).toEqual([]);
+  });
+});
+
 describe("the customer's link", () => {
   it("stores only the hash, and emails the link only when asked", async () => {
     h.rows["select:colour_selections"] = [selRow({ status: "draft", tokenHash: null })];
