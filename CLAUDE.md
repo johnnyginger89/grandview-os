@@ -20,7 +20,7 @@ pnpm dev                 # local dev server
 pnpm typecheck           # tsc --noEmit
 pnpm test                # unit tests (estimating engine etc.)
 pnpm test:e2e            # Playwright, needs a running server on :3000 and dev seed
-pnpm db:generate         # create a migration after editing src/db/schema
+pnpm db:generate         # create a migration after editing src/db/schema (also records its checksum)
 pnpm db:migrate          # apply migrations
 pnpm db:seed:dev         # baseline config + one dev login per role (local DB only)
 pnpm db:deploy           # migrations + baseline seed (what the Vercel build runs)
@@ -51,9 +51,15 @@ Local Postgres: `DATABASE_URL=postgres://postgres@localhost:5432/grandview_dev`.
    validate with zod, check permission, call the service, revalidate.
 10. Times are stored UTC (`timestamptz`) and displayed in America/Vancouver (`src/lib/utils.ts`).
     Servers run in UTC: parse wall-clock input with `parseBusinessDateTime` (`src/lib/time.ts`), never `new Date(str)`.
+    BC stays on UTC−7 from 2026-11-01 and some runtimes' zone data doesn't know yet: never pass
+    "America/Vancouver" to Intl yourself; use `formatDate`, `businessDate` or `businessZone(instant)`.
 11. Server actions turn errors into user messages with `safeErrorMessage` (`src/lib/action-error.ts`);
     errors meant for users are plain `Error`s or set `expose = true`.
-12. Deployment: see `docs/DEPLOYMENT.md`. Migrations must be additive (they run before the new code is live).
+12. Deployment: see `docs/DEPLOYMENT.md`. Migrations must be additive (they run before the new code is live)
+    and never change once created (`drizzle/migration-checksums.json`); a data `UPDATE` needs a
+    `-- reviewed backfill:` note.
+13. **Every change goes through a pull request**: green CI (`.github/workflows/ci.yml`), a plain-English line
+    in `CHANGELOG.md` under Unreleased, and a test for every behaviour change. Never push to `main`.
 
 ## Conventions
 - Server actions return `{ ok: true, ... } | { ok: false, error }` and never throw to the client.
